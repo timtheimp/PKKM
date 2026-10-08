@@ -1,0 +1,60 @@
+name: PKKM CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  release-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python test dependency
+        run: python -m pip install openpyxl
+
+      - name: Configure Release build
+        run: cmake -S . -B build/ci -G "Visual Studio 17 2022" -A x64
+
+      - name: Build Release targets
+        run: cmake --build build/ci --config Release --target pkkm pkkm_desktop pkkm_tests
+
+      - name: Run C++ tests
+        run: ctest --test-dir build/ci -C Release --output-on-failure
+
+      - name: Run Python importer and packaging tests
+        shell: pwsh
+        run: |
+          python tests/test_building_catalog_import.py
+          python tests/test_catalog_cli.py build/ci/Release/pkkm.exe assets/building_catalog.json
+          python tests/test_package_release.py
+          python tests/test_terrain_reference.py
+          python tests/test_workbook_import.py
+          python tools/package_release.py --build-dir build/ci/Release --output build/ci/PKKM-current-schema9.zip
+          python tests/test_package_release.py
+
+      - name: Create and verify CPack package
+        shell: pwsh
+        run: |
+          cpack --config build/ci/CPackConfig.cmake -G ZIP -B build/ci/cpack
+          python tests/test_cpack_package.py build/ci/cpack/PKKM-0.1.0-Windows.zip
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkkm-windows-release
+          path: |
+            build/ci/PKKM-current-schema9.zip
+            build/ci/cpack/PKKM-0.1.0-Windows.zip
+          if-no-files-found: error
