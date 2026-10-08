@@ -1,0 +1,77 @@
+{
+  "source_sheet": "Turn",
+  "source_range": "A37:D47",
+  "entries": [
+    {
+      "terrain": "Cavern",
+      "exploration_time": "3 days",
+      "prep_time_cost": "3 months / 8 BP",
+      "farm_road_cost": "— / 4 BP",
+      "source_row": 38
+    },
+    {
+      "terrain": "Coastline",
+      "exploration_time": "As adjacent hex",
+      "prep_time_cost": "As adjacent hex",
+      "farm_road_cost": "As adjacent hex",
+      "source_row": 39
+    },
+    {
+      "terrain": "Desert",
+      "exploration_time": "2 days",
+      "prep_time_cost": "1 month / 4 BP",
+      "farm_road_cost": "8 BP / 4 BP",
+      "source_row": 40
+    },
+    {
+      "terrain": "Forest",
+      "exploration_time": "2 days",
+      "prep_time_cost": "2 months / 4 BP",
+      "farm_road_cost": "— / 2BP",
+      "source_row": 41
+    },
+    {
+      "terrain": "Hills",
+      "exploration_time": "1 day",
+      "prep_time_cost": "1 month / 2 BP",
+      "farm_road_cost": "4 BP / 3 BP",
+      "source_row": 42
+    },
+    {
+      "terrain": "Jungle",
+      "exploration_time": "2 days",
+      "prep_time_cost": "4 months / 12 BP",
+      "farm_road_cost": "— / 4 BP",
+      "source_row": 43
+    },
+    {
+      "terrain": "Marsh",
+      "exploration_time": "3 days",
+      "prep_time_cost": "3 months / 8 BP",
+      "farm_road_cost": "— / 4 BP",
+      "source_row": 44
+    },
+    {
+      "terrain": "Mountains",
+      "exploration_time": "3 days",
+      "prep_time_cost": "4 months / 12 BP",
+      "farm_road_cost": "— / 4 BP",
+      "source_row": 45
+    },
+    {
+      "terrain": "Plains",
+      "exploration_time": "1 day",
+      "prep_time_cost": "Immediate / 1 BP",
+      "farm_road_cost": "2 BP / 1 BP",
+      "source_row": 46
+    },
+    {
+      "terrain": "Water",
+      "exploration_time": "2 days",
+      "prep_time_cost": "—",
+      "farm_road_cost": "—",
+      "source_row": 47
+    }
+  ],
+  "mechanics": "reference_only"
+}

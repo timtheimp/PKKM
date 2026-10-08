@@ -1,0 +1,92 @@
+{
+  "buildings": [],
+  "name": "New Kingdom",
+  "rules": {
+    "alignment": "N",
+    "laws": {
+      "has_cathedral": false,
+      "has_waterfront": false,
+      "holiday_interval_months": 0,
+      "promotion": 0,
+      "taxation": 0
+    },
+    "leadership": {
+      "baron_benefits": {
+        "economy": true,
+        "loyalty": false,
+        "stability": false
+      },
+      "baron_bonus": 0,
+      "councilor": {
+        "bonus": 0,
+        "filled": false
+      },
+      "general": {
+        "bonus": 0,
+        "filled": false
+      },
+      "grand_diplomat": {
+        "bonus": 0,
+        "filled": false
+      },
+      "high_priest": {
+        "bonus": 0,
+        "filled": false
+      },
+      "magister": {
+        "bonus": 0,
+        "filled": false
+      },
+      "marshal": {
+        "bonus": 0,
+        "filled": false
+      },
+      "royal_enforcer": {
+        "bonus": 0,
+        "filled": false
+      },
+      "spymaster": {
+        "bonus": 0,
+        "filled": false
+      },
+      "spymaster_benefit": 0,
+      "treasurer": {
+        "bonus": 0,
+        "filled": false
+      },
+      "warden": {
+        "bonus": 0,
+        "filled": false
+      }
+    },
+    "stats": {
+      "economy": {
+        "events": 0,
+        "improvements": 0,
+        "other": 0
+      },
+      "loyalty": {
+        "events": 0,
+        "improvements": 0,
+        "other": 0
+      },
+      "stability": {
+        "events": 0,
+        "improvements": 0,
+        "other": 0
+      }
+    },
+    "territory": {
+      "city_count": 0,
+      "control_dc_other": 0,
+      "kingdom_size": 0,
+      "total_city_districts": 0,
+      "total_city_population": 0
+    }
+  },
+  "schema_version": 3,
+  "settlements": [],
+  "treasury_bp": 0,
+  "turn": 1,
+  "unrest": 0
+}

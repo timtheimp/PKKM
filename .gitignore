@@ -1,0 +1,25 @@
+# Build and IDE output
+build/
+.vs/
+.vscode/
+CMakeFiles/
+*.vcxproj*
+*.sln
+*.suo
+
+# Python caches and local environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local test/generated state
+*.user.json
+pkkm_test_roundtrip.json
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
