@@ -259,7 +259,7 @@ void refresh(HWND display) {
             + L", vacancies " + signed_component(stat.vacancy_adjustment)
             + L", other " + signed_component(stat.other);
     };
-    std::wstring text = widen(kingdom.name) + L" — Turn " + std::to_wstring(kingdom.turn)
+    std::wstring text = widen(kingdom.name) + L" - Turn " + std::to_wstring(kingdom.turn)
         + L"\r\nTreasury: " + std::to_wstring(kingdom.treasury_bp) + L" BP"
         + L"\r\nUnrest: " + std::to_wstring(kingdom.unrest)
         + L"\r\nCalendar notes: " + std::to_wstring(kingdom.calendar_notes.size())
@@ -288,7 +288,7 @@ void refresh(HWND display) {
     if (kingdom.settlements.empty()) text += L"(none)\r\n";
     for (const auto& settlement : kingdom.settlements) {
         const auto size = pkkm::calculate_settlement_size(settlement, building_catalog);
-        text += L"• " + widen(settlement.name) + L" — population "
+        text += L"- " + widen(settlement.name) + L" - population "
             + std::to_wstring(size.population) + L", districts " + std::to_wstring(size.districts)
             + L", lots " + std::to_wstring(size.lots)
             + L", Economy " + signed_component(settlement.economy)
@@ -321,7 +321,7 @@ void refresh(HWND display) {
     }
     SetWindowTextW(display, text.c_str());
     const HWND main = GetParent(display);
-    SetWindowTextW(main, dirty ? L"PKKM — Kingdom Manager *" : L"PKKM — Kingdom Manager");
+    SetWindowTextW(main, dirty ? L"PKKM - Kingdom Manager *" : L"PKKM - Kingdom Manager");
 }
 
 std::wstring choose_file(HWND owner, bool save) {
@@ -566,7 +566,7 @@ void refresh_settlement_form(HWND window) {
     SendMessageW(GetDlgItem(window, kSettlementApplyCatalogStats), BM_SETCHECK,
         settlement.apply_catalog_stat_effects ? BST_CHECKED : BST_UNCHECKED, 0);
     set_manager_text(window, kMapSummary, settlement.map.rows > 0 && settlement.map.columns > 0
-        ? L"Map: " + std::to_wstring(settlement.map.rows) + L"×" + std::to_wstring(settlement.map.columns)
+        ? L"Map: " + std::to_wstring(settlement.map.rows) + L"x" + std::to_wstring(settlement.map.columns)
             + L" | B" + std::to_wstring(settlement.map.placements.size())
             + L" L" + std::to_wstring(settlement.map.labels.size())
         : L"Map: none");
@@ -1061,7 +1061,7 @@ LRESULT CALLBACK turn_checklist_proc(HWND window, UINT message, WPARAM wparam, L
     switch (message) {
         case WM_CREATE:
             create_turn_checklist_controls(window);
-            SetWindowTextW(window, (L"Turn Checklist — Turn " + std::to_wstring(kingdom.turn)).c_str());
+            SetWindowTextW(window, (L"Turn Checklist - Turn " + std::to_wstring(kingdom.turn)).c_str());
             return 0;
         case WM_COMMAND:
             if (LOWORD(wparam) == kChecklistApply) apply_turn_checklist(window);
@@ -1193,7 +1193,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     calendar_class.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&calendar_class)) return 1;
 
-    HWND window = CreateWindowW(main_class.lpszClassName, L"PKKM — Kingdom Manager",
+    HWND window = CreateWindowW(main_class.lpszClassName, L"PKKM - Kingdom Manager",
         WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 800, 620,
         nullptr, nullptr, instance, nullptr);
     if (!window) return 1;
