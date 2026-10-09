@@ -24,8 +24,9 @@ constexpr int kManageSettlements = 5;
 constexpr int kTurnChecklist = 6;
 constexpr int kCalendarTracker = 7;
 constexpr int kDisplay = 10;
-constexpr int kEditorSave = 3001;
+constexpr int kEditorApply = 3001;
 constexpr int kEditorCancel = 3002;
+constexpr int kEditorClose = 3003;
 constexpr int kFieldIdBase = 4000;
 constexpr int kColumnWidth = 325;
 constexpr int kSettlementList = 5100;
@@ -46,10 +47,12 @@ constexpr int kAddSettlement = 5115;
 constexpr int kRemoveSettlement = 5116;
 constexpr int kApplySettlements = 5117;
 constexpr int kCancelSettlements = 5118;
+constexpr int kCloseSettlements = 5121;
 constexpr int kEditMap = 5119;
 constexpr int kMapSummary = 5120;
 constexpr int kChecklistApply = 6201;
 constexpr int kChecklistCancel = 6202;
+constexpr int kChecklistClose = 6203;
 constexpr int kChecklistControlBase = 6300;
 constexpr int kCalendarEntryList = 7100;
 constexpr int kCalendarEntryTitle = 7101;
@@ -59,6 +62,7 @@ constexpr int kCalendarEvents = 7104;
 constexpr int kCalendarOther = 7105;
 constexpr int kCalendarApply = 7201;
 constexpr int kCalendarCancel = 7202;
+constexpr int kCalendarClose = 7203;
 
 pkkm::Kingdom kingdom;
 pkkm::Kingdom edit_draft;
@@ -380,9 +384,36 @@ void create_editor_controls(HWND window) {
         }
     }
     CreateWindowExW(0, L"BUTTON", L"Apply", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
-        810, 615, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kEditorSave)), app_instance, nullptr);
+        712, 615, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kEditorApply)), app_instance, nullptr);
     CreateWindowExW(0, L"BUTTON", L"Cancel", WS_CHILD | WS_VISIBLE,
-        908, 615, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kEditorCancel)), app_instance, nullptr);
+        810, 615, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kEditorCancel)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Close", WS_CHILD | WS_VISIBLE,
+        908, 615, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kEditorClose)), app_instance, nullptr);
+}
+
+void refresh_editor_controls() {
+    for (auto& field : editor_fields) {
+        if (field.kind == FieldKind::Boolean) {
+            SendMessageW(field.control, BM_SETCHECK, field.read_bool() ? BST_CHECKED : BST_UNCHECKED, 0);
+        } else if (field.kind == FieldKind::Choice) {
+            const int current_value = field.read_choice();
+            LRESULT selection = CB_ERR;
+            for (size_t index = 0; index < field.option_values.size(); ++index) {
+                if (field.option_values[index] == current_value) {
+                    selection = static_cast<LRESULT>(index);
+                    break;
+                }
+            }
+            SendMessageW(field.control, CB_SETCURSEL, selection, 0);
+        } else {
+            SetWindowTextW(field.control, field.read_text().c_str());
+        }
+    }
+}
+
+void cancel_editor() {
+    edit_draft = kingdom;
+    refresh_editor_controls();
 }
 
 void apply_editor(HWND window) {
@@ -414,8 +445,9 @@ void apply_editor(HWND window) {
             edit_draft.unrest, edit_draft.rule_inputs, edit_draft.settlements, &building_catalog);
         kingdom = edit_draft;
         dirty = true;
+        edit_draft = kingdom;
+        refresh_editor_controls();
         refresh(GetDlgItem(GetParent(window), kDisplay));
-        DestroyWindow(window);
     } catch (const std::exception& error) {
         MessageBoxW(window, widen(error.what()).c_str(), L"Invalid kingdom input", MB_OK | MB_ICONWARNING);
     }
@@ -502,9 +534,11 @@ void create_settlement_controls(HWND window) {
     CreateWindowExW(0, L"BUTTON", L"Remove Selected Building", WS_CHILD | WS_VISIBLE,
         540, 472, 190, 28, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kRemoveBuilding)), app_instance, nullptr);
     CreateWindowExW(0, L"BUTTON", L"Apply", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
-        830, 575, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kApplySettlements)), app_instance, nullptr);
+        732, 575, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kApplySettlements)), app_instance, nullptr);
     CreateWindowExW(0, L"BUTTON", L"Cancel", WS_CHILD | WS_VISIBLE,
-        928, 575, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCancelSettlements)), app_instance, nullptr);
+        830, 575, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCancelSettlements)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Close", WS_CHILD | WS_VISIBLE,
+        928, 575, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCloseSettlements)), app_instance, nullptr);
 }
 
 void refresh_settlement_list(HWND window, int selection) {
@@ -665,14 +699,23 @@ void apply_settlement_manager(HWND window) {
         pkkm::Kingdom candidate = kingdom;
         candidate.settlements = settlement_draft;
         pkkm::validate(candidate);
-        kingdom.settlements = std::move(settlement_draft);
+        kingdom.settlements = settlement_draft;
         dirty = true;
+        settlement_draft = kingdom.settlements;
         const HWND owner = GetWindow(window, GW_OWNER);
         if (owner) refresh(GetDlgItem(owner, kDisplay));
-        DestroyWindow(window);
     } catch (const std::exception& error) {
         MessageBoxW(window, widen(error.what()).c_str(), L"Invalid settlement data", MB_OK | MB_ICONWARNING);
     }
+}
+
+void cancel_settlement_manager(HWND window) {
+    const int selection = settlement_active_index;
+    settlement_draft = kingdom.settlements;
+    settlement_active_index = settlement_draft.empty() ? -1
+        : std::min(selection, static_cast<int>(settlement_draft.size()) - 1);
+    refresh_settlement_list(window, settlement_active_index);
+    refresh_settlement_form(window);
 }
 
 LRESULT CALLBACK settlement_manager_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
@@ -713,7 +756,8 @@ LRESULT CALLBACK settlement_manager_proc(HWND window, UINT message, WPARAM wpara
                         });
                 }
                 else if (id == kApplySettlements) apply_settlement_manager(window);
-                else if (id == kCancelSettlements) DestroyWindow(window);
+                else if (id == kCancelSettlements) cancel_settlement_manager(window);
+                else if (id == kCloseSettlements) DestroyWindow(window);
             } catch (const std::exception& error) {
                 MessageBoxW(window, widen(error.what()).c_str(), L"Settlement editor", MB_OK | MB_ICONWARNING);
             }
@@ -865,9 +909,23 @@ void create_turn_checklist_controls(HWND window) {
         checklist_step_ids.push_back(step.id);
     }
     CreateWindowExW(0, L"BUTTON", L"Apply", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
-        790, 535, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistApply)), app_instance, nullptr);
+        692, 535, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistApply)), app_instance, nullptr);
     CreateWindowExW(0, L"BUTTON", L"Cancel", WS_CHILD | WS_VISIBLE,
-        888, 535, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistCancel)), app_instance, nullptr);
+        790, 535, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistCancel)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Close", WS_CHILD | WS_VISIBLE,
+        888, 535, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistClose)), app_instance, nullptr);
+}
+
+void refresh_turn_checklist_controls() {
+    const auto record = std::find_if(kingdom.turn_progress.begin(), kingdom.turn_progress.end(),
+        [](const auto& progress) { return progress.turn == kingdom.turn; });
+    const std::vector<std::string> completed = record == kingdom.turn_progress.end()
+        ? std::vector<std::string>{} : record->completed_step_ids;
+    for (size_t index = 0; index < checklist_controls.size(); ++index) {
+        const bool checked = std::find(completed.begin(), completed.end(), checklist_step_ids[index])
+            != completed.end();
+        SendMessageW(checklist_controls[index], BM_SETCHECK, checked ? BST_CHECKED : BST_UNCHECKED, 0);
+    }
 }
 
 void apply_turn_checklist(HWND window) {
@@ -896,7 +954,6 @@ void apply_turn_checklist(HWND window) {
         dirty = true;
         refresh(GetDlgItem(GetParent(window), kDisplay));
     }
-    DestroyWindow(window);
 }
 
 bool calendar_note_is_empty(const pkkm::CalendarNote& note) {
@@ -970,9 +1027,11 @@ void create_calendar_controls(HWND window) {
     add_note(L"Events", kCalendarEvents, 332);
     add_note(L"Other", kCalendarOther, 457);
     CreateWindowExW(0, L"BUTTON", L"Apply", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
-        810, 635, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCalendarApply)), app_instance, nullptr);
+        712, 635, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCalendarApply)), app_instance, nullptr);
     CreateWindowExW(0, L"BUTTON", L"Cancel", WS_CHILD | WS_VISIBLE,
-        910, 635, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCalendarCancel)), app_instance, nullptr);
+        810, 635, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCalendarCancel)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Close", WS_CHILD | WS_VISIBLE,
+        908, 635, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCalendarClose)), app_instance, nullptr);
     const HWND list = GetDlgItem(window, kCalendarEntryList);
     const auto& entries = pkkm::calendar_template_entries();
     for (const auto& entry : entries) {
@@ -1008,10 +1067,15 @@ void apply_calendar_notes(HWND window) {
         pkkm::validate(candidate);
         kingdom.calendar_notes = std::move(updated);
         dirty = true;
+        calendar_note_draft = kingdom.calendar_notes;
         const HWND owner = GetWindow(window, GW_OWNER);
         if (owner) refresh(GetDlgItem(owner, kDisplay));
     }
-    DestroyWindow(window);
+}
+
+void cancel_calendar_notes(HWND window) {
+    calendar_note_draft = kingdom.calendar_notes;
+    if (calendar_active_index >= 0) load_calendar_entry(window, calendar_active_index);
 }
 
 LRESULT CALLBACK calendar_tracker_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
@@ -1035,6 +1099,8 @@ LRESULT CALLBACK calendar_tracker_proc(HWND window, UINT message, WPARAM wparam,
                     MessageBoxW(window, widen(error.what()).c_str(), L"Calendar notes", MB_OK | MB_ICONWARNING);
                 }
             } else if (id == kCalendarCancel) {
+                cancel_calendar_notes(window);
+            } else if (id == kCalendarClose) {
                 DestroyWindow(window);
             }
             return 0;
@@ -1065,7 +1131,8 @@ LRESULT CALLBACK turn_checklist_proc(HWND window, UINT message, WPARAM wparam, L
             return 0;
         case WM_COMMAND:
             if (LOWORD(wparam) == kChecklistApply) apply_turn_checklist(window);
-            else if (LOWORD(wparam) == kChecklistCancel) DestroyWindow(window);
+            else if (LOWORD(wparam) == kChecklistCancel) refresh_turn_checklist_controls();
+            else if (LOWORD(wparam) == kChecklistClose) DestroyWindow(window);
             return 0;
         case WM_CLOSE:
             DestroyWindow(window);
@@ -1091,8 +1158,9 @@ LRESULT CALLBACK editor_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
             create_editor_controls(window);
             return 0;
         case WM_COMMAND:
-            if (LOWORD(wparam) == kEditorSave) apply_editor(window);
-            else if (LOWORD(wparam) == kEditorCancel) DestroyWindow(window);
+            if (LOWORD(wparam) == kEditorApply) apply_editor(window);
+            else if (LOWORD(wparam) == kEditorCancel) cancel_editor();
+            else if (LOWORD(wparam) == kEditorClose) DestroyWindow(window);
             return 0;
         case WM_CLOSE:
             DestroyWindow(window);
