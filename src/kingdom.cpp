@@ -281,6 +281,10 @@ int resolve_tax_bp_delta(bool economy_check_success, int result_divided_by_three
     return other_bp_gained + (economy_check_success ? result_divided_by_three : 0);
 }
 
+MagicItemWorkflow magic_item_workflow() {
+    return {true, true, false, -1, 2000, true};
+}
+
 const std::vector<CalendarTemplateEntry>& calendar_template_entries() {
     static const std::vector<CalendarTemplateEntry> entries = [] {
         const std::vector<std::string> months = {

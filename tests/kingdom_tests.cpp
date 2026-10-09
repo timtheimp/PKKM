@@ -100,6 +100,11 @@ int main(int argc, char** argv) {
  must(pkkm::resolve_tax_bp_delta(true, 4, 2)==6
       && pkkm::resolve_tax_bp_delta(false, 99, 2)==2,
       "tax Turn branches preserve success and failure BP outcomes");
+ const auto magic_items=pkkm::magic_item_workflow();
+ must(magic_items.buy_item_moves_to_pc && magic_items.success_recycles_item
+      && !magic_items.failure_recycles_item && magic_items.excess_checks_economy_delta==-1
+      && magic_items.gold_per_buy_for_kingdom_bp==2000 && magic_items.buy_for_kingdom_requires_use,
+      "magic-item Turn workflow preserves explicit optional branches");
  const auto& calendar=pkkm::calendar_template_entries();
  must(calendar.size()==85 && calendar.front().id=="calendar.row.2"
       && calendar.front().source_row==2 && calendar.front().month=="Pharast (March)"

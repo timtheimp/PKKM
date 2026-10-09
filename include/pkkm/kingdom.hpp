@@ -134,6 +134,15 @@ struct TurnEconomyRates {
 };
 TurnEconomyRates turn_economy_rates();
 int resolve_tax_bp_delta(bool economy_check_success, int result_divided_by_three, int other_bp_gained);
+struct MagicItemWorkflow {
+ bool buy_item_moves_to_pc = true;
+ bool success_recycles_item = true;
+ bool failure_recycles_item = false;
+ int excess_checks_economy_delta = -1;
+ int gold_per_buy_for_kingdom_bp = 2000;
+ bool buy_for_kingdom_requires_use = true;
+};
+MagicItemWorkflow magic_item_workflow();
 struct CalendarTemplateEntry {
  std::string id;
  int source_row = 0;
