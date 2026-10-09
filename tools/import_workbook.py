@@ -46,6 +46,13 @@ def _text(value: Any) -> str:
     return " ".join(str(value).replace("\r", "\n").split())
 
 
+def _reject_source_overwrite(source: Path, *destinations: Path) -> None:
+    source_resolved = source.resolve()
+    for destination in destinations:
+        if destination.resolve() == source_resolved:
+            raise ValueError(f"Refusing to overwrite source workbook: {source}")
+
+
 def _blank_rules() -> dict[str, Any]:
     slot = {"filled": False, "bonus": 0}
     return {
@@ -347,6 +354,7 @@ def main() -> int:
     parser.add_argument("--report", type=Path, required=True, help="Destination mapping report JSON")
     parser.add_argument("--catalog", type=Path, help="Optional building_catalog.json for map placement classification")
     args = parser.parse_args()
+    _reject_source_overwrite(args.workbook, args.output, args.report)
     catalog_names: set[str] = set()
     if args.catalog:
         catalog = json.loads(args.catalog.read_text(encoding="utf-8"))

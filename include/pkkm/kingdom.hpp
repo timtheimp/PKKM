@@ -148,6 +148,8 @@ struct EventCadence {
  int event_last_month_percent = 25;
 };
 EventCadence event_cadence();
+enum class EventResolution { NoEvent, ManualResolutionRequired };
+EventResolution classify_event_resolution(bool event_triggered);
 struct CalendarTemplateEntry {
  std::string id;
  int source_row = 0;

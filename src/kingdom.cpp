@@ -289,6 +289,10 @@ EventCadence event_cadence() {
     return {75, 25};
 }
 
+EventResolution classify_event_resolution(bool event_triggered) {
+    return event_triggered ? EventResolution::ManualResolutionRequired : EventResolution::NoEvent;
+}
+
 const std::vector<CalendarTemplateEntry>& calendar_template_entries() {
     static const std::vector<CalendarTemplateEntry> entries = [] {
         const std::vector<std::string> months = {

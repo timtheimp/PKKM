@@ -9,10 +9,15 @@ from openpyxl.workbook.defined_name import DefinedName
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
-from import_workbook import import_workbook
+from import_workbook import _reject_source_overwrite, import_workbook
 
 
 class WorkbookImportTests(unittest.TestCase):
+    def test_importer_rejects_source_as_output(self):
+        source = Path("source.xlsx")
+        with self.assertRaisesRegex(ValueError, "Refusing to overwrite source workbook"):
+            _reject_source_overwrite(source, source, Path("report.json"))
+
     def make_workbook(self, path: Path) -> None:
         workbook = Workbook()
         kingdom = workbook.active
