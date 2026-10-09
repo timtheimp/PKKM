@@ -285,6 +285,10 @@ MagicItemWorkflow magic_item_workflow() {
     return {true, true, false, -1, 2000, true};
 }
 
+EventCadence event_cadence() {
+    return {75, 25};
+}
+
 const std::vector<CalendarTemplateEntry>& calendar_template_entries() {
     static const std::vector<CalendarTemplateEntry> entries = [] {
         const std::vector<std::string> months = {

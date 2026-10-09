@@ -105,6 +105,10 @@ int main(int argc, char** argv) {
       && !magic_items.failure_recycles_item && magic_items.excess_checks_economy_delta==-1
       && magic_items.gold_per_buy_for_kingdom_bp==2000 && magic_items.buy_for_kingdom_requires_use,
       "magic-item Turn workflow preserves explicit optional branches");
+ const auto event_cadence=pkkm::event_cadence();
+ must(event_cadence.no_event_last_month_percent==75
+      && event_cadence.event_last_month_percent==25,
+      "event Turn cadence preserves explicit source percentages");
  const auto& calendar=pkkm::calendar_template_entries();
  must(calendar.size()==85 && calendar.front().id=="calendar.row.2"
       && calendar.front().source_row==2 && calendar.front().month=="Pharast (March)"

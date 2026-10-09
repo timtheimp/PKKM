@@ -143,6 +143,11 @@ struct MagicItemWorkflow {
  bool buy_for_kingdom_requires_use = true;
 };
 MagicItemWorkflow magic_item_workflow();
+struct EventCadence {
+ int no_event_last_month_percent = 75;
+ int event_last_month_percent = 25;
+};
+EventCadence event_cadence();
 struct CalendarTemplateEntry {
  std::string id;
  int source_row = 0;
