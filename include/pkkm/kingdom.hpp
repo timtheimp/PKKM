@@ -133,6 +133,7 @@ struct TurnEconomyRates {
  int gold_per_buy_for_kingdom_bp = 2000;
 };
 TurnEconomyRates turn_economy_rates();
+int resolve_tax_bp_delta(bool economy_check_success, int result_divided_by_three, int other_bp_gained);
 struct CalendarTemplateEntry {
  std::string id;
  int source_row = 0;

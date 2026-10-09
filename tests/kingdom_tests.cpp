@@ -97,6 +97,9 @@ int main(int argc, char** argv) {
       && economy_rates.item_value_per_bp==8000 && economy_rates.unrest_per_withdrawn_bp==1
       && economy_rates.gold_per_buy_for_kingdom_bp==2000,
       "income Turn reference rates preserve source conversion values");
+ must(pkkm::resolve_tax_bp_delta(true, 4, 2)==6
+      && pkkm::resolve_tax_bp_delta(false, 99, 2)==2,
+      "tax Turn branches preserve success and failure BP outcomes");
  const auto& calendar=pkkm::calendar_template_entries();
  must(calendar.size()==85 && calendar.front().id=="calendar.row.2"
       && calendar.front().source_row==2 && calendar.front().month=="Pharast (March)"

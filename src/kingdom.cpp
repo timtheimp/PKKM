@@ -277,6 +277,10 @@ TurnEconomyRates turn_economy_rates() {
     return {2000, 4000, 8000, 1, 2000};
 }
 
+int resolve_tax_bp_delta(bool economy_check_success, int result_divided_by_three, int other_bp_gained) {
+    return other_bp_gained + (economy_check_success ? result_divided_by_three : 0);
+}
+
 const std::vector<CalendarTemplateEntry>& calendar_template_entries() {
     static const std::vector<CalendarTemplateEntry> entries = [] {
         const std::vector<std::string> months = {
