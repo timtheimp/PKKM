@@ -127,6 +127,12 @@ struct KingdomSizeLimits {
  int improvements_per_hex = 0; int hex_claims = 0;
 };
 KingdomSizeLimits kingdom_size_limits(int kingdom_size);
+struct TurnEconomyRates {
+ int gold_per_withdrawn_bp = 2000; int gold_per_deposited_bp = 4000;
+ int item_value_per_bp = 8000; int unrest_per_withdrawn_bp = 1;
+ int gold_per_buy_for_kingdom_bp = 2000;
+};
+TurnEconomyRates turn_economy_rates();
 struct CalendarTemplateEntry {
  std::string id;
  int source_row = 0;

@@ -273,6 +273,10 @@ KingdomSizeLimits kingdom_size_limits(int kingdom_size) {
     return {4, 0, true, 12, 12};
 }
 
+TurnEconomyRates turn_economy_rates() {
+    return {2000, 4000, 8000, 1, 2000};
+}
+
 const std::vector<CalendarTemplateEntry>& calendar_template_entries() {
     static const std::vector<CalendarTemplateEntry> entries = [] {
         const std::vector<std::string> months = {
