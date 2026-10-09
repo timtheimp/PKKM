@@ -8,10 +8,15 @@ from openpyxl import Workbook
 
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from import_terrain_reference import extract
+from import_terrain_reference import _reject_source_overwrite, extract
 
 
-class TerrainReferenceTest(unittest.TestCase):
+class TerrainReferenceTests(unittest.TestCase):
+    def test_terrain_importer_rejects_source_as_output(self):
+        source = Path("source.xlsx")
+        with self.assertRaisesRegex(ValueError, "Refusing to overwrite source workbook"):
+            _reject_source_overwrite(source, source)
+
     def test_raw_reference_rows_are_preserved(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "fixture.xlsx"

@@ -32,7 +32,7 @@ Import a workbook copy into schema-v9 JSON and emit an auditable mapping report:
 python tools/import_workbook.py "C:/path/to/Kingdom of Template.xlsx" build/imported.json --report build/import-report.json --catalog assets/building_catalog.json
 ```
 
-The importer maps direct kingdom, law, leadership, settlement, inventory, workbook-map, and Calendar note inputs. It does not evaluate spreadsheet formulas; every formula cell is listed in the report, along with manual workflow and reference-sheet limitations. The source workbook is opened read-only and is never rewritten.
+The importer maps direct kingdom, law, leadership, settlement, inventory, workbook-map, and Calendar note inputs. It does not evaluate spreadsheet formulas; every formula cell is listed in the report, along with manual workflow and reference-sheet limitations. The source workbook is never written, and the CLI rejects any output path that resolves to the source workbook.
 
 Create the portable Release archive with the repository script:
 

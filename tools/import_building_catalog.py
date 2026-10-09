@@ -30,6 +30,11 @@ TEXT_KEYS = {"discounts", "magic_item", "upgrade_from", "upgrade_to"}
 NON_BUILDING_KINDS = {"basic", "town", "city", "district"}
 
 
+def _reject_source_overwrite(source: Path, destination: Path) -> None:
+    if source.resolve() == destination.resolve():
+        raise ValueError(f"Refusing to overwrite source workbook: {source}")
+
+
 def json_cell(value: Any) -> Any:
     if value is None:
         return None
@@ -47,7 +52,7 @@ def json_cell(value: Any) -> Any:
 
 
 def export_catalog(workbook_path: Path) -> dict[str, Any]:
-    workbook = load_workbook(workbook_path, data_only=False, read_only=False)
+    workbook = load_workbook(workbook_path, data_only=False, read_only=True)
     try:
         if "IMP" not in workbook.defined_names:
             raise ValueError("Workbook is missing the IMP named range")
@@ -128,6 +133,7 @@ def main() -> None:
     parser.add_argument("workbook", type=Path, help="Source .xlsx workbook; read only")
     parser.add_argument("output", type=Path, help="Destination JSON asset")
     args = parser.parse_args()
+    _reject_source_overwrite(args.workbook, args.output)
     catalog = export_catalog(args.workbook)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(catalog, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

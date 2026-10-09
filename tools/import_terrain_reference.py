@@ -16,6 +16,11 @@ COLUMNS = {
 }
 
 
+def _reject_source_overwrite(source: Path, destination: Path) -> None:
+    if source.resolve() == destination.resolve():
+        raise ValueError(f"Refusing to overwrite source workbook: {source}")
+
+
 def extract(workbook: Path) -> dict:
     book = load_workbook(workbook, read_only=True, data_only=False)
     try:
@@ -40,6 +45,7 @@ def main() -> int:
     parser.add_argument("workbook", type=Path)
     parser.add_argument("output", type=Path)
     args = parser.parse_args()
+    _reject_source_overwrite(args.workbook, args.output)
     result = extract(args.workbook)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")

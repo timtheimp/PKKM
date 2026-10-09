@@ -109,6 +109,9 @@ int main(int argc, char** argv) {
  must(event_cadence.no_event_last_month_percent==75
       && event_cadence.event_last_month_percent==25,
       "event Turn cadence preserves explicit source percentages");
+ must(pkkm::classify_event_resolution(false)==pkkm::EventResolution::NoEvent
+      && pkkm::classify_event_resolution(true)==pkkm::EventResolution::ManualResolutionRequired,
+      "event Turn resolution remains an explicit manual boundary");
  const auto& calendar=pkkm::calendar_template_entries();
  must(calendar.size()==85 && calendar.front().id=="calendar.row.2"
       && calendar.front().source_row==2 && calendar.front().month=="Pharast (March)"

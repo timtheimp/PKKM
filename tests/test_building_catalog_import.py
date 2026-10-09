@@ -8,10 +8,15 @@ from openpyxl.workbook.defined_name import DefinedName
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
-from import_building_catalog import export_catalog
+from import_building_catalog import _reject_source_overwrite, export_catalog
 
 
 class BuildingCatalogImportTests(unittest.TestCase):
+    def test_catalog_importer_rejects_source_as_output(self):
+        source = Path("source.xlsx")
+        with self.assertRaisesRegex(ValueError, "Refusing to overwrite source workbook"):
+            _reject_source_overwrite(source, source)
+
     def test_import_preserves_non_building_rows_and_maps_improvements(self):
         headers = [
             "Improvements", "Cost", "Lots", "Economy", "Loyalty", "Stability", "Defense", "Unrest",
