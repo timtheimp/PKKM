@@ -4,6 +4,8 @@
 
 Contribution and workbook-safety guidance is in [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
+PKKM is released under the [MIT License](LICENSE).
+
 ## Token-saving workflow
 
 `TOKEN_SAVER.md` records the project-specific staged inspection, testing, GUI, and packaging workflow used to reduce redundant tool calls without weakening verification.
