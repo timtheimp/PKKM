@@ -73,6 +73,13 @@ int main(int argc, char** argv) {
       && pkkm::classify_stability_failure(4)==pkkm::StabilityFailureOutcome::UnresolvedExactlyFour
       && pkkm::classify_stability_failure(5)==pkkm::StabilityFailureOutcome::FailByAtLeastFive,
       "stability failure boundary remains explicit instead of inventing the missing exact-four outcome");
+ const auto claim_hex=pkkm::resolve_turn_action(pkkm::TurnAction::ClaimHex);
+ const auto abandon_hex=pkkm::resolve_turn_action(pkkm::TurnAction::AbandonHex);
+ const auto abandon_city=pkkm::resolve_turn_action(pkkm::TurnAction::AbandonCity);
+ must(claim_hex.treasury_delta==-1 && claim_hex.kingdom_size_delta==1 && claim_hex.unrest_delta==0
+      && abandon_hex.treasury_delta==0 && abandon_hex.kingdom_size_delta==-1 && abandon_hex.unrest_delta==1
+      && abandon_city.treasury_delta==0 && abandon_city.kingdom_size_delta==-1 && abandon_city.unrest_delta==4,
+      "explicit Turn hex and city actions preserve workbook deltas");
  const auto& calendar=pkkm::calendar_template_entries();
  must(calendar.size()==85 && calendar.front().id=="calendar.row.2"
       && calendar.front().source_row==2 && calendar.front().month=="Pharast (March)"

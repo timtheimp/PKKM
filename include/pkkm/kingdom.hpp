@@ -119,6 +119,9 @@ struct TurnProgress {
 const std::vector<TurnChecklistStep>& turn_checklist_steps();
 enum class StabilityFailureOutcome { FailByLessThanFour, UnresolvedExactlyFour, FailByAtLeastFive };
 StabilityFailureOutcome classify_stability_failure(int failure_by);
+enum class TurnAction { ClaimHex, AbandonHex, AbandonCity };
+struct TurnActionOutcome { int treasury_delta = 0; int kingdom_size_delta = 0; int unrest_delta = 0; };
+TurnActionOutcome resolve_turn_action(TurnAction action);
 struct CalendarTemplateEntry {
  std::string id;
  int source_row = 0;
