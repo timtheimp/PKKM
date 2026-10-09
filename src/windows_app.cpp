@@ -1118,12 +1118,13 @@ LRESULT CALLBACK main_proc(HWND window, UINT message, WPARAM wparam, LPARAM lpar
             AppendMenuW(file, MF_STRING, kNew, L"New");
             AppendMenuW(file, MF_STRING, kOpen, L"Open...");
             AppendMenuW(file, MF_STRING, kSave, L"Save");
-            AppendMenuW(file, MF_SEPARATOR, 0, nullptr);
-            AppendMenuW(file, MF_STRING, kEditInputs, L"Edit Inputs...");
-            AppendMenuW(file, MF_STRING, kManageSettlements, L"Manage Settlements...");
-            AppendMenuW(file, MF_STRING, kTurnChecklist, L"Turn Checklist...");
-            AppendMenuW(file, MF_STRING, kCalendarTracker, L"Calendar Notes...");
             AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(file), L"File");
+            HMENU manager = CreatePopupMenu();
+            AppendMenuW(manager, MF_STRING, kEditInputs, L"Edit Inputs...");
+            AppendMenuW(manager, MF_STRING, kManageSettlements, L"Manage Settlements...");
+            AppendMenuW(manager, MF_STRING, kTurnChecklist, L"Turn Checklist...");
+            AppendMenuW(manager, MF_STRING, kCalendarTracker, L"Calendar Notes...");
+            AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(manager), L"Kingdom Manager");
             SetMenu(window, menu);
             CreateWindowExW(0, L"STATIC", L"", WS_CHILD | WS_VISIBLE | SS_LEFT,
                 24, 24, 720, 520, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kDisplay)), app_instance, nullptr);
