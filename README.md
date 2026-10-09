@@ -34,6 +34,8 @@ python tools/import_workbook.py "C:/path/to/Kingdom of Template.xlsx" build/impo
 
 The importer maps direct kingdom, law, leadership, settlement, inventory, workbook-map, and Calendar note inputs. It does not evaluate spreadsheet formulas; every formula cell is listed in the report, along with manual workflow and reference-sheet limitations. The source workbook is never written, and the CLI rejects any output path that resolves to the source workbook.
 
+The native JSON save path also rejects `.xlsx`, `.xlsm`, and `.xls` destinations, preventing the desktop application from overwriting a spreadsheet source by mistake.
+
 Create the portable Release archive with the repository script:
 
 ```text

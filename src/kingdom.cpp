@@ -2,6 +2,7 @@
 #include "pkkm/buildings.hpp"
 #include <nlohmann/json.hpp>
 #include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <limits>
@@ -39,6 +40,14 @@ std::string required_string(const Json& object, const char* key) {
     const auto& field = object.at(key);
     if (!field.is_string()) throw std::runtime_error(std::string("Invalid string field: ") + key);
     return field.get<std::string>();
+}
+
+void reject_spreadsheet_destination(const std::filesystem::path& destination) {
+    auto extension = destination.extension().string();
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+                   [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+    if (extension == ".xlsx" || extension == ".xlsm" || extension == ".xls")
+        throw std::invalid_argument("Refusing to overwrite a spreadsheet source file");
 }
 
 bool required_bool(const Json& object, const char* key) {
@@ -572,6 +581,7 @@ KingdomSummary calculate_kingdom_summary(int unrest, const KingdomRuleInputs& in
 void save(const Kingdom& k, const std::string& path) {
     validate(k);
     const auto dest = std::filesystem::u8path(path);
+    reject_spreadsheet_destination(dest);
     auto temp = dest;
     temp += ".tmp";
     const Json document = {
