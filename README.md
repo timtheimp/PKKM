@@ -1,5 +1,9 @@
 # PKKM — Kingmaker Kingdom Manager (initial native Windows release)
 
+[![PKKM CI](https://github.com/timtheimp/PKKM/actions/workflows/ci.yml/badge.svg)](https://github.com/timtheimp/PKKM/actions/workflows/ci.yml)
+
+Contribution and workbook-safety guidance is in [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
 ## Token-saving workflow
 
 `TOKEN_SAVER.md` records the project-specific staged inspection, testing, GUI, and packaging workflow used to reduce redundant tool calls without weakening verification.
