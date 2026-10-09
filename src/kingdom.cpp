@@ -254,6 +254,15 @@ StabilityFailureOutcome classify_stability_failure(int failure_by) {
     return StabilityFailureOutcome::FailByAtLeastFive;
 }
 
+TurnActionOutcome resolve_turn_action(TurnAction action) {
+    switch (action) {
+        case TurnAction::ClaimHex: return {-1, 1, 0};
+        case TurnAction::AbandonHex: return {0, -1, 1};
+        case TurnAction::AbandonCity: return {0, -1, 4};
+        default: return {};
+    }
+}
+
 const std::vector<CalendarTemplateEntry>& calendar_template_entries() {
     static const std::vector<CalendarTemplateEntry> entries = [] {
         const std::vector<std::string> months = {
