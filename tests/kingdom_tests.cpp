@@ -429,6 +429,10 @@ int main(int argc, char** argv) {
  auto original=contents(path);
  must_reject([&]{pkkm::save(k,"missing-parent/save.json");});
  must(contents(path)==original,"failed save preserves existing file");
+ const std::string source_guard_path="pkkm_source_guard.xlsx";
+ put(source_guard_path,"source sentinel");
+ must_reject([&]{pkkm::save(k,source_guard_path);});
+ must(contents(source_guard_path)=="source sentinel","spreadsheet source is not mutated by save");
  auto legacy_v2=original;
  const auto version_position=legacy_v2.find("\"schema_version\": 9");
  must(version_position!=std::string::npos,"saved schema version can be converted to a legacy fixture");
@@ -483,6 +487,7 @@ int main(int argc, char** argv) {
  must(stat.check_threshold_percent == 65, "kingdom check threshold follows workbook formula");
  must(pkkm::calculate_stat({}, 20).check_threshold_percent == 95, "empty kingdom stat uses control DC threshold formula");
  std::remove(path.c_str());
+ std::remove(source_guard_path.c_str());
  std::remove(map_v7_path.c_str());
  std::remove(map_v7_saved_path.c_str());
  std::cout<<"PASS: JSON round-trip and validation\\n";
