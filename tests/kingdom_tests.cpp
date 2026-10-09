@@ -80,6 +80,18 @@ int main(int argc, char** argv) {
       && abandon_hex.treasury_delta==0 && abandon_hex.kingdom_size_delta==-1 && abandon_hex.unrest_delta==1
       && abandon_city.treasury_delta==0 && abandon_city.kingdom_size_delta==-1 && abandon_city.unrest_delta==4,
       "explicit Turn hex and city actions preserve workbook deltas");
+ const auto size_10=pkkm::kingdom_size_limits(10);
+ const auto size_11=pkkm::kingdom_size_limits(11);
+ const auto size_26=pkkm::kingdom_size_limits(26);
+ const auto size_101=pkkm::kingdom_size_limits(101);
+ const auto size_201=pkkm::kingdom_size_limits(201);
+ must(size_10.new_settlements==1 && size_10.new_buildings==1 && !size_10.unlimited_new_buildings
+      && size_10.improvements_per_hex==2 && size_10.hex_claims==1
+      && size_11.new_buildings==2 && size_26.new_buildings==5
+      && size_101.new_settlements==3 && size_101.improvements_per_hex==9 && size_101.hex_claims==8
+      && size_201.new_settlements==4 && size_201.unlimited_new_buildings
+      && size_201.improvements_per_hex==12 && size_201.hex_claims==12,
+      "kingdom-size Turn reference boundaries preserve source table values");
  const auto& calendar=pkkm::calendar_template_entries();
  must(calendar.size()==85 && calendar.front().id=="calendar.row.2"
       && calendar.front().source_row==2 && calendar.front().month=="Pharast (March)"

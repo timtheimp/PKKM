@@ -263,6 +263,16 @@ TurnActionOutcome resolve_turn_action(TurnAction action) {
     }
 }
 
+KingdomSizeLimits kingdom_size_limits(int kingdom_size) {
+    if (kingdom_size < 1) throw std::invalid_argument("Kingdom size must be positive");
+    if (kingdom_size <= 10) return {1, 1, false, 2, 1};
+    if (kingdom_size <= 25) return {1, 2, false, 3, 2};
+    if (kingdom_size <= 50) return {1, 5, false, 5, 3};
+    if (kingdom_size <= 100) return {2, 10, false, 7, 4};
+    if (kingdom_size <= 200) return {3, 20, false, 9, 8};
+    return {4, 0, true, 12, 12};
+}
+
 const std::vector<CalendarTemplateEntry>& calendar_template_entries() {
     static const std::vector<CalendarTemplateEntry> entries = [] {
         const std::vector<std::string> months = {

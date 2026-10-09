@@ -122,6 +122,11 @@ StabilityFailureOutcome classify_stability_failure(int failure_by);
 enum class TurnAction { ClaimHex, AbandonHex, AbandonCity };
 struct TurnActionOutcome { int treasury_delta = 0; int kingdom_size_delta = 0; int unrest_delta = 0; };
 TurnActionOutcome resolve_turn_action(TurnAction action);
+struct KingdomSizeLimits {
+ int new_settlements = 0; int new_buildings = 0; bool unlimited_new_buildings = false;
+ int improvements_per_hex = 0; int hex_claims = 0;
+};
+KingdomSizeLimits kingdom_size_limits(int kingdom_size);
 struct CalendarTemplateEntry {
  std::string id;
  int source_row = 0;
