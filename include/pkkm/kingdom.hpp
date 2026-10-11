@@ -1,4 +1,5 @@
 #pragma once
+#include <cstddef>
 #include <string>
 #include <vector>
 namespace pkkm {
@@ -23,6 +24,40 @@ struct Settlement {
  std::vector<Building> building_inventory;
  bool apply_catalog_stat_effects = false;
  SettlementMap map;
+ std::string id;
+};
+struct GreenbeltCalibration {
+ double origin_x = 0.0; double origin_y = 0.0;
+ double hex_width = 0.0; double hex_height = 0.0; double scale = 1.0;
+};
+struct GreenbeltHex {
+ int q = 0; int r = 0;
+ std::string terrain = "unresolved";
+ bool claimed = false;
+ int claim_turn = 0;
+ std::string settlement_id;
+ std::vector<std::string> improvements;
+};
+struct GreenbeltSpecialTerrain {
+ int q = 0; int r = 0;
+ std::string type = "unresolved";
+ std::string name;
+ std::string notes;
+};
+struct GreenbeltCustomImprovement {
+ std::string id;
+ std::string name;
+ std::string effect_preview;
+ std::string cost_description;
+ bool manual_only = true;
+};
+struct GreenbeltMap {
+ std::string asset_path;
+ int image_width = 0; int image_height = 0;
+ GreenbeltCalibration calibration;
+ std::vector<GreenbeltHex> hexes;
+ std::vector<GreenbeltSpecialTerrain> special_terrain;
+ std::vector<GreenbeltCustomImprovement> custom_improvements;
 };
 struct SettlementTotals {
  int count = 0; int population = 0; int districts = 0;
@@ -122,6 +157,14 @@ StabilityFailureOutcome classify_stability_failure(int failure_by);
 enum class TurnAction { ClaimHex, AbandonHex, AbandonCity };
 struct TurnActionOutcome { int treasury_delta = 0; int kingdom_size_delta = 0; int unrest_delta = 0; };
 TurnActionOutcome resolve_turn_action(TurnAction action);
+struct TurnActionRecord {
+ int turn = 1;
+ TurnAction action = TurnAction::ClaimHex;
+ int count = 1;
+ TurnActionOutcome applied;
+ bool reversal = false;
+ std::ptrdiff_t reverses_index = -1;
+};
 struct KingdomSizeLimits {
  int new_settlements = 0; int new_buildings = 0; bool unlimited_new_buildings = false;
  int improvements_per_hex = 0; int hex_claims = 0;
@@ -133,7 +176,25 @@ struct TurnEconomyRates {
  int gold_per_buy_for_kingdom_bp = 2000;
 };
 TurnEconomyRates turn_economy_rates();
+struct Kingdom;
 int resolve_tax_bp_delta(bool economy_check_success, int result_divided_by_three, int other_bp_gained);
+struct TaxCollectionRecord {
+ int turn = 1;
+ bool economy_check_success = false;
+ int result_divided_by_three = 0;
+ int other_bp_gained = 0;
+ int treasury_delta = 0;
+};
+void apply_tax_action(Kingdom& kingdom, bool economy_check_success,
+ int result_divided_by_three, int other_bp_gained);
+struct GoldWithdrawalRecord {
+ int turn = 1;
+ int bp_withdrawn = 0;
+ int gold_received = 0;
+ int treasury_delta = 0;
+ int unrest_delta = 0;
+};
+void apply_gold_withdrawal(Kingdom& kingdom, int bp_withdrawn);
 struct MagicItemWorkflow {
  bool buy_item_moves_to_pc = true;
  bool success_recycles_item = true;
@@ -165,7 +226,7 @@ struct CalendarNote {
 };
 const std::vector<CalendarTemplateEntry>& calendar_template_entries();
 struct Kingdom {
- int schema_version = 9;
+ int schema_version = 10;
  std::string name = "New Kingdom";
  int turn = 1;
  int treasury_bp = 0;
@@ -174,8 +235,16 @@ struct Kingdom {
  std::vector<Settlement> settlements;
  std::vector<Building> buildings;
  std::vector<TurnProgress> turn_progress;
+ std::vector<TurnActionRecord> turn_actions;
+ std::vector<TaxCollectionRecord> tax_actions;
+ std::vector<GoldWithdrawalRecord> gold_withdrawals;
  std::vector<CalendarNote> calendar_notes;
+ GreenbeltMap greenbelt_map;
 };
+void advance_turn(Kingdom& kingdom);
+void apply_turn_action(Kingdom& kingdom, TurnAction action, int count = 1);
+void reverse_last_turn_action(Kingdom& kingdom);
+void reverse_turn_action(Kingdom& kingdom, std::size_t index);
 void validate(const Kingdom& kingdom);
 void save(const Kingdom& kingdom, const std::string& path);
 Kingdom load(const std::string& path);

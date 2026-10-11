@@ -3,10 +3,13 @@
 #define NOMINMAX
 #include <windows.h>
 #include <commdlg.h>
+#include <gdiplus.h>
 #include "pkkm/kingdom.hpp"
 #include "pkkm/buildings.hpp"
+#include "pkkm/greenbelt.hpp"
 #include "pkkm/map_editor.hpp"
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <functional>
 #include <limits>
@@ -23,7 +26,10 @@ constexpr int kEditInputs = 4;
 constexpr int kManageSettlements = 5;
 constexpr int kTurnChecklist = 6;
 constexpr int kCalendarTracker = 7;
+constexpr int kGreenbeltMap = 8;
+constexpr int kTurnActions = 9;
 constexpr int kDisplay = 10;
+constexpr int kAdvanceTurn = 11;
 constexpr int kEditorApply = 3001;
 constexpr int kEditorCancel = 3002;
 constexpr int kEditorClose = 3003;
@@ -54,6 +60,27 @@ constexpr int kChecklistApply = 6201;
 constexpr int kChecklistCancel = 6202;
 constexpr int kChecklistClose = 6203;
 constexpr int kChecklistControlBase = 6300;
+constexpr int kActionChoice = 6400;
+constexpr int kActionCount = 6401;
+constexpr int kActionApply = 6402;
+constexpr int kActionCancel = 6403;
+constexpr int kActionClose = 6404;
+constexpr int kActionHistory = 6405;
+constexpr int kActionReverse = 6406;
+constexpr int kActionFilter = 6407;
+constexpr int kActionDetails = 6408;
+constexpr int kActionFilterOriginal = 6409;
+constexpr int kActionFilterReversal = 6410;
+constexpr int kTaxSuccess = 6411;
+constexpr int kTaxResult = 6412;
+constexpr int kTaxOther = 6413;
+constexpr int kTaxApply = 6414;
+constexpr int kTaxStatus = 6415;
+constexpr int kTaxHistory = 6416;
+constexpr int kWithdrawalBp = 6417;
+constexpr int kWithdrawalApply = 6418;
+constexpr int kWithdrawalStatus = 6419;
+constexpr int kWithdrawalHistory = 6420;
 constexpr int kCalendarEntryList = 7100;
 constexpr int kCalendarEntryTitle = 7101;
 constexpr int kCalendarHoliday = 7102;
@@ -63,6 +90,42 @@ constexpr int kCalendarOther = 7105;
 constexpr int kCalendarApply = 7201;
 constexpr int kCalendarCancel = 7202;
 constexpr int kCalendarClose = 7203;
+constexpr int kGreenbeltHexList = 8100;
+constexpr int kGreenbeltQ = 8101;
+constexpr int kGreenbeltR = 8102;
+constexpr int kGreenbeltTerrain = 8103;
+constexpr int kGreenbeltClaimed = 8104;
+constexpr int kGreenbeltClaimTurn = 8105;
+constexpr int kGreenbeltSettlement = 8106;
+constexpr int kGreenbeltImprovement = 8107;
+constexpr int kGreenbeltAddImprovement = 8108;
+constexpr int kGreenbeltPreview = 8109;
+constexpr int kGreenbeltOriginX = 8110;
+constexpr int kGreenbeltOriginY = 8111;
+constexpr int kGreenbeltHexWidth = 8112;
+constexpr int kGreenbeltHexHeight = 8113;
+constexpr int kGreenbeltScale = 8114;
+constexpr int kGreenbeltSpecialList = 8115;
+constexpr int kGreenbeltSpecialQ = 8116;
+constexpr int kGreenbeltSpecialR = 8117;
+constexpr int kGreenbeltSpecialType = 8118;
+constexpr int kGreenbeltSpecialName = 8119;
+constexpr int kGreenbeltSpecialNotes = 8120;
+constexpr int kGreenbeltSpecialSave = 8121;
+constexpr int kGreenbeltSpecialRemove = 8122;
+constexpr int kGreenbeltCustomList = 8123;
+constexpr int kGreenbeltCustomId = 8124;
+constexpr int kGreenbeltCustomName = 8125;
+constexpr int kGreenbeltCustomEffect = 8126;
+constexpr int kGreenbeltCustomCost = 8127;
+constexpr int kGreenbeltCustomManual = 8128;
+constexpr int kGreenbeltCustomSave = 8129;
+constexpr int kGreenbeltCustomRemove = 8130;
+constexpr int kGreenbeltApply = 8201;
+constexpr int kGreenbeltCancel = 8202;
+constexpr int kGreenbeltClose = 8203;
+constexpr int kGreenbeltContentHeight = 1015;
+constexpr int kTurnActionsContentHeight = 900;
 
 pkkm::Kingdom kingdom;
 pkkm::Kingdom edit_draft;
@@ -70,7 +133,10 @@ std::wstring current_path;
 HWND editor_window = nullptr;
 HWND settlement_window = nullptr;
 HWND checklist_window = nullptr;
+HWND action_window = nullptr;
 HWND calendar_window = nullptr;
+HWND greenbelt_window = nullptr;
+HWND greenbelt_canvas = nullptr;
 HINSTANCE app_instance = nullptr;
 bool dirty = false;
 std::vector<pkkm::Settlement> settlement_draft;
@@ -81,6 +147,21 @@ std::vector<std::string> checklist_step_ids;
 std::vector<pkkm::CalendarNote> calendar_note_draft;
 int calendar_active_index = -1;
 int settlement_active_index = -1;
+int greenbelt_active_index = -1;
+int greenbelt_special_active_index = -1;
+int greenbelt_custom_active_index = -1;
+pkkm::GreenbeltMap greenbelt_draft;
+std::vector<pkkm::GreenbeltImprovementDefinition> greenbelt_catalog;
+ULONG_PTR gdiplus_token = 0;
+int greenbelt_scroll_y = 0;
+int turn_actions_scroll_y = 0;
+int turn_action_filter = 0;
+
+void set_minimum_track_size(LPARAM lparam, int width, int height) {
+    auto* info = reinterpret_cast<MINMAXINFO*>(lparam);
+    info->ptMinTrackSize.x = width;
+    info->ptMinTrackSize.y = height;
+}
 
 enum class FieldKind { Text, Integer, Boolean, Choice };
 struct EditorField {
@@ -132,6 +213,14 @@ int parse_integer(const std::wstring& text) {
         throw std::invalid_argument("Enter a whole number within the supported range.");
     }
     return static_cast<int>(parsed);
+}
+
+double parse_decimal(const std::wstring& text) {
+    size_t consumed = 0;
+    const double parsed = std::stod(text, &consumed);
+    if (consumed != text.size() || !std::isfinite(parsed))
+        throw std::invalid_argument("Enter a finite decimal number.");
+    return parsed;
 }
 
 void add_text_field(const wchar_t* label, int column, std::string& value) {
@@ -464,6 +553,17 @@ std::string bundled_catalog_path() {
     return path.u8string();
 }
 
+std::string bundled_greenbelt_path() {
+    wchar_t module_path[32768]{};
+    const DWORD length = GetModuleFileNameW(nullptr, module_path,
+        static_cast<DWORD>(sizeof(module_path) / sizeof(module_path[0])));
+    if (length == 0 || length >= sizeof(module_path) / sizeof(module_path[0]))
+        throw std::runtime_error("Could not locate the application directory");
+    const auto path = std::filesystem::path(std::wstring(module_path, length)).parent_path()
+        / L"Kingmaker-Greenbelt-Map.jpg";
+    return path.u8string();
+}
+
 void manager_label(HWND window, const wchar_t* text, int x, int y, int width = 130) {
     CreateWindowExW(0, L"STATIC", text, WS_CHILD | WS_VISIBLE | SS_LEFT,
         x, y + 4, width, 22, window, nullptr, app_instance, nullptr);
@@ -719,6 +819,10 @@ void cancel_settlement_manager(HWND window) {
 }
 
 LRESULT CALLBACK settlement_manager_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
+    if (message == WM_GETMINMAXINFO) {
+        set_minimum_track_size(lparam, 760, 520);
+        return 0;
+    }
     switch (message) {
         case WM_CREATE: {
             create_settlement_controls(window);
@@ -807,6 +911,15 @@ void command(HWND window, int id) {
             current_path.clear();
             dirty = false;
             refresh(GetDlgItem(window, kDisplay));
+        } else if (id == kAdvanceTurn) {
+            const auto prompt = L"Advance from Turn " + std::to_wstring(kingdom.turn)
+                + L" to Turn " + std::to_wstring(kingdom.turn + 1)
+                + L"? Previous checklist history will be preserved. No event outcomes or automatic rules will be resolved.";
+            if (MessageBoxW(window, prompt.c_str(), L"Advance Turn", MB_YESNO | MB_ICONQUESTION) == IDYES) {
+                pkkm::advance_turn(kingdom);
+                dirty = true;
+                refresh(GetDlgItem(window, kDisplay));
+            }
         } else if (id == kEditInputs) {
             if (editor_window && IsWindow(editor_window)) {
                 SetForegroundWindow(editor_window);
@@ -814,7 +927,7 @@ void command(HWND window, int id) {
             }
             prepare_editor_fields();
             editor_window = CreateWindowExW(WS_EX_DLGMODALFRAME, L"PKKMEditor", L"Edit Kingdom Inputs",
-                WS_CAPTION | WS_SYSMENU | WS_POPUP, CW_USEDEFAULT, CW_USEDEFAULT, 1025, 700,
+                WS_CAPTION | WS_SYSMENU | WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT, 1025, 700,
                 window, nullptr, app_instance, nullptr);
             if (editor_window) {
                 EnableWindow(window, FALSE);
@@ -829,7 +942,7 @@ void command(HWND window, int id) {
             settlement_draft = kingdom.settlements;
             settlement_catalog = pkkm::search_building_catalog(building_catalog, "");
             settlement_window = CreateWindowExW(WS_EX_DLGMODALFRAME, L"PKKMSettlements", L"Manage Settlements",
-                WS_CAPTION | WS_SYSMENU | WS_POPUP, CW_USEDEFAULT, CW_USEDEFAULT, 1075, 660,
+                WS_CAPTION | WS_SYSMENU | WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT, 1075, 660,
                 window, nullptr, app_instance, nullptr);
             if (!settlement_window) throw std::runtime_error("Could not open the settlement manager");
             EnableWindow(window, FALSE);
@@ -843,12 +956,24 @@ void command(HWND window, int id) {
             checklist_controls.clear();
             checklist_step_ids.clear();
             checklist_window = CreateWindowExW(WS_EX_DLGMODALFRAME, L"PKKMTurnChecklist",
-                L"Turn Checklist", WS_CAPTION | WS_SYSMENU | WS_POPUP,
+                L"Turn Checklist", WS_CAPTION | WS_SYSMENU | WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX,
                 CW_USEDEFAULT, CW_USEDEFAULT, 1010, 620, window, nullptr, app_instance, nullptr);
             if (!checklist_window) throw std::runtime_error("Could not open the turn checklist");
             EnableWindow(window, FALSE);
             ShowWindow(checklist_window, SW_SHOW);
             UpdateWindow(checklist_window);
+        } else if (id == kTurnActions) {
+            if (action_window && IsWindow(action_window)) {
+                SetForegroundWindow(action_window);
+                return;
+            }
+            action_window = CreateWindowExW(WS_EX_DLGMODALFRAME, L"PKKMTurnActions",
+                L"Turn Actions", WS_CAPTION | WS_SYSMENU | WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_VSCROLL,
+                                CW_USEDEFAULT, CW_USEDEFAULT, 620, 720, window, nullptr, app_instance, nullptr);
+            if (!action_window) throw std::runtime_error("Could not open the Turn Actions manager");
+            EnableWindow(window, FALSE);
+            ShowWindow(action_window, SW_SHOW);
+            UpdateWindow(action_window);
         } else if (id == kCalendarTracker) {
             if (calendar_window && IsWindow(calendar_window)) {
                 SetForegroundWindow(calendar_window);
@@ -857,12 +982,35 @@ void command(HWND window, int id) {
             calendar_note_draft = kingdom.calendar_notes;
             calendar_active_index = -1;
             calendar_window = CreateWindowExW(WS_EX_DLGMODALFRAME, L"PKKMCalendarTracker",
-                L"Calendar Notes", WS_CAPTION | WS_SYSMENU | WS_POPUP,
+                L"Calendar Notes", WS_CAPTION | WS_SYSMENU | WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX,
                 CW_USEDEFAULT, CW_USEDEFAULT, 1050, 760, window, nullptr, app_instance, nullptr);
             if (!calendar_window) throw std::runtime_error("Could not open the calendar notes tracker");
             EnableWindow(window, FALSE);
             ShowWindow(calendar_window, SW_SHOW);
             UpdateWindow(calendar_window);
+        } else if (id == kGreenbeltMap) {
+            if (greenbelt_window && IsWindow(greenbelt_window)) {
+                SetForegroundWindow(greenbelt_window);
+                return;
+            }
+            greenbelt_draft = kingdom.greenbelt_map;
+            if (greenbelt_draft.asset_path.empty()) {
+                greenbelt_draft.asset_path = "Kingmaker-Greenbelt-Map.jpg";
+                greenbelt_draft.image_width = 7865;
+                greenbelt_draft.image_height = 2610;
+            }
+            greenbelt_catalog = pkkm::greenbelt_improvement_catalog();
+            greenbelt_active_index = greenbelt_draft.hexes.empty() ? -1 : 0;
+            greenbelt_special_active_index = greenbelt_draft.special_terrain.empty() ? -1 : 0;
+            greenbelt_custom_active_index = greenbelt_draft.custom_improvements.empty() ? -1 : 0;
+            greenbelt_scroll_y = 0;
+            greenbelt_window = CreateWindowExW(WS_EX_DLGMODALFRAME, L"PKKMGreenbeltMap",
+                L"Greenbelt Map", WS_CAPTION | WS_SYSMENU | WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_VSCROLL,
+                CW_USEDEFAULT, CW_USEDEFAULT, 1250, 980, window, nullptr, app_instance, nullptr);
+            if (!greenbelt_window) throw std::runtime_error("Could not open the Greenbelt Map manager");
+            EnableWindow(window, FALSE);
+            ShowWindow(greenbelt_window, SW_SHOW);
+            UpdateWindow(greenbelt_window);
         }
     } catch (const std::exception& error) {
         MessageBoxW(window, widen(error.what()).c_str(), L"PKKM error", MB_OK | MB_ICONERROR);
@@ -954,6 +1102,886 @@ void apply_turn_checklist(HWND window) {
         dirty = true;
         refresh(GetDlgItem(GetParent(window), kDisplay));
     }
+}
+
+void create_turn_action_controls(HWND window) {
+    CreateWindowExW(0, L"STATIC", L"Current turn actions are explicit only. No event or date automation is performed.",
+        WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 18, 560, 24, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Action", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 62, 120, 22, window, nullptr, app_instance, nullptr);
+    HWND choice = CreateWindowExW(0, L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST,
+        150, 58, 270, 130, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kActionChoice)), app_instance, nullptr);
+    for (const wchar_t* label : {L"Claim Hex (-1 BP, +1 kingdom size)",
+                                 L"Abandon Hex (-1 kingdom size, +1 unrest)",
+                                 L"Abandon City (-1 kingdom size, +4 unrest)"})
+        SendMessageW(choice, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label));
+    SendMessageW(choice, CB_SETCURSEL, 0, 0);
+    CreateWindowExW(0, L"STATIC", L"Count", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 104, 120, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"1", WS_CHILD | WS_VISIBLE | ES_NUMBER,
+        150, 100, 100, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kActionCount)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Apply Action", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+        120, 150, 125, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kActionApply)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Reverse Selected", WS_CHILD | WS_VISIBLE,
+        255, 150, 125, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kActionReverse)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Cancel", WS_CHILD | WS_VISIBLE,
+        390, 150, 90, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kActionCancel)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Close", WS_CHILD | WS_VISIBLE,
+        490, 150, 60, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kActionClose)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Recorded actions", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 205, 200, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Filter", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        280, 190, 70, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"All records", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON | WS_GROUP,
+        345, 185, 115, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kActionFilter)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Original actions", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
+        345, 211, 140, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kActionFilterOriginal)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Reversal records", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
+        345, 237, 140, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kActionFilterReversal)), app_instance, nullptr);
+    SendMessageW(GetDlgItem(window, kActionFilter), BM_SETCHECK, BST_CHECKED, 0);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"",
+        WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOINTEGRALHEIGHT,
+        20, 270, 560, 110, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kActionHistory)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Selected action details", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 390, 250, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Select a recorded action to inspect its audit details.",
+        WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 415, 560, 35, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kActionDetails)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Taxation (explicit branch; no automatic rounding)",
+        WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 465, 360, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Economy check succeeded", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        20, 492, 210, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kTaxSuccess)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Result / 3", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        215, 492, 75, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"0", WS_CHILD | WS_VISIBLE | ES_NUMBER,
+        290, 490, 65, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kTaxResult)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Other BP", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        365, 492, 65, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"0", WS_CHILD | WS_VISIBLE | ES_NUMBER,
+        430, 490, 60, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kTaxOther)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Apply Taxes", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+        430, 488, 95, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kTaxApply)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"No tax action applied this session.", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 525, 575, 22, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kTaxStatus)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Tax collection history", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 555, 250, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", nullptr,
+        WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOINTEGRALHEIGHT,
+        20, 580, 575, 75, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kTaxHistory)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Gold withdrawal (2,000 gp per BP; +1 unrest per BP)",
+        WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 665, 450, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"BP to withdraw", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 695, 110, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"1", WS_CHILD | WS_VISIBLE | ES_NUMBER,
+        135, 693, 80, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kWithdrawalBp)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Apply Withdrawal", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+        230, 690, 145, 30, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kWithdrawalApply)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"No gold withdrawal applied this session.", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 730, 575, 22, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kWithdrawalStatus)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Gold withdrawal history", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 760, 250, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", nullptr,
+        WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOINTEGRALHEIGHT,
+        20, 785, 575, 75, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kWithdrawalHistory)), app_instance, nullptr);
+}
+
+const wchar_t* turn_action_label(pkkm::TurnAction action) {
+    switch (action) {
+        case pkkm::TurnAction::ClaimHex: return L"Claim Hex";
+        case pkkm::TurnAction::AbandonHex: return L"Abandon Hex";
+        case pkkm::TurnAction::AbandonCity: return L"Abandon City";
+    }
+    return L"Unknown action";
+}
+
+void refresh_turn_action_history(HWND window) {
+    HWND list = GetDlgItem(window, kActionHistory);
+    SendMessageW(list, LB_RESETCONTENT, 0, 0);
+    const int filter = turn_action_filter;
+    for (std::size_t index = 0; index < kingdom.turn_actions.size(); ++index) {
+        const auto& record = kingdom.turn_actions[index];
+        if ((filter == 1 && record.reversal) || (filter == 2 && !record.reversal)) continue;
+        const auto& delta = record.applied;
+        const std::wstring prefix = record.reversal
+            ? L"REVERSAL of #" + std::to_wstring(record.reverses_index + 1) + L" - " : L"";
+        const auto line = prefix + L"Turn " + std::to_wstring(record.turn) + L": "
+            + turn_action_label(record.action) + L" x" + std::to_wstring(record.count)
+            + L" | BP " + std::to_wstring(delta.treasury_delta)
+            + L" | Size " + std::to_wstring(delta.kingdom_size_delta)
+            + L" | Unrest " + std::to_wstring(delta.unrest_delta);
+        const auto item = SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(line.c_str()));
+        SendMessageW(list, LB_SETITEMDATA, item, static_cast<LPARAM>(index));
+    }
+    SendMessageW(list, LB_SETCURSEL, static_cast<WPARAM>(-1), 0);
+    SetWindowTextW(GetDlgItem(window, kActionDetails), L"Select a recorded action to inspect its audit details.");
+}
+
+void refresh_turn_action_details(HWND window) {
+    HWND list = GetDlgItem(window, kActionHistory);
+    const int selected = static_cast<int>(SendMessageW(list, LB_GETCURSEL, 0, 0));
+    if (selected < 0) {
+        SetWindowTextW(GetDlgItem(window, kActionDetails), L"Select a recorded action to inspect its audit details.");
+        return;
+    }
+    const auto index = static_cast<std::size_t>(SendMessageW(list, LB_GETITEMDATA, selected, 0));
+    if (index >= kingdom.turn_actions.size()) return;
+    const auto& record = kingdom.turn_actions[index];
+    const auto& delta = record.applied;
+    std::wstring details = L"Record #" + std::to_wstring(index + 1)
+        + L" | Turn " + std::to_wstring(record.turn)
+        + L" | Action: " + turn_action_label(record.action)
+        + L" | Count: " + std::to_wstring(record.count)
+        + L" | BP " + std::to_wstring(delta.treasury_delta)
+        + L" | Size " + std::to_wstring(delta.kingdom_size_delta)
+        + L" | Unrest " + std::to_wstring(delta.unrest_delta);
+    if (record.reversal)
+        details += L" | Status: reversal of record #" + std::to_wstring(record.reverses_index + 1);
+    else
+        details += L" | Status: original action";
+    SetWindowTextW(GetDlgItem(window, kActionDetails), details.c_str());
+}
+
+void refresh_tax_history(HWND window) {
+    HWND list = GetDlgItem(window, kTaxHistory);
+    SendMessageW(list, LB_RESETCONTENT, 0, 0);
+    for (const auto& record : kingdom.tax_actions) {
+        const std::wstring line = L"Turn " + std::to_wstring(record.turn)
+            + L" | " + (record.economy_check_success ? L"Economy success" : L"Economy failure")
+            + L" | Result/3 " + std::to_wstring(record.result_divided_by_three)
+            + L" | Other BP " + std::to_wstring(record.other_bp_gained)
+            + L" | Treasury " + std::to_wstring(record.treasury_delta);
+        SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(line.c_str()));
+    }
+}
+
+void refresh_gold_withdrawal_history(HWND window) {
+    HWND list = GetDlgItem(window, kWithdrawalHistory);
+    SendMessageW(list, LB_RESETCONTENT, 0, 0);
+    for (const auto& record : kingdom.gold_withdrawals) {
+        const std::wstring line = L"Turn " + std::to_wstring(record.turn)
+            + L" | BP " + std::to_wstring(record.bp_withdrawn)
+            + L" | Gold received " + std::to_wstring(record.gold_received)
+            + L" | Treasury " + std::to_wstring(record.treasury_delta)
+            + L" | Unrest " + std::to_wstring(record.unrest_delta);
+        SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(line.c_str()));
+    }
+}
+
+void reverse_turn_action_dialog(HWND window) {
+    HWND list = GetDlgItem(window, kActionHistory);
+    const int selected = static_cast<int>(SendMessageW(
+        GetDlgItem(window, kActionHistory), LB_GETCURSEL, 0, 0));
+    if (selected < 0)
+        throw std::invalid_argument("Select a recorded Turn Action to reverse.");
+    if (MessageBoxW(window,
+            L"Reverse the selected Turn Action? The original record will remain and an inverse audit record will be appended.",
+            L"Confirm Turn Action Reversal", MB_YESNO | MB_ICONWARNING) != IDYES)
+        return;
+    const auto index = static_cast<std::size_t>(SendMessageW(list, LB_GETITEMDATA, selected, 0));
+    pkkm::reverse_turn_action(kingdom, index);
+    dirty = true;
+    refresh(GetDlgItem(GetParent(window), kDisplay));
+    refresh_turn_action_history(window);
+    SetWindowTextW(window, L"Turn Actions - Reversed");
+}
+
+void apply_turn_action_dialog(HWND window) {
+    const int selected = static_cast<int>(SendMessageW(GetDlgItem(window, kActionChoice), CB_GETCURSEL, 0, 0));
+    if (selected < 0 || selected > 2) throw std::invalid_argument("Select a Turn action.");
+    const int count = parse_integer(manager_text(window, kActionCount));
+    pkkm::apply_turn_action(kingdom, static_cast<pkkm::TurnAction>(selected), count);
+    dirty = true;
+    refresh(GetDlgItem(GetParent(window), kDisplay));
+    refresh_turn_action_history(window);
+    SetWindowTextW(window, L"Turn Actions - Applied");
+}
+
+void apply_tax_action_dialog(HWND window) {
+    const bool success = SendMessageW(GetDlgItem(window, kTaxSuccess), BM_GETCHECK, 0, 0) == BST_CHECKED;
+    const int result_divided_by_three = parse_integer(manager_text(window, kTaxResult));
+    const int other_bp_gained = parse_integer(manager_text(window, kTaxOther));
+    pkkm::apply_tax_action(kingdom, success, result_divided_by_three, other_bp_gained);
+    dirty = true;
+    refresh(GetDlgItem(GetParent(window), kDisplay));
+    const int delta = pkkm::resolve_tax_bp_delta(success, result_divided_by_three, other_bp_gained);
+    const std::wstring status = L"Tax action applied on Turn " + std::to_wstring(kingdom.turn)
+        + L" | BP delta " + std::to_wstring(delta)
+        + (success ? L" | Economy branch: success" : L" | Economy branch: failure");
+    SetWindowTextW(GetDlgItem(window, kTaxStatus), status.c_str());
+    refresh_tax_history(window);
+    SetWindowTextW(window, L"Turn Actions - Tax Applied");
+}
+
+void apply_gold_withdrawal_dialog(HWND window) {
+    const int bp_withdrawn = parse_integer(manager_text(window, kWithdrawalBp));
+    pkkm::apply_gold_withdrawal(kingdom, bp_withdrawn);
+    dirty = true;
+    refresh(GetDlgItem(GetParent(window), kDisplay));
+    const auto& record = kingdom.gold_withdrawals.back();
+    const std::wstring status = L"Withdrawal applied on Turn " + std::to_wstring(record.turn)
+        + L" | Gold received " + std::to_wstring(record.gold_received)
+        + L" | Treasury " + std::to_wstring(record.treasury_delta)
+        + L" | Unrest " + std::to_wstring(record.unrest_delta);
+    SetWindowTextW(GetDlgItem(window, kWithdrawalStatus), status.c_str());
+    refresh_gold_withdrawal_history(window);
+    SetWindowTextW(window, L"Turn Actions - Withdrawal Applied");
+}
+
+void update_turn_actions_scrollbar(HWND window) {
+    RECT client{};
+    GetClientRect(window, &client);
+    SCROLLINFO info{sizeof(info), SIF_RANGE | SIF_PAGE | SIF_POS};
+    info.nMin = 0;
+    info.nMax = kTurnActionsContentHeight - 1;
+    info.nPage = static_cast<UINT>(std::max(0L, client.bottom - client.top));
+    const int max_position = std::max(0, info.nMax - static_cast<int>(info.nPage) + 1);
+    turn_actions_scroll_y = std::clamp(turn_actions_scroll_y, 0, max_position);
+    info.nPos = turn_actions_scroll_y;
+    SetScrollInfo(window, SB_VERT, &info, TRUE);
+}
+
+void scroll_turn_actions_to(HWND window, int requested_position) {
+    SCROLLINFO info{sizeof(info), SIF_RANGE | SIF_PAGE | SIF_POS};
+    GetScrollInfo(window, SB_VERT, &info);
+    const int max_position = std::max(0, info.nMax - static_cast<int>(info.nPage) + 1);
+    const int position = std::clamp(requested_position, 0, max_position);
+    const int delta = position - turn_actions_scroll_y;
+    if (delta == 0) return;
+    turn_actions_scroll_y = position;
+    SetScrollPos(window, SB_VERT, turn_actions_scroll_y, TRUE);
+    ScrollWindowEx(window, 0, -delta, nullptr, nullptr, nullptr, nullptr,
+        SW_SCROLLCHILDREN | SW_INVALIDATE | SW_ERASE);
+    InvalidateRect(window, nullptr, FALSE);
+}
+
+LRESULT CALLBACK turn_actions_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
+    if (message == WM_GETMINMAXINFO) {
+        set_minimum_track_size(lparam, 560, 460);
+        return 0;
+    }
+    switch (message) {
+        case WM_CREATE:
+            turn_action_filter = 0;
+            turn_actions_scroll_y = 0;
+            create_turn_action_controls(window);
+            refresh_turn_action_history(window);
+            refresh_tax_history(window);
+            refresh_gold_withdrawal_history(window);
+            update_turn_actions_scrollbar(window);
+            SetWindowTextW(window, (L"Turn Actions - Turn " + std::to_wstring(kingdom.turn)).c_str());
+            return 0;
+        case WM_SIZE:
+            update_turn_actions_scrollbar(window);
+            return 0;
+        case WM_VSCROLL: {
+            SCROLLINFO info{sizeof(info), SIF_RANGE | SIF_PAGE | SIF_POS | SIF_TRACKPOS};
+            GetScrollInfo(window, SB_VERT, &info);
+            int position = info.nPos;
+            switch (LOWORD(wparam)) {
+                case SB_TOP: position = info.nMin; break;
+                case SB_BOTTOM: position = info.nMax; break;
+                case SB_LINEUP: position -= 40; break;
+                case SB_LINEDOWN: position += 40; break;
+                case SB_PAGEUP: position -= static_cast<int>(info.nPage); break;
+                case SB_PAGEDOWN: position += static_cast<int>(info.nPage); break;
+                case SB_THUMBTRACK: position = info.nTrackPos; break;
+                default: break;
+            }
+            scroll_turn_actions_to(window, position);
+            return 0;
+        }
+        case WM_MOUSEWHEEL:
+            scroll_turn_actions_to(window, turn_actions_scroll_y
+                - static_cast<int>(GET_WHEEL_DELTA_WPARAM(wparam) / WHEEL_DELTA) * 40);
+            return 0;
+        case WM_COMMAND:
+            try {
+                if (LOWORD(wparam) == kActionApply) apply_turn_action_dialog(window);
+                else if (LOWORD(wparam) == kActionReverse) reverse_turn_action_dialog(window);
+                else if (LOWORD(wparam) == kTaxApply) apply_tax_action_dialog(window);
+                else if (LOWORD(wparam) == kWithdrawalApply) apply_gold_withdrawal_dialog(window);
+                else if (LOWORD(wparam) == kActionFilter ||
+                         LOWORD(wparam) == kActionFilterOriginal ||
+                         LOWORD(wparam) == kActionFilterReversal) {
+                    turn_action_filter = LOWORD(wparam) == kActionFilter ? 0
+                        : LOWORD(wparam) == kActionFilterOriginal ? 1 : 2;
+                    refresh_turn_action_history(window);
+                } else if (LOWORD(wparam) == kActionHistory && HIWORD(wparam) == LBN_SELCHANGE) {
+                    refresh_turn_action_details(window);
+                }
+                else if (LOWORD(wparam) == kActionCancel) {
+                    SendMessageW(GetDlgItem(window, kActionChoice), CB_SETCURSEL, 0, 0);
+                    SetWindowTextW(GetDlgItem(window, kActionCount), L"1");
+                } else if (LOWORD(wparam) == kActionClose) DestroyWindow(window);
+            } catch (const std::exception& error) {
+                MessageBoxW(window, widen(error.what()).c_str(), L"Turn Action", MB_OK | MB_ICONWARNING);
+            }
+            return 0;
+        case WM_CLOSE:
+            DestroyWindow(window);
+            return 0;
+        case WM_DESTROY: {
+            action_window = nullptr;
+            const HWND owner = GetWindow(window, GW_OWNER);
+            if (owner && IsWindow(owner)) {
+                EnableWindow(owner, TRUE);
+                SetForegroundWindow(owner);
+            }
+            return 0;
+        }
+    }
+    return DefWindowProcW(window, message, wparam, lparam);
+}
+
+void refresh_greenbelt_preview(HWND window) {
+    if (greenbelt_active_index < 0
+        || greenbelt_active_index >= static_cast<int>(greenbelt_draft.hexes.size())) {
+        set_manager_text(window, kGreenbeltPreview, L"Select a hex for an improvement preview.");
+        return;
+    }
+    const auto& hex = greenbelt_draft.hexes[static_cast<size_t>(greenbelt_active_index)];
+    const int selected = static_cast<int>(SendMessageW(
+        GetDlgItem(window, kGreenbeltImprovement), CB_GETCURSEL, 0, 0));
+    if (selected <= 0 || selected > static_cast<int>(greenbelt_catalog.size())) {
+        set_manager_text(window, kGreenbeltPreview, L"Select an improvement. Preview only; BP and kingdom totals remain unchanged.");
+        return;
+    }
+    const auto& item = greenbelt_catalog[static_cast<size_t>(selected - 1)];
+    const auto preview = pkkm::preview_greenbelt_improvement(
+        greenbelt_catalog, item.id, hex.terrain, hex.claimed, false);
+    std::wstring text = widen(preview.summary);
+    for (const auto& warning : preview.warnings) text += L"\r\nWarning: " + widen(warning);
+    set_manager_text(window, kGreenbeltPreview, text);
+}
+
+void load_greenbelt_form(HWND window) {
+    const bool has_selection = greenbelt_active_index >= 0
+        && greenbelt_active_index < static_cast<int>(greenbelt_draft.hexes.size());
+    for (const int id : {kGreenbeltQ, kGreenbeltR, kGreenbeltTerrain, kGreenbeltClaimed,
+            kGreenbeltClaimTurn, kGreenbeltSettlement, kGreenbeltImprovement,
+            kGreenbeltAddImprovement})
+        EnableWindow(GetDlgItem(window, id), has_selection);
+    if (!has_selection) {
+        for (const int id : {kGreenbeltQ, kGreenbeltR, kGreenbeltTerrain, kGreenbeltClaimTurn})
+            set_manager_text(window, id, L"");
+        SendMessageW(GetDlgItem(window, kGreenbeltClaimed), BM_SETCHECK, BST_UNCHECKED, 0);
+        SendMessageW(GetDlgItem(window, kGreenbeltSettlement), CB_SETCURSEL, 0, 0);
+        refresh_greenbelt_preview(window);
+        return;
+    }
+    const auto& hex = greenbelt_draft.hexes[static_cast<size_t>(greenbelt_active_index)];
+    set_manager_text(window, kGreenbeltQ, std::to_wstring(hex.q));
+    set_manager_text(window, kGreenbeltR, std::to_wstring(hex.r));
+    set_manager_text(window, kGreenbeltTerrain, widen(hex.terrain));
+    set_manager_text(window, kGreenbeltClaimTurn, std::to_wstring(hex.claim_turn));
+    SendMessageW(GetDlgItem(window, kGreenbeltClaimed), BM_SETCHECK,
+        hex.claimed ? BST_CHECKED : BST_UNCHECKED, 0);
+    int settlement_selection = 0;
+    for (size_t index = 0; index < kingdom.settlements.size(); ++index) {
+        if (kingdom.settlements[index].id == hex.settlement_id)
+            settlement_selection = static_cast<int>(index) + 1;
+    }
+    SendMessageW(GetDlgItem(window, kGreenbeltSettlement), CB_SETCURSEL, settlement_selection, 0);
+    refresh_greenbelt_preview(window);
+}
+
+void refresh_greenbelt_hex_list(HWND window) {
+    const HWND list = GetDlgItem(window, kGreenbeltHexList);
+    SendMessageW(list, LB_RESETCONTENT, 0, 0);
+    for (const auto& hex : greenbelt_draft.hexes) {
+        std::wstring label = L"(" + std::to_wstring(hex.q) + L", " + std::to_wstring(hex.r) + L") "
+            + widen(hex.terrain) + (hex.claimed ? L" | claimed" : L" | unclaimed")
+            + L" | I" + std::to_wstring(hex.improvements.size());
+        SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label.c_str()));
+    }
+    if (greenbelt_active_index >= 0
+        && greenbelt_active_index < static_cast<int>(greenbelt_draft.hexes.size()))
+        SendMessageW(list, LB_SETCURSEL, greenbelt_active_index, 0);
+    load_greenbelt_form(window);
+}
+
+void save_greenbelt_form(HWND window) {
+    if (greenbelt_active_index < 0
+        || greenbelt_active_index >= static_cast<int>(greenbelt_draft.hexes.size())) return;
+    auto& hex = greenbelt_draft.hexes[static_cast<size_t>(greenbelt_active_index)];
+    hex.q = parse_integer(manager_text(window, kGreenbeltQ));
+    hex.r = parse_integer(manager_text(window, kGreenbeltR));
+    hex.terrain = narrow(manager_text(window, kGreenbeltTerrain));
+    hex.claimed = SendMessageW(GetDlgItem(window, kGreenbeltClaimed), BM_GETCHECK, 0, 0) == BST_CHECKED;
+    hex.claim_turn = parse_integer(manager_text(window, kGreenbeltClaimTurn));
+    const int settlement = static_cast<int>(SendMessageW(
+        GetDlgItem(window, kGreenbeltSettlement), CB_GETCURSEL, 0, 0));
+    hex.settlement_id = settlement <= 0 ? std::string{}
+        : kingdom.settlements[static_cast<size_t>(settlement - 1)].id;
+    if (hex.terrain.empty()) throw std::invalid_argument("Greenbelt terrain must not be empty.");
+}
+
+void load_greenbelt_special_form(HWND window) {
+    const bool selected = greenbelt_special_active_index >= 0
+        && greenbelt_special_active_index < static_cast<int>(greenbelt_draft.special_terrain.size());
+    for (const int id : {kGreenbeltSpecialQ, kGreenbeltSpecialR, kGreenbeltSpecialType,
+            kGreenbeltSpecialName, kGreenbeltSpecialNotes, kGreenbeltSpecialSave,
+            kGreenbeltSpecialRemove}) EnableWindow(GetDlgItem(window, id), TRUE);
+    if (!selected) {
+        set_manager_text(window, kGreenbeltSpecialQ, L"0");
+        set_manager_text(window, kGreenbeltSpecialR, L"0");
+        set_manager_text(window, kGreenbeltSpecialType, L"river");
+        set_manager_text(window, kGreenbeltSpecialName, L"");
+        set_manager_text(window, kGreenbeltSpecialNotes, L"");
+        EnableWindow(GetDlgItem(window, kGreenbeltSpecialRemove), FALSE);
+        return;
+    }
+    const auto& item = greenbelt_draft.special_terrain[static_cast<size_t>(greenbelt_special_active_index)];
+    set_manager_text(window, kGreenbeltSpecialQ, std::to_wstring(item.q));
+    set_manager_text(window, kGreenbeltSpecialR, std::to_wstring(item.r));
+    set_manager_text(window, kGreenbeltSpecialType, widen(item.type));
+    set_manager_text(window, kGreenbeltSpecialName, widen(item.name));
+    set_manager_text(window, kGreenbeltSpecialNotes, widen(item.notes));
+}
+
+void refresh_greenbelt_special_list(HWND window) {
+    const HWND list = GetDlgItem(window, kGreenbeltSpecialList);
+    SendMessageW(list, LB_RESETCONTENT, 0, 0);
+    for (const auto& item : greenbelt_draft.special_terrain) {
+        const auto label = L"(" + std::to_wstring(item.q) + L", " + std::to_wstring(item.r)
+            + L") " + widen(item.type) + L": " + widen(item.name);
+        SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label.c_str()));
+    }
+    if (greenbelt_special_active_index >= 0
+        && greenbelt_special_active_index < static_cast<int>(greenbelt_draft.special_terrain.size()))
+        SendMessageW(list, LB_SETCURSEL, greenbelt_special_active_index, 0);
+    load_greenbelt_special_form(window);
+}
+
+void save_greenbelt_special_form(HWND window) {
+    pkkm::GreenbeltSpecialTerrain item;
+    item.q = parse_integer(manager_text(window, kGreenbeltSpecialQ));
+    item.r = parse_integer(manager_text(window, kGreenbeltSpecialR));
+    item.type = narrow(manager_text(window, kGreenbeltSpecialType));
+    item.name = narrow(manager_text(window, kGreenbeltSpecialName));
+    item.notes = narrow(manager_text(window, kGreenbeltSpecialNotes));
+    if (item.type.empty() || item.name.empty())
+        throw std::invalid_argument("Special terrain needs a type and name.");
+    if (greenbelt_special_active_index < 0) {
+        greenbelt_draft.special_terrain.push_back(std::move(item));
+        greenbelt_special_active_index = static_cast<int>(greenbelt_draft.special_terrain.size()) - 1;
+    } else {
+        greenbelt_draft.special_terrain[static_cast<size_t>(greenbelt_special_active_index)] = std::move(item);
+    }
+    refresh_greenbelt_special_list(window);
+}
+
+void remove_greenbelt_special(HWND window) {
+    if (greenbelt_special_active_index < 0) return;
+    greenbelt_draft.special_terrain.erase(greenbelt_draft.special_terrain.begin() + greenbelt_special_active_index);
+    greenbelt_special_active_index = -1;
+    refresh_greenbelt_special_list(window);
+}
+
+void load_greenbelt_custom_form(HWND window) {
+    const bool selected = greenbelt_custom_active_index >= 0
+        && greenbelt_custom_active_index < static_cast<int>(greenbelt_draft.custom_improvements.size());
+    if (!selected) {
+        set_manager_text(window, kGreenbeltCustomId, L"");
+        set_manager_text(window, kGreenbeltCustomName, L"");
+        set_manager_text(window, kGreenbeltCustomEffect, L"");
+        set_manager_text(window, kGreenbeltCustomCost, L"");
+        SendMessageW(GetDlgItem(window, kGreenbeltCustomManual), BM_SETCHECK, BST_CHECKED, 0);
+        EnableWindow(GetDlgItem(window, kGreenbeltCustomRemove), FALSE);
+        return;
+    }
+    const auto& item = greenbelt_draft.custom_improvements[static_cast<size_t>(greenbelt_custom_active_index)];
+    set_manager_text(window, kGreenbeltCustomId, widen(item.id));
+    set_manager_text(window, kGreenbeltCustomName, widen(item.name));
+    set_manager_text(window, kGreenbeltCustomEffect, widen(item.effect_preview));
+    set_manager_text(window, kGreenbeltCustomCost, widen(item.cost_description));
+    SendMessageW(GetDlgItem(window, kGreenbeltCustomManual), BM_SETCHECK,
+        item.manual_only ? BST_CHECKED : BST_UNCHECKED, 0);
+    EnableWindow(GetDlgItem(window, kGreenbeltCustomRemove), TRUE);
+}
+
+void refresh_greenbelt_custom_list(HWND window) {
+    const HWND list = GetDlgItem(window, kGreenbeltCustomList);
+    SendMessageW(list, LB_RESETCONTENT, 0, 0);
+    for (const auto& item : greenbelt_draft.custom_improvements) {
+        const auto label = widen(item.id) + L": " + widen(item.name)
+            + (item.manual_only ? L" [manual]" : L"");
+        SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label.c_str()));
+    }
+    if (greenbelt_custom_active_index >= 0
+        && greenbelt_custom_active_index < static_cast<int>(greenbelt_draft.custom_improvements.size()))
+        SendMessageW(list, LB_SETCURSEL, greenbelt_custom_active_index, 0);
+    load_greenbelt_custom_form(window);
+}
+
+void save_greenbelt_custom_form(HWND window) {
+    pkkm::GreenbeltCustomImprovement item;
+    item.id = narrow(manager_text(window, kGreenbeltCustomId));
+    item.name = narrow(manager_text(window, kGreenbeltCustomName));
+    item.effect_preview = narrow(manager_text(window, kGreenbeltCustomEffect));
+    item.cost_description = narrow(manager_text(window, kGreenbeltCustomCost));
+    item.manual_only = SendMessageW(GetDlgItem(window, kGreenbeltCustomManual), BM_GETCHECK, 0, 0) == BST_CHECKED;
+    if (item.id.empty() || item.name.empty())
+        throw std::invalid_argument("Custom improvements need an ID and name.");
+    if (greenbelt_custom_active_index < 0) {
+        greenbelt_draft.custom_improvements.push_back(std::move(item));
+        greenbelt_custom_active_index = static_cast<int>(greenbelt_draft.custom_improvements.size()) - 1;
+    } else {
+        greenbelt_draft.custom_improvements[static_cast<size_t>(greenbelt_custom_active_index)] = std::move(item);
+    }
+    refresh_greenbelt_custom_list(window);
+}
+
+void remove_greenbelt_custom(HWND window) {
+    if (greenbelt_custom_active_index < 0) return;
+    greenbelt_draft.custom_improvements.erase(
+        greenbelt_draft.custom_improvements.begin() + greenbelt_custom_active_index);
+    greenbelt_custom_active_index = -1;
+    refresh_greenbelt_custom_list(window);
+}
+
+void update_greenbelt_scrollbar(HWND window) {
+    RECT client{};
+    GetClientRect(window, &client);
+    SCROLLINFO info{sizeof(info), SIF_RANGE | SIF_PAGE | SIF_POS};
+    info.nMin = 0;
+    info.nMax = std::max(0, kGreenbeltContentHeight - 1);
+    info.nPage = static_cast<UINT>(std::max(0L, client.bottom - client.top));
+    const int max_position = std::max(0, info.nMax - static_cast<int>(info.nPage) + 1);
+    greenbelt_scroll_y = std::clamp(greenbelt_scroll_y, 0, max_position);
+    info.nPos = greenbelt_scroll_y;
+    SetScrollInfo(window, SB_VERT, &info, TRUE);
+}
+
+void scroll_greenbelt_to(HWND window, int requested_position) {
+    SCROLLINFO info{sizeof(info), SIF_RANGE | SIF_PAGE | SIF_POS};
+    GetScrollInfo(window, SB_VERT, &info);
+    const int max_position = std::max(0, info.nMax - static_cast<int>(info.nPage) + 1);
+    const int position = std::clamp(requested_position, 0, max_position);
+    const int delta = position - greenbelt_scroll_y;
+    if (delta == 0) return;
+    greenbelt_scroll_y = position;
+    SetScrollPos(window, SB_VERT, greenbelt_scroll_y, TRUE);
+    ScrollWindowEx(window, 0, -delta, nullptr, nullptr, nullptr, nullptr,
+        SW_SCROLLCHILDREN | SW_INVALIDATE | SW_ERASE);
+    InvalidateRect(window, nullptr, FALSE);
+}
+
+void paint_greenbelt_map(HWND window) {
+    PAINTSTRUCT paint{};
+    HDC device = BeginPaint(window, &paint);
+    Gdiplus::Graphics graphics(device);
+    const Gdiplus::RectF viewport(20.0F, 104.0F - static_cast<float>(greenbelt_scroll_y), 330.0F, 240.0F);
+    Gdiplus::SolidBrush background(Gdiplus::Color(245, 245, 245));
+    graphics.FillRectangle(&background, viewport);
+    try {
+        std::filesystem::path image_path = std::filesystem::u8path(greenbelt_draft.asset_path);
+        if (image_path.empty() || !image_path.is_absolute())
+            image_path = std::filesystem::u8path(bundled_greenbelt_path());
+        Gdiplus::Image image(image_path.wstring().c_str());
+        if (image.GetLastStatus() == Gdiplus::Ok && image.GetWidth() > 0 && image.GetHeight() > 0) {
+            const double image_scale = std::min(
+                static_cast<double>(viewport.Width) / image.GetWidth(),
+                static_cast<double>(viewport.Height) / image.GetHeight());
+            const float width = static_cast<float>(image.GetWidth() * image_scale);
+            const float height = static_cast<float>(image.GetHeight() * image_scale);
+            const float left = viewport.X + (viewport.Width - width) * 0.5F;
+            const float top = viewport.Y + (viewport.Height - height) * 0.5F;
+            graphics.DrawImage(&image, Gdiplus::RectF(left, top, width, height));
+            const auto to_view = [&](const pkkm::GreenbeltPoint& point) {
+                return Gdiplus::PointF(left + static_cast<float>(point.x * image_scale),
+                    top + static_cast<float>(point.y * image_scale));
+            };
+            Gdiplus::Pen claimed_pen(Gdiplus::Color(190, 30, 80), 2.0F);
+            Gdiplus::Pen selected_pen(Gdiplus::Color(255, 220, 20), 3.0F);
+            Gdiplus::Pen perimeter_pen(Gdiplus::Color(20, 90, 220), 4.0F);
+            for (size_t index = 0; index < greenbelt_draft.hexes.size(); ++index) {
+                const auto& hex = greenbelt_draft.hexes[index];
+                const auto vertices = pkkm::greenbelt_hex_vertices(
+                    greenbelt_draft.calibration, hex.q, hex.r);
+                Gdiplus::PointF polygon[6]{};
+                for (size_t vertex = 0; vertex < vertices.size(); ++vertex)
+                    polygon[vertex] = to_view(vertices[vertex]);
+                if (hex.claimed) graphics.DrawPolygon(
+                    index == static_cast<size_t>(greenbelt_active_index) ? &selected_pen : &claimed_pen,
+                    polygon, 6);
+            }
+            for (const auto& edge : pkkm::greenbelt_claimed_perimeter(greenbelt_draft.hexes)) {
+                const auto vertices = pkkm::greenbelt_hex_vertices(
+                    greenbelt_draft.calibration, edge.q, edge.r);
+                const auto first = to_view(vertices[static_cast<size_t>(edge.side)]);
+                const auto second = to_view(vertices[static_cast<size_t>((edge.side + 1) % 6)]);
+                graphics.DrawLine(&perimeter_pen, first, second);
+            }
+        } else {
+            Gdiplus::Font font(L"Segoe UI", 10.0F);
+            Gdiplus::SolidBrush brush(Gdiplus::Color(40, 40, 40));
+            graphics.DrawString(L"Greenbelt image could not be loaded.", -1, &font,
+                Gdiplus::PointF(viewport.X + 8.0F, viewport.Y + 8.0F), &brush);
+        }
+    } catch (...) {
+        Gdiplus::Font font(L"Segoe UI", 10.0F);
+        Gdiplus::SolidBrush brush(Gdiplus::Color(40, 40, 40));
+        graphics.DrawString(L"Greenbelt image path is invalid.", -1, &font,
+            Gdiplus::PointF(viewport.X + 8.0F, viewport.Y + 8.0F), &brush);
+    }
+    EndPaint(window, &paint);
+}
+
+void create_greenbelt_controls(HWND window) {
+    CreateWindowExW(0, L"STATIC",
+        L"Greenbelt Map. Claims and improvements are recorded as manual state; Apply never spends BP or changes kingdom totals.",
+        WS_CHILD | WS_VISIBLE | SS_LEFT, 18, 10, 1100, 28, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Map asset", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 45, 100, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", widen(greenbelt_draft.asset_path).c_str(),
+        WS_CHILD | WS_VISIBLE | SS_LEFT, 125, 45, 440, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Hexes", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 78, 280, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"",
+        WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY, 20, 365, 330, 145, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltHexList)), app_instance, nullptr);
+    manager_label(window, L"Q", 380, 82); manager_edit(window, kGreenbeltQ, L"0", 510, 82);
+    manager_label(window, L"R", 380, 114); manager_edit(window, kGreenbeltR, L"0", 510, 114);
+    manager_label(window, L"Terrain", 380, 146); manager_edit(window, kGreenbeltTerrain, L"unresolved", 510, 146, 220);
+    CreateWindowExW(0, L"BUTTON", L"Claimed", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        380, 182, 130, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltClaimed)), app_instance, nullptr);
+    manager_label(window, L"Claim turn", 380, 214); manager_edit(window, kGreenbeltClaimTurn, L"0", 510, 214);
+    manager_label(window, L"Settlement link", 380, 246, 125);
+    CreateWindowExW(0, L"COMBOBOX", L"",
+        WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL, 510, 246, 250, 180, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltSettlement)), app_instance, nullptr);
+    manager_label(window, L"Improvement", 380, 282, 125);
+    CreateWindowExW(0, L"COMBOBOX", L"",
+        WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL, 510, 282, 300, 220, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltImprovement)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Add Improvement", WS_CHILD | WS_VISIBLE,
+        820, 282, 125, 26, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltAddImprovement)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Rule preview", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        380, 330, 140, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"Select an improvement.",
+        WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_READONLY,
+        380, 356, 565, 100, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltPreview)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Calibration", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 520, 200, 22, window, nullptr, app_instance, nullptr);
+    manager_label(window, L"Origin X", 20, 550); manager_edit(window, kGreenbeltOriginX, L"0", 150, 550);
+    manager_label(window, L"Origin Y", 20, 582); manager_edit(window, kGreenbeltOriginY, L"0", 150, 582);
+    manager_label(window, L"Hex width", 20, 614); manager_edit(window, kGreenbeltHexWidth, L"0", 150, 614);
+    manager_label(window, L"Hex height", 20, 646); manager_edit(window, kGreenbeltHexHeight, L"0", 150, 646);
+    manager_label(window, L"Scale", 20, 678); manager_edit(window, kGreenbeltScale, L"1", 150, 678);
+    CreateWindowExW(0, L"STATIC",
+        L"The image is bundled beside the executable. Calibration is persisted; exact map geometry remains user-editable.",
+        WS_CHILD | WS_VISIBLE | SS_LEFT, 380, 480, 565, 42, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Special terrain records", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 730, 380, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"", WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY,
+        20, 755, 360, 105, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltSpecialList)), app_instance, nullptr);
+    manager_label(window, L"Q", 400, 755); manager_edit(window, kGreenbeltSpecialQ, L"0", 455, 755);
+    manager_label(window, L"R", 400, 785); manager_edit(window, kGreenbeltSpecialR, L"0", 455, 785);
+    manager_label(window, L"Type", 520, 755); manager_edit(window, kGreenbeltSpecialType, L"river", 575, 755, 120);
+    manager_label(window, L"Name", 710, 755); manager_edit(window, kGreenbeltSpecialName, L"", 770, 755, 160);
+    manager_label(window, L"Notes", 400, 820); manager_edit(window, kGreenbeltSpecialNotes, L"", 455, 820, 475);
+    CreateWindowExW(0, L"BUTTON", L"Add/Update", WS_CHILD | WS_VISIBLE,
+        945, 755, 100, 26, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltSpecialSave)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Remove", WS_CHILD | WS_VISIBLE,
+        1050, 755, 80, 26, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltSpecialRemove)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Custom improvements", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 870, 380, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"", WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY,
+        20, 895, 360, 65, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltCustomList)), app_instance, nullptr);
+    manager_label(window, L"ID", 400, 895); manager_edit(window, kGreenbeltCustomId, L"", 455, 895, 180);
+    manager_label(window, L"Name", 650, 895); manager_edit(window, kGreenbeltCustomName, L"", 710, 895, 180);
+    CreateWindowExW(0, L"BUTTON", L"Manual only", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        905, 895, 110, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltCustomManual)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Add/Update", WS_CHILD | WS_VISIBLE,
+        1025, 895, 100, 26, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltCustomSave)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Remove", WS_CHILD | WS_VISIBLE,
+        1130, 895, 80, 26, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltCustomRemove)), app_instance, nullptr);
+    manager_label(window, L"Effect", 400, 930); manager_edit(window, kGreenbeltCustomEffect, L"", 455, 930, 330);
+    manager_label(window, L"Cost", 800, 930); manager_edit(window, kGreenbeltCustomCost, L"", 850, 930, 260);
+    CreateWindowExW(0, L"BUTTON", L"Apply", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+        700, 965, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltApply)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Cancel", WS_CHILD | WS_VISIBLE,
+        798, 965, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltCancel)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Close", WS_CHILD | WS_VISIBLE,
+        896, 965, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltClose)), app_instance, nullptr);
+    for (const auto& settlement : kingdom.settlements) {
+        const auto label = widen(settlement.name) + L" [" + widen(settlement.id) + L"]";
+        SendMessageW(GetDlgItem(window, kGreenbeltSettlement), CB_ADDSTRING, 0,
+            reinterpret_cast<LPARAM>(label.c_str()));
+    }
+    SendMessageW(GetDlgItem(window, kGreenbeltSettlement), CB_INSERTSTRING, 0,
+        reinterpret_cast<LPARAM>(L"(none)"));
+    SendMessageW(GetDlgItem(window, kGreenbeltSettlement), CB_SETCURSEL, 0, 0);
+    SendMessageW(GetDlgItem(window, kGreenbeltImprovement), CB_ADDSTRING, 0,
+        reinterpret_cast<LPARAM>(L"(choose an improvement)"));
+    for (const auto& item : greenbelt_catalog) {
+        std::wstring label = widen(item.name) + (item.third_party ? L" [3pp/source-specific]" : L"");
+        SendMessageW(GetDlgItem(window, kGreenbeltImprovement), CB_ADDSTRING, 0,
+            reinterpret_cast<LPARAM>(label.c_str()));
+    }
+    SendMessageW(GetDlgItem(window, kGreenbeltImprovement), CB_SETCURSEL, 0, 0);
+    const auto& calibration = greenbelt_draft.calibration;
+    set_manager_text(window, kGreenbeltOriginX, std::to_wstring(calibration.origin_x));
+    set_manager_text(window, kGreenbeltOriginY, std::to_wstring(calibration.origin_y));
+    set_manager_text(window, kGreenbeltHexWidth, std::to_wstring(calibration.hex_width));
+    set_manager_text(window, kGreenbeltHexHeight, std::to_wstring(calibration.hex_height));
+    set_manager_text(window, kGreenbeltScale, std::to_wstring(calibration.scale));
+    refresh_greenbelt_hex_list(window);
+    refresh_greenbelt_special_list(window);
+    refresh_greenbelt_custom_list(window);
+}
+
+void apply_greenbelt(HWND window) {
+    save_greenbelt_form(window);
+    pkkm::GreenbeltCalibration calibration;
+    calibration.origin_x = parse_decimal(manager_text(window, kGreenbeltOriginX));
+    calibration.origin_y = parse_decimal(manager_text(window, kGreenbeltOriginY));
+    calibration.hex_width = parse_decimal(manager_text(window, kGreenbeltHexWidth));
+    calibration.hex_height = parse_decimal(manager_text(window, kGreenbeltHexHeight));
+    calibration.scale = parse_decimal(manager_text(window, kGreenbeltScale));
+    greenbelt_draft.calibration = calibration;
+    pkkm::Kingdom candidate = kingdom;
+    candidate.greenbelt_map = greenbelt_draft;
+    pkkm::validate(candidate);
+    kingdom.greenbelt_map = greenbelt_draft;
+    dirty = true;
+    greenbelt_draft = kingdom.greenbelt_map;
+    refresh_greenbelt_hex_list(window);
+    refresh(GetDlgItem(GetWindow(window, GW_OWNER), kDisplay));
+}
+
+void cancel_greenbelt(HWND window) {
+    greenbelt_draft = kingdom.greenbelt_map;
+    greenbelt_active_index = greenbelt_draft.hexes.empty() ? -1 : 0;
+    greenbelt_special_active_index = greenbelt_draft.special_terrain.empty() ? -1 : 0;
+    greenbelt_custom_active_index = greenbelt_draft.custom_improvements.empty() ? -1 : 0;
+    refresh_greenbelt_hex_list(window);
+    refresh_greenbelt_special_list(window);
+    refresh_greenbelt_custom_list(window);
+}
+
+LRESULT CALLBACK greenbelt_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
+    if (message == WM_GETMINMAXINFO) {
+        set_minimum_track_size(lparam, 900, 620);
+        return 0;
+    }
+    switch (message) {
+        case WM_PAINT:
+            paint_greenbelt_map(window);
+            return 0;
+        case WM_CREATE:
+            create_greenbelt_controls(window);
+            update_greenbelt_scrollbar(window);
+            return 0;
+        case WM_SIZE:
+            update_greenbelt_scrollbar(window);
+            return 0;
+        case WM_VSCROLL: {
+            SCROLLINFO info{sizeof(info), SIF_RANGE | SIF_PAGE | SIF_POS | SIF_TRACKPOS};
+            GetScrollInfo(window, SB_VERT, &info);
+            int position = info.nPos;
+            switch (LOWORD(wparam)) {
+                case SB_LINEUP: position -= 40; break;
+                case SB_LINEDOWN: position += 40; break;
+                case SB_PAGEUP: position -= static_cast<int>(info.nPage); break;
+                case SB_PAGEDOWN: position += static_cast<int>(info.nPage); break;
+                case SB_THUMBTRACK: position = info.nTrackPos; break;
+                case SB_TOP: position = info.nMin; break;
+                case SB_BOTTOM: position = info.nMax; break;
+                default: return 0;
+            }
+            scroll_greenbelt_to(window, position);
+            return 0;
+        }
+        case WM_MOUSEWHEEL: {
+            const int wheel_delta = GET_WHEEL_DELTA_WPARAM(wparam);
+            scroll_greenbelt_to(window, greenbelt_scroll_y
+                - (wheel_delta / WHEEL_DELTA) * 80);
+            return 0;
+        }
+        case WM_COMMAND: {
+            const int id = LOWORD(wparam);
+            try {
+                if (id == kGreenbeltHexList && HIWORD(wparam) == LBN_SELCHANGE) {
+                    save_greenbelt_form(window);
+                    greenbelt_active_index = static_cast<int>(SendMessageW(
+                        GetDlgItem(window, kGreenbeltHexList), LB_GETCURSEL, 0, 0));
+                    load_greenbelt_form(window);
+                } else if (id == kGreenbeltSpecialList && HIWORD(wparam) == LBN_SELCHANGE) {
+                    greenbelt_special_active_index = static_cast<int>(SendMessageW(
+                        GetDlgItem(window, kGreenbeltSpecialList), LB_GETCURSEL, 0, 0));
+                    load_greenbelt_special_form(window);
+                } else if (id == kGreenbeltSpecialSave) {
+                    save_greenbelt_special_form(window);
+                } else if (id == kGreenbeltSpecialRemove) {
+                    remove_greenbelt_special(window);
+                } else if (id == kGreenbeltCustomList && HIWORD(wparam) == LBN_SELCHANGE) {
+                    greenbelt_custom_active_index = static_cast<int>(SendMessageW(
+                        GetDlgItem(window, kGreenbeltCustomList), LB_GETCURSEL, 0, 0));
+                    load_greenbelt_custom_form(window);
+                } else if (id == kGreenbeltCustomSave) {
+                    save_greenbelt_custom_form(window);
+                } else if (id == kGreenbeltCustomRemove) {
+                    remove_greenbelt_custom(window);
+                } else if (id == kGreenbeltAddImprovement) {
+                    save_greenbelt_form(window);
+                    if (greenbelt_active_index < 0) throw std::invalid_argument("Select a Greenbelt hex first.");
+                    const int selected = static_cast<int>(SendMessageW(
+                        GetDlgItem(window, kGreenbeltImprovement), CB_GETCURSEL, 0, 0));
+                    if (selected <= 0 || selected > static_cast<int>(greenbelt_catalog.size()))
+                        throw std::invalid_argument("Select an improvement first.");
+                    const auto& item = greenbelt_catalog[static_cast<size_t>(selected - 1)];
+                    auto& improvements = greenbelt_draft.hexes[static_cast<size_t>(greenbelt_active_index)].improvements;
+                    if (std::find(improvements.begin(), improvements.end(), item.id) == improvements.end())
+                        improvements.push_back(item.id);
+                    refresh_greenbelt_hex_list(window);
+                } else if (id == kGreenbeltImprovement && HIWORD(wparam) == CBN_SELCHANGE) {
+                    refresh_greenbelt_preview(window);
+                } else if (id == kGreenbeltApply) {
+                    apply_greenbelt(window);
+                } else if (id == kGreenbeltCancel) {
+                    cancel_greenbelt(window);
+                } else if (id == kGreenbeltClose) {
+                    DestroyWindow(window);
+                }
+            } catch (const std::exception& error) {
+                MessageBoxW(window, widen(error.what()).c_str(), L"Greenbelt Map", MB_OK | MB_ICONWARNING);
+            }
+            return 0;
+        }
+        case WM_CLOSE:
+            DestroyWindow(window);
+            return 0;
+        case WM_DESTROY: {
+            greenbelt_window = nullptr;
+            greenbelt_scroll_y = 0;
+            greenbelt_draft = {};
+            greenbelt_catalog.clear();
+            greenbelt_active_index = -1;
+            greenbelt_special_active_index = -1;
+            greenbelt_custom_active_index = -1;
+            const HWND owner = GetWindow(window, GW_OWNER);
+            if (owner && IsWindow(owner)) {
+                EnableWindow(owner, TRUE);
+                SetForegroundWindow(owner);
+            }
+            return 0;
+        }
+    }
+    return DefWindowProcW(window, message, wparam, lparam);
 }
 
 bool calendar_note_is_empty(const pkkm::CalendarNote& note) {
@@ -1079,6 +2107,10 @@ void cancel_calendar_notes(HWND window) {
 }
 
 LRESULT CALLBACK calendar_tracker_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
+    if (message == WM_GETMINMAXINFO) {
+        set_minimum_track_size(lparam, 760, 560);
+        return 0;
+    }
     switch (message) {
         case WM_CREATE:
             create_calendar_controls(window);
@@ -1124,6 +2156,10 @@ LRESULT CALLBACK calendar_tracker_proc(HWND window, UINT message, WPARAM wparam,
 }
 
 LRESULT CALLBACK turn_checklist_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
+    if (message == WM_GETMINMAXINFO) {
+        set_minimum_track_size(lparam, 760, 460);
+        return 0;
+    }
     switch (message) {
         case WM_CREATE:
             create_turn_checklist_controls(window);
@@ -1153,6 +2189,10 @@ LRESULT CALLBACK turn_checklist_proc(HWND window, UINT message, WPARAM wparam, L
 }
 
 LRESULT CALLBACK editor_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
+    if (message == WM_GETMINMAXINFO) {
+        set_minimum_track_size(lparam, 760, 520);
+        return 0;
+    }
     switch (message) {
         case WM_CREATE:
             create_editor_controls(window);
@@ -1179,6 +2219,10 @@ LRESULT CALLBACK editor_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
 }
 
 LRESULT CALLBACK main_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
+    if (message == WM_GETMINMAXINFO) {
+        set_minimum_track_size(lparam, 700, 500);
+        return 0;
+    }
     switch (message) {
         case WM_CREATE: {
             HMENU menu = CreateMenu();
@@ -1191,11 +2235,15 @@ LRESULT CALLBACK main_proc(HWND window, UINT message, WPARAM wparam, LPARAM lpar
             AppendMenuW(manager, MF_STRING, kEditInputs, L"Edit Inputs...");
             AppendMenuW(manager, MF_STRING, kManageSettlements, L"Manage Settlements...");
             AppendMenuW(manager, MF_STRING, kTurnChecklist, L"Turn Checklist...");
+            AppendMenuW(manager, MF_STRING, kTurnActions, L"Turn Actions...");
             AppendMenuW(manager, MF_STRING, kCalendarTracker, L"Calendar Notes...");
+            AppendMenuW(manager, MF_STRING, kGreenbeltMap, L"Greenbelt Map...");
             AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(manager), L"Kingdom Manager");
             SetMenu(window, menu);
             CreateWindowExW(0, L"STATIC", L"", WS_CHILD | WS_VISIBLE | SS_LEFT,
                 24, 24, 720, 520, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kDisplay)), app_instance, nullptr);
+            CreateWindowExW(0, L"BUTTON", L"Advance Turn...", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+                24, 555, 150, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kAdvanceTurn)), app_instance, nullptr);
             refresh(GetDlgItem(window, kDisplay));
             return 0;
         }
@@ -1206,7 +2254,9 @@ LRESULT CALLBACK main_proc(HWND window, UINT message, WPARAM wparam, LPARAM lpar
             if (editor_window && IsWindow(editor_window)) DestroyWindow(editor_window);
             if (settlement_window && IsWindow(settlement_window)) DestroyWindow(settlement_window);
             if (checklist_window && IsWindow(checklist_window)) DestroyWindow(checklist_window);
+            if (action_window && IsWindow(action_window)) DestroyWindow(action_window);
             if (calendar_window && IsWindow(calendar_window)) DestroyWindow(calendar_window);
+            if (greenbelt_window && IsWindow(greenbelt_window)) DestroyWindow(greenbelt_window);
             PostQuitMessage(0);
             return 0;
     }
@@ -1216,10 +2266,14 @@ LRESULT CALLBACK main_proc(HWND window, UINT message, WPARAM wparam, LPARAM lpar
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     app_instance = instance;
+    Gdiplus::GdiplusStartupInput gdiplus_input;
+    if (Gdiplus::GdiplusStartup(&gdiplus_token, &gdiplus_input, nullptr) != Gdiplus::Ok)
+        return 1;
     try {
         building_catalog = pkkm::load_building_catalog(bundled_catalog_path());
     } catch (const std::exception& error) {
         MessageBoxW(nullptr, widen(error.what()).c_str(), L"PKKM catalog error", MB_OK | MB_ICONERROR);
+        Gdiplus::GdiplusShutdown(gdiplus_token);
         return 1;
     }
     WNDCLASSW main_class{};
@@ -1228,7 +2282,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     main_class.lpszClassName = L"PKKMWindow";
     main_class.hCursor = LoadCursor(nullptr, IDC_ARROW);
     main_class.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
-    if (!RegisterClassW(&main_class)) return 1;
+    if (!RegisterClassW(&main_class)) {
+        Gdiplus::GdiplusShutdown(gdiplus_token);
+        return 1;
+    }
 
     WNDCLASSW editor_class{};
     editor_class.lpfnWndProc = editor_proc;
@@ -1236,7 +2293,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     editor_class.lpszClassName = L"PKKMEditor";
     editor_class.hCursor = LoadCursor(nullptr, IDC_ARROW);
     editor_class.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
-    if (!RegisterClassW(&editor_class)) return 1;
+    if (!RegisterClassW(&editor_class)) {
+        Gdiplus::GdiplusShutdown(gdiplus_token);
+        return 1;
+    }
 
     WNDCLASSW settlement_class{};
     settlement_class.lpfnWndProc = settlement_manager_proc;
@@ -1244,7 +2304,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     settlement_class.lpszClassName = L"PKKMSettlements";
     settlement_class.hCursor = LoadCursor(nullptr, IDC_ARROW);
     settlement_class.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
-    if (!RegisterClassW(&settlement_class)) return 1;
+    if (!RegisterClassW(&settlement_class)) {
+        Gdiplus::GdiplusShutdown(gdiplus_token);
+        return 1;
+    }
 
     WNDCLASSW checklist_class{};
     checklist_class.lpfnWndProc = turn_checklist_proc;
@@ -1252,7 +2315,21 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     checklist_class.lpszClassName = L"PKKMTurnChecklist";
     checklist_class.hCursor = LoadCursor(nullptr, IDC_ARROW);
     checklist_class.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
-    if (!RegisterClassW(&checklist_class)) return 1;
+    if (!RegisterClassW(&checklist_class)) {
+        Gdiplus::GdiplusShutdown(gdiplus_token);
+        return 1;
+    }
+
+    WNDCLASSW action_class{};
+    action_class.lpfnWndProc = turn_actions_proc;
+    action_class.hInstance = instance;
+    action_class.lpszClassName = L"PKKMTurnActions";
+    action_class.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    action_class.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+    if (!RegisterClassW(&action_class)) {
+        Gdiplus::GdiplusShutdown(gdiplus_token);
+        return 1;
+    }
 
     WNDCLASSW calendar_class{};
     calendar_class.lpfnWndProc = calendar_tracker_proc;
@@ -1260,17 +2337,36 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     calendar_class.lpszClassName = L"PKKMCalendarTracker";
     calendar_class.hCursor = LoadCursor(nullptr, IDC_ARROW);
     calendar_class.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
-    if (!RegisterClassW(&calendar_class)) return 1;
+    if (!RegisterClassW(&calendar_class)) {
+        Gdiplus::GdiplusShutdown(gdiplus_token);
+        return 1;
+    }
+
+    WNDCLASSW greenbelt_class{};
+    greenbelt_class.lpfnWndProc = greenbelt_proc;
+    greenbelt_class.hInstance = instance;
+    greenbelt_class.lpszClassName = L"PKKMGreenbeltMap";
+    greenbelt_class.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    greenbelt_class.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+    if (!RegisterClassW(&greenbelt_class)) {
+        Gdiplus::GdiplusShutdown(gdiplus_token);
+        return 1;
+    }
 
     HWND window = CreateWindowW(main_class.lpszClassName, L"PKKM - Kingdom Manager",
         WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 800, 620,
         nullptr, nullptr, instance, nullptr);
-    if (!window) return 1;
+    if (!window) {
+        Gdiplus::GdiplusShutdown(gdiplus_token);
+        return 1;
+    }
     ShowWindow(window, SW_SHOW);
     MSG message{};
     while (GetMessageW(&message, nullptr, 0, 0) > 0) {
         TranslateMessage(&message);
         DispatchMessageW(&message);
     }
-    return static_cast<int>(message.wParam);
+    const int result = static_cast<int>(message.wParam);
+    Gdiplus::GdiplusShutdown(gdiplus_token);
+    return result;
 }

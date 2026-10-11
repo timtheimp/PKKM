@@ -1,5 +1,6 @@
 # Build and IDE output
 build/
+.hermes/
 .vs/
 .vscode/
 CMakeFiles/
