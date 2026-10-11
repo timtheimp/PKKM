@@ -9,6 +9,7 @@ RELEASE_PAYLOAD = (
     "pkkm_desktop.exe",
     "pkkm.exe",
     "building_catalog.json",
+    "Kingmaker-Greenbelt-Map.jpg",
 )
 
 

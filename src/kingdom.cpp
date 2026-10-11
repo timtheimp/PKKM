@@ -3,6 +3,7 @@
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <limits>
@@ -56,6 +57,12 @@ bool required_bool(const Json& object, const char* key) {
     return field.get<bool>();
 }
 
+double required_number(const Json& object, const char* key) {
+    const auto& field = object.at(key);
+    if (!field.is_number()) throw std::runtime_error(std::string("Invalid number field: ") + key);
+    return field.get<double>();
+}
+
 Json stat_base_json(const KingdomStatBaseInput& value) {
     return {{"events", value.events}, {"improvements", value.improvements}, {"other", value.other}};
 }
@@ -98,6 +105,23 @@ int required_enum(const Json& object, const char* key, int maximum) {
     return value;
 }
 
+const char* turn_action_name(TurnAction action) {
+    switch (action) {
+        case TurnAction::ClaimHex: return "claim_hex";
+        case TurnAction::AbandonHex: return "abandon_hex";
+        case TurnAction::AbandonCity: return "abandon_city";
+    }
+    throw std::invalid_argument("Unsupported Turn action");
+}
+
+TurnAction read_turn_action(const Json& object, const char* key) {
+    const auto value = required_string(object, key);
+    if (value == "claim_hex") return TurnAction::ClaimHex;
+    if (value == "abandon_hex") return TurnAction::AbandonHex;
+    if (value == "abandon_city") return TurnAction::AbandonCity;
+    throw std::runtime_error("Unsupported Turn action: " + value);
+}
+
 KingdomRuleInputs read_rule_inputs(const Json& root) {
     if (!root.is_object()) throw std::runtime_error("rules must be an object");
     KingdomRuleInputs r;
@@ -138,7 +162,7 @@ void require_fields(const Json& root) {
 }
 
 void validate(const Kingdom& k) {
-    if (k.schema_version != 9) throw std::invalid_argument("Unsupported schema version");
+    if (k.schema_version != 10) throw std::invalid_argument("Unsupported schema version");
     if (k.name.empty()) throw std::invalid_argument("Kingdom name must not be empty");
     if (k.turn < 1) throw std::invalid_argument("Turn must be at least 1");
     if (k.treasury_bp < 0) throw std::invalid_argument("Treasury cannot be negative");
@@ -198,6 +222,47 @@ void validate(const Kingdom& k) {
         }
     }
     for (const auto& b : k.buildings) if (b.name.empty() || b.count < 0) throw std::invalid_argument("Building must have a name and nonnegative count");
+    std::vector<std::string> settlement_ids;
+    for (const auto& settlement : k.settlements) {
+        if (settlement.id.empty()) continue;
+        if (std::find(settlement_ids.begin(), settlement_ids.end(), settlement.id) != settlement_ids.end())
+            throw std::invalid_argument("Settlement IDs must be unique");
+        settlement_ids.push_back(settlement.id);
+    }
+    std::vector<std::pair<int, int>> greenbelt_coordinates;
+    for (const auto& hex : k.greenbelt_map.hexes) {
+        if (hex.terrain.empty()) throw std::invalid_argument("Greenbelt hex terrain must not be empty");
+        if (hex.claimed && hex.claim_turn < 1) throw std::invalid_argument("Claimed Greenbelt hex needs a positive claim turn");
+        if (!hex.claimed && hex.claim_turn != 0) throw std::invalid_argument("Unclaimed Greenbelt hex cannot have a claim turn");
+        if (!hex.settlement_id.empty()
+            && std::find(settlement_ids.begin(), settlement_ids.end(), hex.settlement_id) == settlement_ids.end())
+            throw std::invalid_argument("Greenbelt hex references an unknown settlement ID");
+        if (std::find(greenbelt_coordinates.begin(), greenbelt_coordinates.end(), std::make_pair(hex.q, hex.r))
+            != greenbelt_coordinates.end())
+            throw std::invalid_argument("Greenbelt hex coordinates must be unique");
+        greenbelt_coordinates.emplace_back(hex.q, hex.r);
+    }
+    const auto& calibration = k.greenbelt_map.calibration;
+    for (const double value : {calibration.origin_x, calibration.origin_y, calibration.hex_width,
+                               calibration.hex_height, calibration.scale}) {
+        if (!std::isfinite(value)) throw std::invalid_argument("Greenbelt calibration values must be finite");
+    }
+    if (k.greenbelt_map.image_width < 0 || k.greenbelt_map.image_height < 0
+        || calibration.hex_width < 0 || calibration.hex_height < 0 || calibration.scale <= 0)
+        throw std::invalid_argument("Greenbelt image and calibration dimensions are invalid");
+    for (const auto& terrain : k.greenbelt_map.special_terrain) {
+        if (terrain.type.empty()) throw std::invalid_argument("Greenbelt special terrain type must not be empty");
+        if (terrain.name.empty()) throw std::invalid_argument("Greenbelt special terrain name must not be empty");
+    }
+    std::vector<std::string> custom_improvement_ids;
+    for (const auto& improvement : k.greenbelt_map.custom_improvements) {
+        if (improvement.id.empty() || improvement.name.empty())
+            throw std::invalid_argument("Greenbelt custom improvements need an ID and name");
+        if (std::find(custom_improvement_ids.begin(), custom_improvement_ids.end(), improvement.id)
+            != custom_improvement_ids.end())
+            throw std::invalid_argument("Greenbelt custom improvement IDs must be unique");
+        custom_improvement_ids.push_back(improvement.id);
+    }
     std::vector<int> seen_turns;
     for (const auto& progress : k.turn_progress) {
         if (progress.turn < 1) throw std::invalid_argument("Checklist turn must be at least 1");
@@ -213,6 +278,43 @@ void validate(const Kingdom& k) {
                 throw std::invalid_argument("Turn checklist step ids must be unique");
             seen_steps.push_back(id);
         }
+    }
+    for (std::size_t index = 0; index < k.turn_actions.size(); ++index) {
+        const auto& record = k.turn_actions[index];
+        if (record.turn < 1 || record.count < 1)
+            throw std::invalid_argument("Turn action records need a positive turn and count");
+        if (record.reversal) {
+            if (record.reverses_index < 0
+                || static_cast<std::size_t>(record.reverses_index) >= index)
+                throw std::invalid_argument("Turn action reversal must reference an earlier action");
+            for (std::size_t prior = index + 1; prior < k.turn_actions.size(); ++prior) {
+                if (k.turn_actions[prior].reverses_index == record.reverses_index)
+                    throw std::invalid_argument("A Turn Action may only be reversed once");
+            }
+        } else if (record.reverses_index != -1) {
+            throw std::invalid_argument("Non-reversal Turn Actions cannot reference another action");
+        }
+        const auto expected = resolve_turn_action(record.action);
+        const int sign = record.reversal ? -1 : 1;
+        if (record.applied.treasury_delta != expected.treasury_delta * record.count * sign
+            || record.applied.kingdom_size_delta != expected.kingdom_size_delta * record.count * sign
+            || record.applied.unrest_delta != expected.unrest_delta * record.count * sign)
+            throw std::invalid_argument("Turn action record has inconsistent deltas");
+    }
+    for (const auto& record : k.tax_actions) {
+        if (record.turn < 1 || record.result_divided_by_three < 0 || record.other_bp_gained < 0)
+            throw std::invalid_argument("Tax records require a positive turn and non-negative inputs");
+        if (record.treasury_delta != resolve_tax_bp_delta(record.economy_check_success,
+                record.result_divided_by_three, record.other_bp_gained))
+            throw std::invalid_argument("Tax record has an inconsistent treasury delta");
+    }
+    for (const auto& record : k.gold_withdrawals) {
+        const long long expected_gold = static_cast<long long>(record.bp_withdrawn) * 2000;
+        if (record.turn < 1 || record.bp_withdrawn < 1
+            || expected_gold != record.gold_received
+            || record.treasury_delta != -record.bp_withdrawn
+            || record.unrest_delta != record.bp_withdrawn)
+            throw std::invalid_argument("Gold withdrawal record has inconsistent values");
     }
     std::vector<std::string> seen_calendar_entries;
     for (const auto& note : k.calendar_notes) {
@@ -272,6 +374,67 @@ TurnActionOutcome resolve_turn_action(TurnAction action) {
     }
 }
 
+void advance_turn(Kingdom& kingdom) {
+    validate(kingdom);
+    if (kingdom.turn == std::numeric_limits<int>::max())
+        throw std::overflow_error("Cannot advance beyond the maximum supported turn");
+    ++kingdom.turn;
+    validate(kingdom);
+}
+
+void apply_turn_action(Kingdom& kingdom, TurnAction action, int count) {
+    validate(kingdom);
+    if (count < 1) throw std::invalid_argument("Turn action count must be positive");
+    const auto single = resolve_turn_action(action);
+    const auto treasury_delta = single.treasury_delta * count;
+    const auto kingdom_size_delta = single.kingdom_size_delta * count;
+    const auto unrest_delta = single.unrest_delta * count;
+    if (kingdom.treasury_bp + treasury_delta < 0)
+        throw std::invalid_argument("Turn action would make treasury negative");
+    if (kingdom.rule_inputs.kingdom_size + kingdom_size_delta < 0)
+        throw std::invalid_argument("Turn action would make kingdom size negative");
+    kingdom.treasury_bp += treasury_delta;
+    kingdom.rule_inputs.kingdom_size += kingdom_size_delta;
+    kingdom.unrest += unrest_delta;
+    kingdom.turn_actions.push_back({kingdom.turn, action, count,
+        {treasury_delta, kingdom_size_delta, unrest_delta}, false});
+    validate(kingdom);
+}
+
+void reverse_last_turn_action(Kingdom& kingdom) {
+    validate(kingdom);
+    if (kingdom.turn_actions.empty())
+        throw std::invalid_argument("There is no Turn Action to reverse");
+    reverse_turn_action(kingdom, kingdom.turn_actions.size() - 1);
+}
+
+void reverse_turn_action(Kingdom& kingdom, std::size_t index) {
+    validate(kingdom);
+    if (index >= kingdom.turn_actions.size())
+        throw std::invalid_argument("Selected Turn Action does not exist");
+    const auto& original = kingdom.turn_actions[index];
+    if (original.reversal)
+        throw std::invalid_argument("A reversal record cannot be reversed");
+    for (const auto& record : kingdom.turn_actions) {
+        if (record.reverses_index == static_cast<std::ptrdiff_t>(index))
+            throw std::invalid_argument("The selected Turn Action has already been reversed");
+    }
+    const auto inverse = TurnActionOutcome{
+        -original.applied.treasury_delta,
+        -original.applied.kingdom_size_delta,
+        -original.applied.unrest_delta};
+    if (kingdom.treasury_bp + inverse.treasury_delta < 0)
+        throw std::invalid_argument("Reversal would make treasury negative");
+    if (kingdom.rule_inputs.kingdom_size + inverse.kingdom_size_delta < 0)
+        throw std::invalid_argument("Reversal would make kingdom size negative");
+    kingdom.treasury_bp += inverse.treasury_delta;
+    kingdom.rule_inputs.kingdom_size += inverse.kingdom_size_delta;
+    kingdom.unrest += inverse.unrest_delta;
+    kingdom.turn_actions.push_back({kingdom.turn, original.action, original.count, inverse, true,
+        static_cast<std::ptrdiff_t>(index)});
+    validate(kingdom);
+}
+
 KingdomSizeLimits kingdom_size_limits(int kingdom_size) {
     if (kingdom_size < 1) throw std::invalid_argument("Kingdom size must be positive");
     if (kingdom_size <= 10) return {1, 1, false, 2, 1};
@@ -288,6 +451,33 @@ TurnEconomyRates turn_economy_rates() {
 
 int resolve_tax_bp_delta(bool economy_check_success, int result_divided_by_three, int other_bp_gained) {
     return other_bp_gained + (economy_check_success ? result_divided_by_three : 0);
+}
+
+void apply_tax_action(Kingdom& kingdom, bool economy_check_success,
+    int result_divided_by_three, int other_bp_gained) {
+    validate(kingdom);
+    if (result_divided_by_three < 0 || other_bp_gained < 0)
+        throw std::invalid_argument("Tax inputs must be non-negative");
+    const int treasury_delta = resolve_tax_bp_delta(
+        economy_check_success, result_divided_by_three, other_bp_gained);
+    kingdom.treasury_bp += treasury_delta;
+    kingdom.tax_actions.push_back({kingdom.turn, economy_check_success, result_divided_by_three,
+        other_bp_gained, treasury_delta});
+    validate(kingdom);
+}
+
+void apply_gold_withdrawal(Kingdom& kingdom, int bp_withdrawn) {
+    validate(kingdom);
+    if (bp_withdrawn < 1) throw std::invalid_argument("Gold withdrawal must withdraw at least 1 BP");
+    if (kingdom.treasury_bp < bp_withdrawn)
+        throw std::invalid_argument("Gold withdrawal would make treasury negative");
+    if (bp_withdrawn > std::numeric_limits<int>::max() / 2000)
+        throw std::overflow_error("Gold withdrawal value overflow");
+    kingdom.treasury_bp -= bp_withdrawn;
+    kingdom.unrest += bp_withdrawn;
+    kingdom.gold_withdrawals.push_back({kingdom.turn, bp_withdrawn, bp_withdrawn * 2000,
+        -bp_withdrawn, bp_withdrawn});
+    validate(kingdom);
 }
 
 MagicItemWorkflow magic_item_workflow() {
@@ -588,12 +778,22 @@ void save(const Kingdom& k, const std::string& path) {
         {"schema_version", k.schema_version}, {"name", k.name}, {"turn", k.turn},
         {"treasury_bp", k.treasury_bp}, {"unrest", k.unrest},
         {"settlements", Json::array()}, {"buildings", Json::array()},
-        {"turn_progress", Json::array()}, {"calendar_notes", Json::array()},
+        {"turn_progress", Json::array()}, {"turn_actions", Json::array()}, {"tax_actions", Json::array()},
+                {"gold_withdrawals", Json::array()}, {"calendar_notes", Json::array()},
+        {"greenbelt_map", {{"asset_path", k.greenbelt_map.asset_path},
+            {"image_width", k.greenbelt_map.image_width}, {"image_height", k.greenbelt_map.image_height},
+            {"calibration", {{"origin_x", k.greenbelt_map.calibration.origin_x},
+                {"origin_y", k.greenbelt_map.calibration.origin_y},
+                {"hex_width", k.greenbelt_map.calibration.hex_width},
+                {"hex_height", k.greenbelt_map.calibration.hex_height},
+                {"scale", k.greenbelt_map.calibration.scale}}},
+            {"hexes", Json::array()}, {"special_terrain", Json::array()},
+            {"custom_improvements", Json::array()}}},
         {"rules", rule_inputs_json(k.rule_inputs)}
     };
     Json output = document;
     for (const auto& s : k.settlements) {
-        Json item = {{"name", s.name}, {"population", s.population}, {"districts", s.districts},
+        Json item = {{"name", s.name}, {"id", s.id}, {"population", s.population}, {"districts", s.districts},
             {"economy", s.economy}, {"loyalty", s.loyalty}, {"stability", s.stability},
             {"defense", s.defense}, {"building_inventory", Json::array()},
             {"apply_catalog_stat_effects", s.apply_catalog_stat_effects},
@@ -613,9 +813,34 @@ void save(const Kingdom& k, const std::string& path) {
     for (const auto& b : k.buildings) output["buildings"].push_back({{"name", b.name}, {"count", b.count}});
     for (const auto& progress : k.turn_progress)
         output["turn_progress"].push_back({{"turn", progress.turn}, {"completed_step_ids", progress.completed_step_ids}});
+    for (const auto& action : k.turn_actions)
+        output["turn_actions"].push_back({{"turn", action.turn}, {"action", turn_action_name(action.action)},
+            {"count", action.count}, {"treasury_delta", action.applied.treasury_delta},
+            {"kingdom_size_delta", action.applied.kingdom_size_delta}, {"unrest_delta", action.applied.unrest_delta},
+            {"reversal", action.reversal}, {"reverses_index", action.reverses_index}});
+    for (const auto& tax : k.tax_actions)
+        output["tax_actions"].push_back({{"turn", tax.turn},
+            {"economy_check_success", tax.economy_check_success},
+            {"result_divided_by_three", tax.result_divided_by_three},
+            {"other_bp_gained", tax.other_bp_gained}, {"treasury_delta", tax.treasury_delta}});
+    for (const auto& withdrawal : k.gold_withdrawals)
+        output["gold_withdrawals"].push_back({{"turn", withdrawal.turn},
+            {"bp_withdrawn", withdrawal.bp_withdrawn}, {"gold_received", withdrawal.gold_received},
+            {"treasury_delta", withdrawal.treasury_delta}, {"unrest_delta", withdrawal.unrest_delta}});
     for (const auto& note : k.calendar_notes)
         output["calendar_notes"].push_back({{"entry_id", note.entry_id}, {"holiday", note.holiday},
             {"kingdom_upgrades", note.kingdom_upgrades}, {"events", note.events}, {"other", note.other}});
+    for (const auto& hex : k.greenbelt_map.hexes)
+        output["greenbelt_map"]["hexes"].push_back({{"q", hex.q}, {"r", hex.r}, {"terrain", hex.terrain},
+            {"claimed", hex.claimed}, {"claim_turn", hex.claim_turn}, {"settlement_id", hex.settlement_id},
+            {"improvements", hex.improvements}});
+    for (const auto& terrain : k.greenbelt_map.special_terrain)
+        output["greenbelt_map"]["special_terrain"].push_back({{"q", terrain.q}, {"r", terrain.r},
+            {"type", terrain.type}, {"name", terrain.name}, {"notes", terrain.notes}});
+    for (const auto& improvement : k.greenbelt_map.custom_improvements)
+        output["greenbelt_map"]["custom_improvements"].push_back({{"id", improvement.id},
+            {"name", improvement.name}, {"effect_preview", improvement.effect_preview},
+            {"cost_description", improvement.cost_description}, {"manual_only", improvement.manual_only}});
     {
         std::ofstream file(temp, std::ios::binary | std::ios::trunc);
         if (!file) throw std::runtime_error("Cannot create temporary save file");
@@ -651,13 +876,13 @@ Kingdom load(const std::string& path) {
     require_fields(root);
     Kingdom k;
     const int document_version = required_int(root, "schema_version");
-    if (document_version < 1 || document_version > 9) throw std::runtime_error("Unsupported schema version: " + std::to_string(document_version));
+    if (document_version < 1 || document_version > 10) throw std::runtime_error("Unsupported schema version: " + std::to_string(document_version));
     if (document_version >= 2 && !root.contains("rules")) throw std::runtime_error("Missing JSON field: rules");
     if (document_version >= 8 && (!root.contains("turn_progress") || !root.at("turn_progress").is_array()))
         throw std::runtime_error("turn_progress must be an array");
     if (document_version >= 9 && (!root.contains("calendar_notes") || !root.at("calendar_notes").is_array()))
         throw std::runtime_error("calendar_notes must be an array");
-    k.schema_version = 9;
+    k.schema_version = 10;
     k.name = required_string(root, "name");
     k.turn = required_int(root, "turn");
     k.treasury_bp = required_int(root, "treasury_bp");
@@ -673,6 +898,8 @@ Kingdom load(const std::string& path) {
         k.settlements.push_back({required_string(item, "name"), required_int(item, "population"),
             read_settlement_int("districts"), read_settlement_int("economy"), read_settlement_int("loyalty"),
             read_settlement_int("stability"), read_settlement_int("defense")});
+        k.settlements.back().id = item.contains("id") ? required_string(item, "id")
+            : "settlement." + std::to_string(k.settlements.size());
         if (document_version >= 5)
             k.settlements.back().apply_catalog_stat_effects = required_bool(item, "apply_catalog_stat_effects");
         if (document_version >= 4) {
@@ -729,12 +956,91 @@ Kingdom load(const std::string& path) {
             k.turn_progress.push_back(std::move(progress));
         }
     }
+    if (root.contains("turn_actions")) {
+        if (!root.at("turn_actions").is_array()) throw std::runtime_error("turn_actions must be an array");
+        for (const auto& item : root.at("turn_actions")) {
+            if (!item.is_object()) throw std::runtime_error("Invalid turn action record");
+            TurnActionRecord record;
+            record.turn = required_int(item, "turn");
+            record.action = read_turn_action(item, "action");
+            record.count = required_int(item, "count");
+            record.applied = {required_int(item, "treasury_delta"),
+                required_int(item, "kingdom_size_delta"), required_int(item, "unrest_delta")};
+            if (item.contains("reversal")) record.reversal = item.at("reversal").get<bool>();
+            if (item.contains("reverses_index")) record.reverses_index = item.at("reverses_index").get<std::ptrdiff_t>();
+            k.turn_actions.push_back(std::move(record));
+        }
+    }
+    if (root.contains("tax_actions")) {
+        if (!root.at("tax_actions").is_array()) throw std::runtime_error("tax_actions must be an array");
+        for (const auto& item : root.at("tax_actions")) {
+            if (!item.is_object()) throw std::runtime_error("Invalid tax action record");
+            k.tax_actions.push_back({required_int(item, "turn"), required_bool(item, "economy_check_success"),
+                required_int(item, "result_divided_by_three"), required_int(item, "other_bp_gained"),
+                required_int(item, "treasury_delta")});
+        }
+    }
+    if (root.contains("gold_withdrawals")) {
+        if (!root.at("gold_withdrawals").is_array()) throw std::runtime_error("gold_withdrawals must be an array");
+        for (const auto& item : root.at("gold_withdrawals")) {
+            if (!item.is_object()) throw std::runtime_error("Invalid gold withdrawal record");
+            k.gold_withdrawals.push_back({required_int(item, "turn"), required_int(item, "bp_withdrawn"),
+                required_int(item, "gold_received"), required_int(item, "treasury_delta"),
+                required_int(item, "unrest_delta")});
+        }
+    }
     if (document_version >= 9) {
         for (const auto& item : root.at("calendar_notes")) {
             if (!item.is_object()) throw std::runtime_error("Invalid calendar note");
             k.calendar_notes.push_back({required_string(item, "entry_id"), required_string(item, "holiday"),
                 required_string(item, "kingdom_upgrades"), required_string(item, "events"),
                 required_string(item, "other")});
+        }
+    }
+    if (document_version >= 10) {
+        if (!root.contains("greenbelt_map") || !root.at("greenbelt_map").is_object())
+            throw std::runtime_error("greenbelt_map must be an object");
+        const auto& greenbelt = root.at("greenbelt_map");
+        k.greenbelt_map.asset_path = required_string(greenbelt, "asset_path");
+        k.greenbelt_map.image_width = required_int(greenbelt, "image_width");
+        k.greenbelt_map.image_height = required_int(greenbelt, "image_height");
+        const auto& calibration = greenbelt.at("calibration");
+        k.greenbelt_map.calibration = {required_number(calibration, "origin_x"),
+            required_number(calibration, "origin_y"), required_number(calibration, "hex_width"),
+            required_number(calibration, "hex_height"), required_number(calibration, "scale")};
+        if (!greenbelt.at("hexes").is_array()) throw std::runtime_error("greenbelt_map hexes must be an array");
+        for (const auto& item : greenbelt.at("hexes")) {
+            if (!item.is_object() || !item.at("improvements").is_array())
+                throw std::runtime_error("Invalid Greenbelt hex");
+            GreenbeltHex hex;
+            hex.q = required_int(item, "q");
+            hex.r = required_int(item, "r");
+            hex.terrain = required_string(item, "terrain");
+            hex.claimed = required_bool(item, "claimed");
+            hex.claim_turn = required_int(item, "claim_turn");
+            hex.settlement_id = required_string(item, "settlement_id");
+            for (const auto& improvement : item.at("improvements")) {
+                if (!improvement.is_string()) throw std::runtime_error("Greenbelt improvement ID must be a string");
+                hex.improvements.push_back(improvement.get<std::string>());
+            }
+            k.greenbelt_map.hexes.push_back(std::move(hex));
+        }
+        if (greenbelt.contains("special_terrain")) {
+            if (!greenbelt.at("special_terrain").is_array()) throw std::runtime_error("greenbelt_map special_terrain must be an array");
+            for (const auto& item : greenbelt.at("special_terrain")) {
+                if (!item.is_object()) throw std::runtime_error("Invalid Greenbelt special terrain");
+                k.greenbelt_map.special_terrain.push_back({required_int(item, "q"), required_int(item, "r"),
+                    required_string(item, "type"), required_string(item, "name"), required_string(item, "notes")});
+            }
+        }
+        if (greenbelt.contains("custom_improvements")) {
+            if (!greenbelt.at("custom_improvements").is_array()) throw std::runtime_error("greenbelt_map custom_improvements must be an array");
+            for (const auto& item : greenbelt.at("custom_improvements")) {
+                if (!item.is_object()) throw std::runtime_error("Invalid Greenbelt custom improvement");
+                k.greenbelt_map.custom_improvements.push_back({required_string(item, "id"),
+                    required_string(item, "name"), required_string(item, "effect_preview"),
+                    required_string(item, "cost_description"), required_bool(item, "manual_only")});
+            }
         }
     }
     validate(k);

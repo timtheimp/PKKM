@@ -1,5 +1,6 @@
 #include "pkkm/kingdom.hpp"
 #include "pkkm/buildings.hpp"
+#include "pkkm/greenbelt.hpp"
 #include <nlohmann/json.hpp>
 #include <cstdio>
 #include <iostream>
@@ -21,9 +22,17 @@ int main(int argc, char** argv) {
  k.calendar_notes = {{"calendar.row.2", "", "", "", "Opening month"},
                      {"calendar.row.14", "Founding festival", "Build the bridge", "Dragon sighting", ""}};
  k.settlements.push_back({"Oak", 1200, 2, 3, -1, 4, 7});
+ k.settlements[0].id="settlement.oak";
  k.settlements[0].apply_catalog_stat_effects=true;
  k.settlements[0].building_inventory.push_back({"Academy", 2});
  k.settlements[0].map = {8, 8, {{"Castle", 5, 5, 2, 2}}};
+ k.greenbelt_map.asset_path="Kingmaker-Greenbelt-Map.jpg";
+ k.greenbelt_map.image_width=7865; k.greenbelt_map.image_height=2610;
+ k.greenbelt_map.calibration={120.0, 40.0, 46.0, 40.0, 1.0};
+ k.greenbelt_map.hexes.push_back({3, -2, "plains", true, 4, "settlement.oak", {"farm"}});
+ k.greenbelt_map.special_terrain.push_back({4, -1, "river", "North Fork", "Manual waterway record"});
+ k.greenbelt_map.custom_improvements.push_back({"custom.greenhouse", "Greenhouse",
+     "Manual effect preview", "Manual cost", true});
  k.buildings.push_back({"Granary", 2});
  const std::string path="pkkm_test_roundtrip.json";
  k.rule_inputs.alignment = "CE";
@@ -42,18 +51,56 @@ int main(int argc, char** argv) {
  must(r.settlements[0].districts==2 && r.settlements[0].economy==3 && r.settlements[0].loyalty==-1
       && r.settlements[0].stability==4 && r.settlements[0].defense==7,
       "roundtrip settlement workbook totals");
- must(r.schema_version==9 && r.settlements[0].apply_catalog_stat_effects
+ must(r.schema_version==10 && r.settlements[0].id=="settlement.oak"
+      && r.settlements[0].apply_catalog_stat_effects
       && r.settlements[0].building_inventory.size()==1
       && r.settlements[0].building_inventory[0].name=="Academy"
       && r.settlements[0].building_inventory[0].count==2,
-      "schema 9 roundtrips existing settlement state");
+      "schema 10 roundtrips existing settlement state");
+ must(r.greenbelt_map.asset_path=="Kingmaker-Greenbelt-Map.jpg"
+      && r.greenbelt_map.image_width==7865 && r.greenbelt_map.image_height==2610
+      && r.greenbelt_map.calibration.origin_x==120.0
+      && r.greenbelt_map.hexes.size()==1 && r.greenbelt_map.hexes[0].q==3
+      && r.greenbelt_map.hexes[0].r==-2 && r.greenbelt_map.hexes[0].claimed
+      && r.greenbelt_map.hexes[0].settlement_id=="settlement.oak"
+      && r.greenbelt_map.hexes[0].improvements[0]=="farm",
+      "schema 10 roundtrips Greenbelt calibration and linked hex state");
+ must(r.greenbelt_map.special_terrain.size()==1
+      && r.greenbelt_map.special_terrain[0].type=="river"
+      && r.greenbelt_map.special_terrain[0].name=="North Fork"
+      && r.greenbelt_map.custom_improvements.size()==1
+      && r.greenbelt_map.custom_improvements[0].id=="custom.greenhouse"
+      && r.greenbelt_map.custom_improvements[0].manual_only,
+      "schema 10 roundtrips special terrain and custom Greenbelt improvements");
+ const auto& greenbelt_catalog=pkkm::greenbelt_improvement_catalog();
+ const auto* vineyard=pkkm::find_greenbelt_improvement(greenbelt_catalog,"vineyard");
+ must(greenbelt_catalog.size()==14 && vineyard!=nullptr && vineyard->third_party
+      && vineyard->terrain_requirement=="hills" && vineyard->cost_bp==3,
+      "Greenbelt catalog includes the source-specific Vineyard entry");
+ const auto farm_preview=pkkm::preview_greenbelt_improvement(
+     greenbelt_catalog,"farm","plains",true,false);
+ must(farm_preview.known && farm_preview.allowed && farm_preview.bp_delta==0
+      && farm_preview.manual_effect && farm_preview.summary.find("Consumption")!=std::string::npos,
+      "Greenbelt improvement preview records effects without spending BP");
+ const auto highway_preview=pkkm::preview_greenbelt_improvement(
+     greenbelt_catalog,"highway","plains",true,false);
+ must(highway_preview.known && !highway_preview.allowed
+      && !highway_preview.warnings.empty(),
+      "Greenbelt preview preserves unmet Highway prerequisites as warnings");
+ const auto center=pkkm::greenbelt_hex_center({100.0,50.0,20.0,10.0,1.0},2,4);
+ must(center.x==180.0 && center.y==90.0,"Greenbelt calibration projects axial coordinates");
+ const auto single_perimeter=pkkm::greenbelt_claimed_perimeter({{0,0,"plains",true,1,"",{}}});
+ const auto adjacent_perimeter=pkkm::greenbelt_claimed_perimeter({
+     {0,0,"plains",true,1,"",{}},{1,0,"plains",true,1,"",{}}});
+ must(single_perimeter.size()==6 && adjacent_perimeter.size()==10,
+      "Greenbelt perimeter removes shared edges between adjacent claimed hexes");
  must(r.calendar_notes.size()==2 && r.calendar_notes[0].entry_id=="calendar.row.2"
       && r.calendar_notes[0].other=="Opening month"
       && r.calendar_notes[1].entry_id=="calendar.row.14"
       && r.calendar_notes[1].holiday=="Founding festival"
       && r.calendar_notes[1].kingdom_upgrades=="Build the bridge"
       && r.calendar_notes[1].events=="Dragon sighting" && r.calendar_notes[1].other.empty(),
-      "schema 9 keeps notes for repeated month names on separate source occurrences");
+      "schema 10 keeps notes for repeated month names on separate source occurrences");
  must(r.turn_progress.size()==2 && r.turn_progress[0].turn==4
       && r.turn_progress[0].completed_step_ids.size()==2
       && r.turn_progress[0].completed_step_ids[0]=="upkeep.stability"
@@ -80,6 +127,48 @@ int main(int argc, char** argv) {
       && abandon_hex.treasury_delta==0 && abandon_hex.kingdom_size_delta==-1 && abandon_hex.unrest_delta==1
       && abandon_city.treasury_delta==0 && abandon_city.kingdom_size_delta==-1 && abandon_city.unrest_delta==4,
       "explicit Turn hex and city actions preserve workbook deltas");
+ pkkm::Kingdom advanced=k;
+ advanced.turn=4;
+ advanced.turn_progress={{4,{"upkeep.stability"}}};
+ pkkm::advance_turn(advanced);
+ must(advanced.turn==5 && advanced.turn_progress.size()==1
+      && advanced.turn_progress[0].turn==4
+      && advanced.turn_progress[0].completed_step_ids[0]=="upkeep.stability",
+      "advancing a turn preserves prior checklist history without inventing outcomes");
+ pkkm::Kingdom action_k=k;
+ pkkm::apply_turn_action(action_k, pkkm::TurnAction::ClaimHex, 2);
+ must(action_k.treasury_bp==118 && action_k.rule_inputs.kingdom_size==26
+      && action_k.unrest==2 && action_k.turn_actions.size()==1
+      && action_k.turn_actions[0].turn==4 && action_k.turn_actions[0].count==2
+      && action_k.turn_actions[0].applied.treasury_delta==-2,
+      "Claim Hex applies only its explicit delta and records the action");
+ const std::string action_path="pkkm_test_turn_actions.json";
+ pkkm::save(action_k, action_path);
+ const auto action_r=pkkm::load(action_path);
+ must(action_r.turn_actions.size()==1
+      && action_r.turn_actions[0].action==pkkm::TurnAction::ClaimHex
+      && action_r.turn_actions[0].count==2
+      && action_r.turn_actions[0].applied.kingdom_size_delta==2,
+      "Turn action records roundtrip through JSON persistence");
+ std::remove(action_path.c_str());
+ pkkm::Kingdom reversal_k=k;
+ pkkm::apply_turn_action(reversal_k, pkkm::TurnAction::ClaimHex);
+ pkkm::apply_turn_action(reversal_k, pkkm::TurnAction::AbandonCity);
+ pkkm::reverse_turn_action(reversal_k, 0);
+ must(reversal_k.treasury_bp==120 && reversal_k.rule_inputs.kingdom_size==23
+      && reversal_k.unrest==6 && reversal_k.turn_actions.size()==3
+      && reversal_k.turn_actions[2].reversal
+      && reversal_k.turn_actions[2].reverses_index==0
+      && reversal_k.turn_actions[2].applied.treasury_delta==1
+      && reversal_k.turn_actions[2].applied.kingdom_size_delta==-1,
+      "Selected Turn Action reversal restores explicit state and appends an indexed audit record");
+ const std::string reversal_path="pkkm_test_turn_action_reversal.json";
+ pkkm::save(reversal_k, reversal_path);
+ const auto reversal_r=pkkm::load(reversal_path);
+ must(reversal_r.turn_actions.size()==3 && reversal_r.turn_actions[2].reversal
+      && reversal_r.turn_actions[2].reverses_index==0,
+      "Turn action reversal state roundtrips through JSON persistence");
+ std::remove(reversal_path.c_str());
  const auto size_10=pkkm::kingdom_size_limits(10);
  const auto size_11=pkkm::kingdom_size_limits(11);
  const auto size_26=pkkm::kingdom_size_limits(26);
@@ -100,6 +189,36 @@ int main(int argc, char** argv) {
  must(pkkm::resolve_tax_bp_delta(true, 4, 2)==6
       && pkkm::resolve_tax_bp_delta(false, 99, 2)==2,
       "tax Turn branches preserve success and failure BP outcomes");
+ pkkm::Kingdom tax_k=k;
+ pkkm::apply_tax_action(tax_k, true, 4, 2);
+ must(tax_k.treasury_bp==126 && tax_k.tax_actions.size()==1
+      && tax_k.tax_actions[0].turn==4 && tax_k.tax_actions[0].treasury_delta==6,
+      "explicit tax action applies only the source-defined BP result and records its branch inputs");
+ const std::string tax_path="pkkm_test_tax_actions.json";
+ pkkm::save(tax_k, tax_path);
+ const auto tax_r=pkkm::load(tax_path);
+ must(tax_r.tax_actions.size()==1 && tax_r.tax_actions[0].economy_check_success
+      && tax_r.tax_actions[0].result_divided_by_three==4
+      && tax_r.tax_actions[0].other_bp_gained==2
+      && tax_r.tax_actions[0].treasury_delta==6,
+      "tax action records roundtrip through JSON persistence");
+ std::remove(tax_path.c_str());
+ pkkm::Kingdom withdrawal_k=k;
+ pkkm::apply_gold_withdrawal(withdrawal_k, 3);
+ must(withdrawal_k.treasury_bp==117 && withdrawal_k.unrest==5
+      && withdrawal_k.gold_withdrawals.size()==1
+      && withdrawal_k.gold_withdrawals[0].gold_received==6000,
+      "gold withdrawal applies the explicit BP, gold, and unrest conversion");
+ const std::string withdrawal_path="pkkm_test_gold_withdrawal.json";
+ pkkm::save(withdrawal_k, withdrawal_path);
+ const auto withdrawal_r=pkkm::load(withdrawal_path);
+ must(withdrawal_r.gold_withdrawals.size()==1
+      && withdrawal_r.gold_withdrawals[0].bp_withdrawn==3
+      && withdrawal_r.gold_withdrawals[0].gold_received==6000
+      && withdrawal_r.gold_withdrawals[0].treasury_delta==-3
+      && withdrawal_r.gold_withdrawals[0].unrest_delta==3,
+      "gold withdrawal records roundtrip through JSON persistence");
+ std::remove(withdrawal_path.c_str());
  const auto magic_items=pkkm::magic_item_workflow();
  must(magic_items.buy_item_moves_to_pc && magic_items.success_recycles_item
       && !magic_items.failure_recycles_item && magic_items.excess_checks_economy_delta==-1
@@ -154,7 +273,7 @@ int main(int argc, char** argv) {
  const std::string map_v7_saved_path="pkkm_map_v7_roundtrip_test.json";
  pkkm::save(labeled_map,map_v7_saved_path);
  const auto labeled_json=nlohmann::json::parse(contents(map_v7_saved_path));
- must(labeled_map.schema_version==9 && labeled_map.turn_progress.empty() && labeled_map.calendar_notes.empty()
+ must(labeled_map.schema_version==10 && labeled_map.turn_progress.empty() && labeled_map.calendar_notes.empty()
       && labeled_json["settlements"][0]["map"]["labels"].size()==3
       && labeled_json["settlements"][0]["map"]["labels"][0]["text"]=="Hill"
       && labeled_json["settlements"][0]["map"]["labels"][1]["row"]==1
@@ -165,9 +284,11 @@ int main(int argc, char** argv) {
  legacy_v8.erase("calendar_notes");
  put(path,legacy_v8.dump(2));
  const auto migrated_v8=pkkm::load(path);
- must(migrated_v8.schema_version==9 && migrated_v8.turn_progress.size()==2
+ must(migrated_v8.schema_version==10 && migrated_v8.turn_progress.size()==2
       && migrated_v8.calendar_notes.empty(),
       "schema 8 migrates turn checklist history and defaults calendar notes to empty");
+ must(migrated_v8.greenbelt_map.hexes.empty() && migrated_v8.greenbelt_map.asset_path.empty(),
+      "schema 8 migrates to an empty Greenbelt map");
  auto out_of_bounds_label=map_v7_fixture;
  out_of_bounds_label["settlements"][0]["map"]["labels"][0]["column"]=14;
  put(map_v7_path,out_of_bounds_label.dump(2));
@@ -374,7 +495,7 @@ int main(int argc, char** argv) {
  legacy_v3["settlements"][0].erase("building_inventory");
  put(path,legacy_v3.dump(2));
  const auto migrated_v3=pkkm::load(path);
- must(migrated_v3.schema_version==9 && migrated_v3.turn_progress.empty() && migrated_v3.calendar_notes.empty() && migrated_v3.settlements.size()==1
+ must(migrated_v3.schema_version==10 && migrated_v3.turn_progress.empty() && migrated_v3.calendar_notes.empty() && migrated_v3.settlements.size()==1
       && migrated_v3.settlements[0].building_inventory.empty()
       && migrated_v3.settlements[0].population==1200
       && !migrated_v3.settlements[0].apply_catalog_stat_effects,
@@ -386,7 +507,7 @@ int main(int argc, char** argv) {
  legacy_v4["settlements"][0].erase("map");
  put(path,legacy_v4.dump(2));
  const auto migrated_v4=pkkm::load(path);
- must(migrated_v4.schema_version==9 && migrated_v4.turn_progress.empty() && migrated_v4.calendar_notes.empty() && !migrated_v4.settlements[0].apply_catalog_stat_effects
+ must(migrated_v4.schema_version==10 && migrated_v4.turn_progress.empty() && migrated_v4.calendar_notes.empty() && !migrated_v4.settlements[0].apply_catalog_stat_effects
       && migrated_v4.settlements[0].economy==3 && migrated_v4.settlements[0].loyalty==-1
       && migrated_v4.settlements[0].building_inventory.size()==1,
       "schema 4 migration preserves saved totals and defaults catalog opt-in off");
@@ -396,7 +517,7 @@ int main(int argc, char** argv) {
  legacy_v5["settlements"][0].erase("map");
  put(path,legacy_v5.dump(2));
  const auto migrated_v5=pkkm::load(path);
- must(migrated_v5.schema_version==9 && migrated_v5.turn_progress.empty() && migrated_v5.calendar_notes.empty() && migrated_v5.settlements[0].map.rows==0
+ must(migrated_v5.schema_version==10 && migrated_v5.turn_progress.empty() && migrated_v5.calendar_notes.empty() && migrated_v5.settlements[0].map.rows==0
       && migrated_v5.settlements[0].map.columns==0 && migrated_v5.settlements[0].map.placements.empty(),
       "schema 5 migration defaults map to empty");
  pkkm::save(k,path);
@@ -407,7 +528,7 @@ int main(int argc, char** argv) {
  const auto migrated_v6=pkkm::load(path);
  pkkm::save(migrated_v6,path);
  const auto migrated_v6_json=nlohmann::json::parse(contents(path));
- must(migrated_v6.schema_version==9 && migrated_v6.turn_progress.empty() && migrated_v6.calendar_notes.empty()
+ must(migrated_v6.schema_version==10 && migrated_v6.turn_progress.empty() && migrated_v6.calendar_notes.empty()
       && migrated_v6_json["settlements"][0]["map"]["labels"].empty(),
       "schema 6 maps migrate with an empty annotation list");
  auto invalid=k; invalid.turn=0; bool rejected=false;
@@ -434,9 +555,9 @@ int main(int argc, char** argv) {
  must_reject([&]{pkkm::save(k,source_guard_path);});
  must(contents(source_guard_path)=="source sentinel","spreadsheet source is not mutated by save");
  auto legacy_v2=original;
- const auto version_position=legacy_v2.find("\"schema_version\": 9");
+ const auto version_position=legacy_v2.find("\"schema_version\": 10");
  must(version_position!=std::string::npos,"saved schema version can be converted to a legacy fixture");
- legacy_v2.replace(version_position,std::string("\"schema_version\": 9").size(),"\"schema_version\": 2");
+ legacy_v2.replace(version_position,std::string("\"schema_version\": 10").size(),"\"schema_version\": 2");
  const auto settlements_position=legacy_v2.find("  \"settlements\": [");
  const auto settlements_close=legacy_v2.find("\n  ],",settlements_position);
  must(settlements_position!=std::string::npos && settlements_close!=std::string::npos,
@@ -445,13 +566,13 @@ int main(int argc, char** argv) {
      "  \"settlements\": [\n    {\n      \"name\": \"Oak\",\n      \"population\": 1200\n    }\n  ],");
  put(path,legacy_v2);
  const auto migrated_v2=pkkm::load(path);
- must(migrated_v2.schema_version==9 && migrated_v2.turn_progress.empty() && migrated_v2.calendar_notes.empty() && migrated_v2.settlements.size()==1
+ must(migrated_v2.schema_version==10 && migrated_v2.turn_progress.empty() && migrated_v2.calendar_notes.empty() && migrated_v2.settlements.size()==1
       && migrated_v2.settlements[0].districts==0 && migrated_v2.settlements[0].economy==0,
       "schema 2 settlements migrate with zero defaults for new aggregate inputs");
  put(path,R"({"schema_version":1,"name":"right","turn":1,"treasury_bp":0,"unrest":0,"settlements":[],"buildings":[],"extra":{"name":"wrong"}})");
  must(pkkm::load(path).name=="right","nested key does not shadow root field");
  auto migrated=pkkm::load(path);
- must(migrated.schema_version==9 && migrated.turn_progress.empty() && migrated.calendar_notes.empty() && migrated.rule_inputs.alignment=="N","schema 1 saves migrate to defaults");
+ must(migrated.schema_version==10 && migrated.turn_progress.empty() && migrated.calendar_notes.empty() && migrated.rule_inputs.alignment=="N","schema 1 saves migrate to defaults");
  must_reject([&]{put(path,R"({"schema_version":1,"name":"x","turn":1,"treasury_bp":0,"unrest":0,"buildings":[]})");(void)pkkm::load(path);});
  must_reject([&]{put(path,R"({"schema_version":1,"name":"x","turn":1,"treasury_bp":0,"unrest":0,"settlements":[],"buildings":[] garbage})");(void)pkkm::load(path);});
  auto neutral = pkkm::alignment_bonuses("N");

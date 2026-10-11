@@ -10,7 +10,10 @@ namespace pkkm::ui {
 namespace {
 constexpr wchar_t kClassName[] = L"PKKMMapEditor";
 constexpr int kMaxGrid = 20;
-constexpr int kCellBase = 7000;
+// Keep the cell-button ID range disjoint from the editor command IDs below.
+// A 20x20 grid consumes 400 consecutive IDs; starting at 10000 leaves the
+// 7300-7315 command range available for Resize, Place, Template, and actions.
+constexpr int kCellBase = 10000;
 constexpr int kRows = 7300;
 constexpr int kColumns = 7301;
 constexpr int kResize = 7302;
@@ -27,6 +30,9 @@ constexpr int kLabelText = 7312;
 constexpr int kAddLabel = 7313;
 constexpr int kTemplate = 7314;
 constexpr int kLoadTemplate = 7315;
+static_assert(kCellBase > kLoadTemplate &&
+    kCellBase + kMaxGrid * kMaxGrid < 0x10000,
+    "Settlement map cell IDs must not overlap editor command IDs");
 
 HWND editor_window = nullptr;
 HWND editor_owner = nullptr;

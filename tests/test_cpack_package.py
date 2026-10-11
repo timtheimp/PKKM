@@ -5,7 +5,7 @@ from pathlib import Path
 import zipfile
 
 
-EXPECTED = {"pkkm.exe", "pkkm_desktop.exe", "building_catalog.json"}
+EXPECTED = {"pkkm.exe", "pkkm_desktop.exe", "building_catalog.json", "Kingmaker-Greenbelt-Map.jpg"}
 
 
 def main() -> int:
