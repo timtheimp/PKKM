@@ -10,7 +10,12 @@ if len(sys.argv) == 3:
     EXECUTABLE = Path(sys.argv[1])
     CATALOG = Path(sys.argv[2])
 else:
-    EXECUTABLE = PROJECT_ROOT / "build" / "asset-copy-verify" / "Release" / "pkkm.exe"
+    executable_candidates = [
+        PROJECT_ROOT / "build" / "asset-copy-verify" / "Release" / "pkkm.exe",
+        PROJECT_ROOT / "build" / "ci" / "Release" / "pkkm.exe",
+        PROJECT_ROOT / "build" / "Release" / "pkkm.exe",
+    ]
+    EXECUTABLE = next((path for path in executable_candidates if path.exists()), executable_candidates[0])
     CATALOG = PROJECT_ROOT / "assets" / "building_catalog.json"
 sys.argv = [sys.argv[0]]
 
