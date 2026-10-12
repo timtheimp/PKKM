@@ -144,6 +144,8 @@ The optional magic-item rows are exposed by `magic_item_workflow()` as reference
 
 The Phase 4 event cadence is exposed by `event_cadence()`: when no event occurred last month, the source gives a `75%` chance of a new event; when an event occurred last month, it gives a `25%` chance. The API does not roll dice, create events, or resolve event effects.
 
+The remaining Turn rows were audited against their source text. `Make Magic Items` is reference-only because the workbook supplies no item inventory schema or city-selection rules. `Create Armies` and `Adjust Edict Laws` contain no explicit deltas or input fields and remain manual. `Build Improvements` and `Create/Improve City` point to `See Table` and remain source-table/manual boundaries. The optional magic-item rows are exposed as reference flags only; item identity, value payment, city eligibility, recycling, and movement to a PC are not automated. `Roll d% for event` preserves its cadence reference but does not roll, create, or resolve events. This audit intentionally adds no hidden mutations.
+
 `classify_event_resolution(event_triggered)` preserves the remaining workflow boundary: no triggered event yields `NoEvent`, while a triggered event yields `ManualResolutionRequired`. The source workbook provides no event table or effect rules, so event selection, consequences, and state mutation remain outside the domain API.
 
 The source-defined terrain reference rows `Turn!A38:D47` are preserved by `tools/import_terrain_reference.py` in `assets/terrain_reference.json` as raw strings with source row numbers. The extracted table is reference-only: it does not establish map terrain bonuses, movement mechanics, or automatic farm/road outcomes.

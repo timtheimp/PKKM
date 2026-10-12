@@ -234,6 +234,21 @@ struct GoldDepositRecord {
 };
 int resolve_gold_deposit_bp(int gold_deposited);
 void apply_gold_deposit(Kingdom& kingdom, int gold_deposited);
+struct ItemDepositRecord {
+ int turn = 1;
+ int item_value = 0;
+ int bp_received = 0;
+ int treasury_delta = 0;
+};
+int resolve_item_deposit_bp(int item_value);
+void apply_item_deposit(Kingdom& kingdom, int item_value);
+struct LoyaltyCheckRecord {
+ int turn = 1;
+ bool success = false;
+ int unrest_delta = 0;
+ int loyalty_delta = 0;
+};
+void apply_loyalty_check(Kingdom& kingdom, bool success);
 struct MagicItemWorkflow {
  bool buy_item_moves_to_pc = true;
  bool success_recycles_item = true;
@@ -281,6 +296,8 @@ struct Kingdom {
  std::vector<UnrestModificationRecord> unrest_modifications;
  std::vector<GoldWithdrawalRecord> gold_withdrawals;
  std::vector<GoldDepositRecord> gold_deposits;
+ std::vector<ItemDepositRecord> item_deposits;
+ std::vector<LoyaltyCheckRecord> loyalty_checks;
  std::vector<CalendarNote> calendar_notes;
  GreenbeltMap greenbelt_map;
 };

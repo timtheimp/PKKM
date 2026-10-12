@@ -120,6 +120,7 @@ class CatalogCliTests(unittest.TestCase):
     def test_catalog_stat_effects_are_preview_only_by_default(self):
         output = self.run_settlement_preview(False)
         self.assertIn("catalog effects preview (not applied)", output)
+        self.assertIn("Audit records | Turn actions 0", output)
         self.assertIn("Economy +4 | Loyalty +4", output)
         self.assertIn("Improvements 0", output)
         self.assertIn("population 1000", output)

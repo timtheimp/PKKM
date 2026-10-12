@@ -73,6 +73,15 @@ int main(int argc, char** argv) {
                 kingdom.unrest, kingdom.rule_inputs, kingdom.settlements, &catalog);
             std::cout << kingdom.name << " | turn " << kingdom.turn << " | treasury " << kingdom.treasury_bp
                       << " BP | unrest " << kingdom.unrest << "\n";
+            std::cout << "Audit records | Turn actions " << kingdom.turn_actions.size()
+                      << " | Taxes " << kingdom.tax_actions.size()
+                      << " | Stability checks " << kingdom.stability_checks.size()
+                      << " | Consumption " << kingdom.consumption_actions.size()
+                      << " | Unrest modifications " << kingdom.unrest_modifications.size()
+                      << " | Gold withdrawals " << kingdom.gold_withdrawals.size()
+                      << " | Gold deposits " << kingdom.gold_deposits.size()
+                      << " | Item deposits " << kingdom.item_deposits.size()
+                      << " | Loyalty checks " << kingdom.loyalty_checks.size() << "\n";
             std::cout << "Control DC " << summary.control_dc << " | population " << summary.population << "\n";
             if (summary.settlement_totals.count > 0) {
                 const auto& totals = summary.settlement_totals;
