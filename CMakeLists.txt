@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(PKKM VERSION 0.1.0 LANGUAGES CXX)
+project(PKKM VERSION 0.1.2 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -12,6 +12,7 @@ else()
 endif()
 add_executable(pkkm src/main.cpp)
 target_link_libraries(pkkm PRIVATE pkkm_core)
+target_compile_definitions(pkkm PRIVATE PKKM_VERSION="${PROJECT_VERSION}")
 add_custom_command(TARGET pkkm POST_BUILD
  COMMAND ${CMAKE_COMMAND} -E copy_if_different
  "${CMAKE_CURRENT_SOURCE_DIR}/assets/building_catalog.json"
@@ -37,6 +38,12 @@ add_executable(pkkm_tests tests/kingdom_tests.cpp)
 target_link_libraries(pkkm_tests PRIVATE pkkm_core)
 target_include_directories(pkkm_tests PRIVATE third_party)
 add_test(NAME kingdom_domain COMMAND pkkm_tests "${CMAKE_CURRENT_SOURCE_DIR}/assets/building_catalog.json")
+find_program(PKKM_PYTHON_EXECUTABLE NAMES python python3)
+if(PKKM_PYTHON_EXECUTABLE)
+    add_test(NAME python_suite
+        COMMAND "${PKKM_PYTHON_EXECUTABLE}" -m unittest discover -s tests -p "test_*.py"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+endif()
 
 # Install/CPack payload for a reproducible end-user distribution. Tests and
 # source-only importer utilities intentionally remain outside the package.

@@ -151,6 +151,13 @@ SettlementBuildingTotals calculate_settlement_building_totals(
         add_scaled(totals.stability, found->stability, item.count, "Stability");
         add_scaled(totals.defense, found->defense, item.count, "Defense");
         add_scaled(totals.unrest, found->unrest, item.count, "unrest");
+        add_scaled(totals.corruption, found->corruption, item.count, "corruption");
+        add_scaled(totals.crime, found->crime, item.count, "crime");
+        add_scaled(totals.law, found->law, item.count, "law");
+        add_scaled(totals.lore, found->lore, item.count, "lore");
+        add_scaled(totals.society, found->society, item.count, "society");
+        add_scaled(totals.productivity, found->productivity, item.count, "productivity");
+        add_scaled(totals.fame, found->fame, item.count, "fame");
     }
     return totals;
 }
@@ -173,6 +180,62 @@ SettlementSize calculate_settlement_size(
     const long long population = settlement.population >= minimum_population
         ? settlement.population : minimum_population;
     return {total_lots, to_int(districts, "districts"), to_int(population, "population")};
+}
+
+int calculate_settlement_catalog_cost(
+    const Settlement& settlement, const std::vector<BuildingCatalogEntry>& catalog) {
+    long long total = 0;
+    for (const auto& item : settlement.building_inventory) {
+        if (item.name.empty() || item.count < 0)
+            throw std::invalid_argument("Building inventory requires a name and nonnegative count");
+        const auto found = std::find_if(catalog.begin(), catalog.end(), [&item](const BuildingCatalogEntry& entry) {
+            return entry.kind == CatalogRowKind::Improvement && entry.name == item.name;
+        });
+        if (found == catalog.end())
+            throw std::invalid_argument("Building is not present in the improvement catalog: " + item.name);
+        if (found->cost < 0)
+            throw std::invalid_argument("Building cost cannot be negative: " + item.name);
+        total += static_cast<long long>(found->cost) * item.count;
+        if (total > std::numeric_limits<int>::max())
+            throw std::overflow_error("Settlement catalog cost exceeds supported range");
+    }
+    return static_cast<int>(total);
+}
+
+SettlementMarketReference calculate_settlement_market_reference(
+    const Settlement& settlement, const std::vector<BuildingCatalogEntry>& catalog) {
+    const auto size = calculate_settlement_size(settlement, catalog);
+    long long base_value = 0;
+    for (const auto& item : settlement.building_inventory) {
+        const auto found = std::find_if(catalog.begin(), catalog.end(), [&item](const BuildingCatalogEntry& entry) {
+            return entry.kind == CatalogRowKind::Improvement && entry.name == item.name;
+        });
+        if (found == catalog.end())
+            throw std::invalid_argument("Building is not present in the improvement catalog: " + item.name);
+        if (found->base_value < 0)
+            throw std::invalid_argument("Building base value cannot be negative: " + item.name);
+        base_value += static_cast<long long>(found->base_value) * item.count;
+        if (base_value > std::numeric_limits<int>::max())
+            throw std::overflow_error("Settlement base value exceeds supported range");
+    }
+    const auto tier = [](int population, int first, int second, int third, int fourth, int fifth, int sixth) {
+        if (population < 250) return first;
+        if (population < 2000) return second;
+        if (population < 5000) return third;
+        if (population < 10000) return fourth;
+        if (population < 25000) return fifth;
+        return sixth;
+    };
+    const int buy_tier = tier(size.population, 500, 1000, 2000, 4000, 8000, 16000);
+    const int sell_tier = size.population <= 250 ? 2500 : tier(size.population, 0, 5000, 10000, 25000, 50000, 100000);
+    const auto add_checked = [](int base, int increment, const char* field) {
+        const long long value = static_cast<long long>(base) + increment;
+        if (value > std::numeric_limits<int>::max())
+            throw std::overflow_error(std::string("Settlement ") + field + " exceeds supported range");
+        return static_cast<int>(value);
+    };
+    return {static_cast<int>(base_value), add_checked(static_cast<int>(base_value), buy_tier, "buy limit"),
+        add_checked(static_cast<int>(base_value), sell_tier, "sell limit"), tier(size.population, 3, 4, 5, 6, 7, 8)};
 }
 
 } // namespace pkkm

@@ -41,20 +41,20 @@ jobs:
           python tests/test_package_release.py
           python tests/test_terrain_reference.py
           python tests/test_workbook_import.py
-          python tools/package_release.py --build-dir build/ci/Release --output build/ci/PKKM-current-schema9.zip
+          python tools/package_release.py --build-dir build/ci/Release --output build/ci/PKKM-current-schema10.zip
           python tests/test_package_release.py
 
       - name: Create and verify CPack package
         shell: pwsh
         run: |
           cpack --config build/ci/CPackConfig.cmake -G ZIP -B build/ci/cpack
-          python tests/test_cpack_package.py build/ci/cpack/PKKM-0.1.0-Windows.zip
+          python tests/test_cpack_package.py build/ci/cpack/PKKM-0.1.2-Windows.zip
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
           name: pkkm-windows-release
           path: |
-            build/ci/PKKM-current-schema9.zip
-            build/ci/cpack/PKKM-0.1.0-Windows.zip
+            build/ci/PKKM-current-schema10.zip
+            build/ci/cpack/PKKM-0.1.2-Windows.zip
           if-no-files-found: error
