@@ -169,6 +169,8 @@ int main(int argc, char** argv) {
       && reversal_r.turn_actions[2].reverses_index==0,
       "Turn action reversal state roundtrips through JSON persistence");
  std::remove(reversal_path.c_str());
+ must_reject([&]{ pkkm::reverse_turn_action(reversal_k, 0); });
+ must_reject([&]{ pkkm::reverse_turn_action(reversal_k, 2); });
  const auto size_10=pkkm::kingdom_size_limits(10);
  const auto size_11=pkkm::kingdom_size_limits(11);
  const auto size_26=pkkm::kingdom_size_limits(26);
@@ -236,6 +238,46 @@ int main(int argc, char** argv) {
       "gold deposit records roundtrip through JSON persistence");
  std::remove(deposit_path.c_str());
  must_reject([&]{ (void)pkkm::resolve_gold_deposit_bp(4001); });
+ must(pkkm::resolve_item_deposit_bp(16000)==2,
+      "item deposit converts exact 8,000 gp base-value units to BP");
+ pkkm::Kingdom item_deposit_k=k;
+ pkkm::apply_item_deposit(item_deposit_k, 16000);
+ must(item_deposit_k.treasury_bp==122 && item_deposit_k.item_deposits.size()==1
+      && item_deposit_k.item_deposits[0].item_value==16000
+      && item_deposit_k.item_deposits[0].bp_received==2
+      && item_deposit_k.item_deposits[0].treasury_delta==2,
+      "item deposit applies only the explicit BP conversion and records it");
+ const std::string item_deposit_path="pkkm_test_item_deposit.json";
+ pkkm::save(item_deposit_k, item_deposit_path);
+ const auto item_deposit_r=pkkm::load(item_deposit_path);
+ must(item_deposit_r.item_deposits.size()==1
+      && item_deposit_r.item_deposits[0].item_value==16000
+      && item_deposit_r.item_deposits[0].bp_received==2,
+      "item deposit records roundtrip through JSON persistence");
+ std::remove(item_deposit_path.c_str());
+ must_reject([&]{ (void)pkkm::resolve_item_deposit_bp(8001); });
+ pkkm::Kingdom loyalty_success_k=k;
+ loyalty_success_k.unrest=2;
+ pkkm::apply_loyalty_check(loyalty_success_k, true);
+ must(loyalty_success_k.unrest==1 && loyalty_success_k.loyalty_checks.size()==1
+      && loyalty_success_k.loyalty_checks[0].unrest_delta==-1
+      && loyalty_success_k.loyalty_checks[0].loyalty_delta==0,
+      "successful Loyalty Check reduces unrest and records its branch");
+ pkkm::Kingdom loyalty_failure_k=k;
+ const int loyalty_other_before=loyalty_failure_k.rule_inputs.loyalty.other;
+ pkkm::apply_loyalty_check(loyalty_failure_k, false);
+ must(loyalty_failure_k.rule_inputs.loyalty.other==loyalty_other_before-1
+      && loyalty_failure_k.loyalty_checks.size()==1
+      && loyalty_failure_k.loyalty_checks[0].loyalty_delta==-1
+      && loyalty_failure_k.loyalty_checks[0].unrest_delta==0,
+      "failed Loyalty Check applies the permanent Loyalty penalty");
+ const std::string loyalty_path="pkkm_test_loyalty_check.json";
+ pkkm::save(loyalty_failure_k, loyalty_path);
+ const auto loyalty_r=pkkm::load(loyalty_path);
+ must(loyalty_r.loyalty_checks.size()==1 && !loyalty_r.loyalty_checks[0].success
+      && loyalty_r.loyalty_checks[0].loyalty_delta==-1,
+      "Loyalty Check records roundtrip through JSON persistence");
+ std::remove(loyalty_path.c_str());
  must(pkkm::resolve_stability_check(true, 0).treasury_delta==1,
       "successful stability check at zero unrest yields one BP");
  must(pkkm::resolve_stability_check(true, 3).unrest_delta==-1,
@@ -688,6 +730,11 @@ int main(int argc, char** argv) {
  must(migrated.schema_version==10 && migrated.turn_progress.empty() && migrated.calendar_notes.empty() && migrated.rule_inputs.alignment=="N","schema 1 saves migrate to defaults");
  must_reject([&]{put(path,R"({"schema_version":1,"name":"x","turn":1,"treasury_bp":0,"unrest":0,"buildings":[]})");(void)pkkm::load(path);});
  must_reject([&]{put(path,R"({"schema_version":1,"name":"x","turn":1,"treasury_bp":0,"unrest":0,"settlements":[],"buildings":[] garbage})");(void)pkkm::load(path);});
+ must_reject([&]{put(path,"[]");(void)pkkm::load(path);});
+ put(path,R"({"schema_version":10,"name":"x","turn":1,"treasury_bp":0,"unrest":0,"settlements":[],"buildings":[],"item_deposits":[{"turn":1,"item_value":8000,"bp_received":2,"treasury_delta":2}]})");
+ must_reject([&]{(void)pkkm::load(path);});
+ put(path,R"({"schema_version":10,"name":"x","turn":1,"treasury_bp":0,"unrest":0,"settlements":[],"buildings":[],"loyalty_checks":[{"turn":1,"success":true,"unrest_delta":0,"loyalty_delta":-1}]})");
+ must_reject([&]{(void)pkkm::load(path);});
  auto neutral = pkkm::alignment_bonuses("N");
  must(neutral.economy == 0 && neutral.loyalty == 0 && neutral.stability == 4, "single-letter neutral alignment gets both stability bonuses");
  auto chaotic_evil = pkkm::alignment_bonuses("CE");

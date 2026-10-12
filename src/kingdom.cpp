@@ -341,6 +341,19 @@ void validate(const Kingdom& k) {
             || record.treasury_delta != record.bp_received)
             throw std::invalid_argument("Gold deposit record has inconsistent values");
     }
+    for (const auto& record : k.item_deposits) {
+        const long long expected_value = static_cast<long long>(record.bp_received) * 8000;
+        if (record.turn < 1 || record.item_value < 1 || record.bp_received < 1
+            || expected_value != record.item_value
+            || record.treasury_delta != record.bp_received)
+            throw std::invalid_argument("Item deposit record has inconsistent values");
+    }
+    for (const auto& record : k.loyalty_checks) {
+        if (record.turn < 1
+            || (record.success && (record.loyalty_delta != 0 || record.unrest_delta > 0))
+            || (!record.success && (record.loyalty_delta != -1 || record.unrest_delta != 0)))
+            throw std::invalid_argument("Loyalty check record has inconsistent values");
+    }
     std::vector<std::string> seen_calendar_entries;
     for (const auto& note : k.calendar_notes) {
         const auto& entries = calendar_template_entries();
@@ -573,6 +586,42 @@ void apply_gold_deposit(Kingdom& kingdom, int gold_deposited) {
         throw std::overflow_error("Gold deposit would overflow treasury");
     kingdom.treasury_bp += bp_received;
     kingdom.gold_deposits.push_back({kingdom.turn, gold_deposited, bp_received, bp_received});
+    validate(kingdom);
+}
+
+int resolve_item_deposit_bp(int item_value) {
+    if (item_value < 1) throw std::invalid_argument("Item deposit must have a base value of at least 1 gp");
+    if (item_value % 8000 != 0)
+        throw std::invalid_argument("Item deposit must use exact 8,000 gp base-value units; rounding is not defined");
+    return item_value / 8000;
+}
+
+void apply_item_deposit(Kingdom& kingdom, int item_value) {
+    validate(kingdom);
+    const int bp_received = resolve_item_deposit_bp(item_value);
+    if (kingdom.treasury_bp > std::numeric_limits<int>::max() - bp_received)
+        throw std::overflow_error("Item deposit would overflow treasury");
+    kingdom.treasury_bp += bp_received;
+    kingdom.item_deposits.push_back({kingdom.turn, item_value, bp_received, bp_received});
+    validate(kingdom);
+}
+
+void apply_loyalty_check(Kingdom& kingdom, bool success) {
+    validate(kingdom);
+    int unrest_delta = 0;
+    int loyalty_delta = 0;
+    if (success) {
+        if (kingdom.unrest > 0) {
+            --kingdom.unrest;
+            unrest_delta = -1;
+        }
+    } else {
+        if (kingdom.rule_inputs.loyalty.other == std::numeric_limits<int>::min())
+            throw std::overflow_error("Loyalty check would underflow permanent Loyalty");
+        --kingdom.rule_inputs.loyalty.other;
+        loyalty_delta = -1;
+    }
+    kingdom.loyalty_checks.push_back({kingdom.turn, success, unrest_delta, loyalty_delta});
     validate(kingdom);
 }
 
@@ -875,7 +924,7 @@ void save(const Kingdom& k, const std::string& path) {
         {"treasury_bp", k.treasury_bp}, {"unrest", k.unrest},
         {"settlements", Json::array()}, {"buildings", Json::array()},
         {"turn_progress", Json::array()}, {"turn_actions", Json::array()}, {"tax_actions", Json::array()},
-                {"stability_checks", Json::array()}, {"consumption_actions", Json::array()}, {"unrest_modifications", Json::array()}, {"gold_withdrawals", Json::array()}, {"gold_deposits", Json::array()}, {"calendar_notes", Json::array()},
+                {"stability_checks", Json::array()}, {"consumption_actions", Json::array()}, {"unrest_modifications", Json::array()}, {"gold_withdrawals", Json::array()}, {"gold_deposits", Json::array()}, {"item_deposits", Json::array()}, {"loyalty_checks", Json::array()}, {"calendar_notes", Json::array()},
         {"greenbelt_map", {{"asset_path", k.greenbelt_map.asset_path},
             {"image_width", k.greenbelt_map.image_width}, {"image_height", k.greenbelt_map.image_height},
             {"calibration", {{"origin_x", k.greenbelt_map.calibration.origin_x},
@@ -938,6 +987,13 @@ void save(const Kingdom& k, const std::string& path) {
         output["gold_deposits"].push_back({{"turn", deposit.turn},
             {"gold_deposited", deposit.gold_deposited}, {"bp_received", deposit.bp_received},
             {"treasury_delta", deposit.treasury_delta}});
+    for (const auto& deposit : k.item_deposits)
+        output["item_deposits"].push_back({{"turn", deposit.turn},
+            {"item_value", deposit.item_value}, {"bp_received", deposit.bp_received},
+            {"treasury_delta", deposit.treasury_delta}});
+    for (const auto& check : k.loyalty_checks)
+        output["loyalty_checks"].push_back({{"turn", check.turn}, {"success", check.success},
+            {"unrest_delta", check.unrest_delta}, {"loyalty_delta", check.loyalty_delta}});
     for (const auto& note : k.calendar_notes)
         output["calendar_notes"].push_back({{"entry_id", note.entry_id}, {"holiday", note.holiday},
             {"kingdom_upgrades", note.kingdom_upgrades}, {"events", note.events}, {"other", note.other}});
@@ -1131,6 +1187,22 @@ Kingdom load(const std::string& path) {
             if (!item.is_object()) throw std::runtime_error("Invalid gold deposit record");
             k.gold_deposits.push_back({required_int(item, "turn"), required_int(item, "gold_deposited"),
                 required_int(item, "bp_received"), required_int(item, "treasury_delta")});
+        }
+    }
+    if (root.contains("item_deposits")) {
+        if (!root.at("item_deposits").is_array()) throw std::runtime_error("item_deposits must be an array");
+        for (const auto& item : root.at("item_deposits")) {
+            if (!item.is_object()) throw std::runtime_error("Invalid item deposit record");
+            k.item_deposits.push_back({required_int(item, "turn"), required_int(item, "item_value"),
+                required_int(item, "bp_received"), required_int(item, "treasury_delta")});
+        }
+    }
+    if (root.contains("loyalty_checks")) {
+        if (!root.at("loyalty_checks").is_array()) throw std::runtime_error("loyalty_checks must be an array");
+        for (const auto& item : root.at("loyalty_checks")) {
+            if (!item.is_object()) throw std::runtime_error("Invalid loyalty check record");
+            k.loyalty_checks.push_back({required_int(item, "turn"), required_bool(item, "success"),
+                required_int(item, "unrest_delta"), required_int(item, "loyalty_delta")});
         }
     }
     if (document_version >= 9) {

@@ -85,6 +85,14 @@ constexpr int kDepositGold = 6421;
 constexpr int kDepositApply = 6422;
 constexpr int kDepositStatus = 6423;
 constexpr int kDepositHistory = 6424;
+constexpr int kDepositItemValue = 6439;
+constexpr int kDepositItemApply = 6440;
+constexpr int kDepositItemStatus = 6441;
+constexpr int kDepositItemHistory = 6442;
+constexpr int kLoyaltySuccess = 6443;
+constexpr int kLoyaltyApply = 6444;
+constexpr int kLoyaltyStatus = 6445;
+constexpr int kLoyaltyHistory = 6446;
 constexpr int kStabilitySuccess = 6425;
 constexpr int kStabilityFailureBy = 6426;
 constexpr int kStabilityRoll = 6427;
@@ -1262,14 +1270,36 @@ void create_turn_action_controls(HWND window) {
         250, 900, 125, 30, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kDepositApply)), app_instance, nullptr);
     CreateWindowExW(0, L"STATIC", L"No gold deposit applied this session.", WS_CHILD | WS_VISIBLE | SS_LEFT,
-        20, 940, 575, 22, window,
+        20, 940, 340, 22, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kDepositStatus)), app_instance, nullptr);
     CreateWindowExW(0, L"STATIC", L"Gold deposit history", WS_CHILD | WS_VISIBLE | SS_LEFT,
         20, 970, 250, 22, window, nullptr, app_instance, nullptr);
     CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", nullptr,
         WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOINTEGRALHEIGHT,
-        20, 995, 575, 75, window,
+        20, 995, 350, 75, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kDepositHistory)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Item base value", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        380, 875, 105, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"8000", WS_CHILD | WS_VISIBLE | ES_NUMBER,
+        485, 873, 75, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kDepositItemValue)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Apply Item", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+        380, 905, 115, 30, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kDepositItemApply)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"No item deposit applied.", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        380, 945, 200, 22, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kDepositItemStatus)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Loyalty Check", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        380, 970, 150, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Check succeeded", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        380, 995, 135, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kLoyaltySuccess)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Apply Loyalty", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+        380, 1025, 125, 30, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kLoyaltyApply)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"No Loyalty Check applied.", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        380, 1060, 200, 22, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kLoyaltyStatus)), app_instance, nullptr);
     CreateWindowExW(0, L"STATIC", L"Stability Check (caller supplies branch inputs; no dice are rolled)",
         WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 1085, 560, 22, window, nullptr, app_instance, nullptr);
     CreateWindowExW(0, L"BUTTON", L"Check succeeded", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
@@ -1543,6 +1573,32 @@ void apply_gold_deposit_dialog(HWND window) {
     SetWindowTextW(window, L"Turn Actions - Deposit Applied");
 }
 
+void apply_item_deposit_dialog(HWND window) {
+    const int item_value = parse_integer(manager_text(window, kDepositItemValue));
+    pkkm::apply_item_deposit(kingdom, item_value);
+    dirty = true;
+    refresh(GetDlgItem(GetParent(window), kDisplay));
+    const auto& record = kingdom.item_deposits.back();
+    const std::wstring status = L"Item deposit applied on Turn " + std::to_wstring(record.turn)
+        + L" | Base value " + std::to_wstring(record.item_value)
+        + L" | BP received " + std::to_wstring(record.bp_received);
+    SetWindowTextW(GetDlgItem(window, kDepositItemStatus), status.c_str());
+    SetWindowTextW(window, L"Turn Actions - Item Deposit Applied");
+}
+
+void apply_loyalty_dialog(HWND window) {
+    const bool success = SendMessageW(GetDlgItem(window, kLoyaltySuccess), BM_GETCHECK, 0, 0) == BST_CHECKED;
+    pkkm::apply_loyalty_check(kingdom, success);
+    dirty = true;
+    refresh(GetDlgItem(GetParent(window), kDisplay));
+    const auto& record = kingdom.loyalty_checks.back();
+    const std::wstring status = L"Loyalty Check applied on Turn " + std::to_wstring(record.turn)
+        + L" | Unrest " + std::to_wstring(record.unrest_delta)
+        + L" | Permanent Loyalty " + std::to_wstring(record.loyalty_delta);
+    SetWindowTextW(GetDlgItem(window, kLoyaltyStatus), status.c_str());
+    SetWindowTextW(window, L"Turn Actions - Loyalty Check Applied");
+}
+
 void apply_stability_dialog(HWND window) {
     const bool success = SendMessageW(GetDlgItem(window, kStabilitySuccess), BM_GETCHECK, 0, 0) == BST_CHECKED;
     const int failure_by = parse_integer(manager_text(window, kStabilityFailureBy));
@@ -1666,6 +1722,8 @@ LRESULT CALLBACK turn_actions_proc(HWND window, UINT message, WPARAM wparam, LPA
                 else if (LOWORD(wparam) == kTaxApply) apply_tax_action_dialog(window);
                 else if (LOWORD(wparam) == kWithdrawalApply) apply_gold_withdrawal_dialog(window);
                 else if (LOWORD(wparam) == kDepositApply) apply_gold_deposit_dialog(window);
+                else if (LOWORD(wparam) == kDepositItemApply) apply_item_deposit_dialog(window);
+                else if (LOWORD(wparam) == kLoyaltyApply) apply_loyalty_dialog(window);
                 else if (LOWORD(wparam) == kStabilityApply) apply_stability_dialog(window);
                 else if (LOWORD(wparam) == kConsumptionApply) apply_consumption_dialog(window);
                 else if (LOWORD(wparam) == kUnrestApply) apply_unrest_dialog(window);
