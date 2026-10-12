@@ -302,10 +302,10 @@ void validate(const Kingdom& k) {
             throw std::invalid_argument("Turn action record has inconsistent deltas");
     }
     for (const auto& record : k.tax_actions) {
-        if (record.turn < 1 || record.result_divided_by_three < 0 || record.other_bp_gained < 0)
+        if (record.turn < 1 || record.result_input < 0 || record.other_bp_gained < 0)
             throw std::invalid_argument("Tax records require a positive turn and non-negative inputs");
-        if (record.treasury_delta != resolve_tax_bp_delta(record.economy_check_success,
-                record.result_divided_by_three, record.other_bp_gained))
+        if (record.treasury_delta != resolve_tax_bp_delta(record.rule_profile, record.economy_check_success,
+                record.result_input, record.other_bp_gained))
             throw std::invalid_argument("Tax record has an inconsistent treasury delta");
     }
     for (const auto& record : k.gold_withdrawals) {
@@ -313,14 +313,23 @@ void validate(const Kingdom& k) {
         if (record.turn < 1 || record.bp_withdrawn < 1
             || expected_gold != record.gold_received
             || record.treasury_delta != -record.bp_withdrawn
-            || record.unrest_delta != record.bp_withdrawn)
+            || record.unrest_delta != record.bp_withdrawn + record.loyalty_failure_unrest_delta
+            || record.loyalty_failure_unrest_delta != (record.loyalty_check_success ? 0 : record.bp_withdrawn))
             throw std::invalid_argument("Gold withdrawal record has inconsistent values");
     }
     for (const auto& record : k.stability_checks) {
         if (record.turn < 1 || record.failure_by < 0 || record.rolled_unrest < 0 || record.rolled_unrest > 4
             || (record.success && (record.failure_by != 0 || record.rolled_unrest != 0))
             || (!record.success && record.failure_by == 4)
-            || record.treasury_delta < 0 || record.unrest_delta < -1)
+            || record.treasury_delta < 0 || record.unrest_delta < -1
+            || (record.success && !((record.treasury_delta == 1 && record.unrest_delta == 0)
+                || (record.treasury_delta == 0 && record.unrest_delta == -1)))
+            || (!record.success && record.treasury_delta != 0)
+            || (!record.success && record.failure_by < 4 && record.unrest_delta != 1)
+            || (!record.success && record.failure_by >= 5 && record.rule_profile == RuleProfile::CityInfo
+                && record.unrest_delta != 2)
+            || (!record.success && record.failure_by >= 5 && record.rule_profile == RuleProfile::Workbook
+                && record.unrest_delta != record.rolled_unrest))
             throw std::invalid_argument("Stability check record has inconsistent values");
     }
     for (const auto& record : k.consumption_actions) {
@@ -342,10 +351,13 @@ void validate(const Kingdom& k) {
             throw std::invalid_argument("Gold deposit record has inconsistent values");
     }
     for (const auto& record : k.item_deposits) {
-        const long long expected_value = static_cast<long long>(record.bp_received) * 8000;
+        const long long expected_value = static_cast<long long>(record.bp_received)
+            * (record.rule_profile == RuleProfile::CityInfo ? 4000 : 8000);
         if (record.turn < 1 || record.item_value < 1 || record.bp_received < 1
             || expected_value != record.item_value
-            || record.treasury_delta != record.bp_received)
+            || record.treasury_delta != record.bp_received
+            || record.item_value != static_cast<long long>(record.bp_received)
+                * (record.rule_profile == RuleProfile::CityInfo ? 4000 : 8000))
             throw std::invalid_argument("Item deposit record has inconsistent values");
     }
     for (const auto& record : k.loyalty_checks) {
@@ -353,6 +365,22 @@ void validate(const Kingdom& k) {
             || (record.success && (record.loyalty_delta != 0 || record.unrest_delta > 0))
             || (!record.success && (record.loyalty_delta != -1 || record.unrest_delta != 0)))
             throw std::invalid_argument("Loyalty check record has inconsistent values");
+    }
+    std::map<int, int> commissions_by_turn;
+    for (const auto& record : k.commissions) {
+        if (record.turn < 1 || record.item_name.empty() || record.recipient.empty()
+            || record.cost_bp < 1 || record.exotic_crafters_available < 1)
+            throw std::invalid_argument("Commission record has invalid values");
+        const int count = ++commissions_by_turn[record.turn];
+        if (count > record.exotic_crafters_available)
+            throw std::invalid_argument("Commission records exceed available exotic crafters");
+    }
+    for (const auto& record : k.magic_item_outcomes) {
+        const int expected_bp = record.commissioned || !record.sold ? 0 : magic_item_sale_bp(record.category);
+        if (record.turn < 1 || (record.sold && record.commissioned)
+            || record.bp_received != expected_bp
+            || record.lost != (!record.commissioned && !record.sold))
+            throw std::invalid_argument("Magic-item outcome record has inconsistent values");
     }
     std::vector<std::string> seen_calendar_entries;
     for (const auto& note : k.calendar_notes) {
@@ -405,6 +433,12 @@ StabilityFailureOutcome classify_stability_failure(int failure_by) {
 
 StabilityCheckOutcome resolve_stability_check(bool success, int current_unrest,
     int failure_by, int rolled_unrest) {
+    return resolve_stability_check(RuleProfile::Workbook, success, current_unrest,
+        failure_by, rolled_unrest);
+}
+
+StabilityCheckOutcome resolve_stability_check(RuleProfile profile, bool success,
+    int current_unrest, int failure_by, int rolled_unrest) {
     if (current_unrest < 0) throw std::invalid_argument("Current unrest cannot be negative");
     if (success) return current_unrest == 0 ? StabilityCheckOutcome{1, 0} : StabilityCheckOutcome{0, -1};
     if (failure_by < 0) throw std::invalid_argument("Stability failure margin cannot be negative");
@@ -413,6 +447,7 @@ StabilityCheckOutcome resolve_stability_check(bool success, int current_unrest,
         case StabilityFailureOutcome::UnresolvedExactlyFour:
             throw std::invalid_argument("Stability failure by exactly 4 requires manual resolution");
         case StabilityFailureOutcome::FailByAtLeastFive:
+            if (profile == RuleProfile::CityInfo) return {0, 2};
             if (rolled_unrest < 1 || rolled_unrest > 4)
                 throw std::invalid_argument("Stability failure by 5 or more requires a caller-supplied 1d4 unrest result");
             return {0, rolled_unrest};
@@ -504,26 +539,35 @@ TurnEconomyRates turn_economy_rates() {
     return {2000, 4000, 8000, 1, 2000};
 }
 
-int resolve_tax_bp_delta(bool economy_check_success, int result_divided_by_three, int other_bp_gained) {
-    return other_bp_gained + (economy_check_success ? result_divided_by_three : 0);
+int resolve_tax_bp_delta(bool economy_check_success, int result_input, int other_bp_gained) {
+    return resolve_tax_bp_delta(RuleProfile::Workbook, economy_check_success,
+        result_input, other_bp_gained);
+}
+
+int resolve_tax_bp_delta(RuleProfile profile, bool economy_check_success,
+                         int result_input, int other_bp_gained) {
+    if (!economy_check_success) return other_bp_gained;
+    if (profile == RuleProfile::CityInfo) return other_bp_gained + result_input / 5;
+    return other_bp_gained + result_input;
 }
 
 void apply_tax_action(Kingdom& kingdom, bool economy_check_success,
-    int result_divided_by_three, int other_bp_gained) {
+    int result_input, int other_bp_gained) {
     validate(kingdom);
-    if (result_divided_by_three < 0 || other_bp_gained < 0)
+    if (result_input < 0 || other_bp_gained < 0)
         throw std::invalid_argument("Tax inputs must be non-negative");
     const int treasury_delta = resolve_tax_bp_delta(
-        economy_check_success, result_divided_by_three, other_bp_gained);
+        kingdom.rule_profile, economy_check_success, result_input, other_bp_gained);
     kingdom.treasury_bp += treasury_delta;
-    kingdom.tax_actions.push_back({kingdom.turn, economy_check_success, result_divided_by_three,
-        other_bp_gained, treasury_delta});
+    kingdom.tax_actions.push_back({kingdom.turn, economy_check_success, result_input,
+        other_bp_gained, treasury_delta, kingdom.rule_profile});
     validate(kingdom);
 }
 
 void apply_stability_check(Kingdom& kingdom, bool success, int failure_by, int rolled_unrest) {
     validate(kingdom);
-    const auto outcome = resolve_stability_check(success, kingdom.unrest, failure_by, rolled_unrest);
+    const auto outcome = resolve_stability_check(
+        kingdom.rule_profile, success, kingdom.unrest, failure_by, rolled_unrest);
     if (outcome.treasury_delta > 0 && kingdom.treasury_bp > std::numeric_limits<int>::max() - outcome.treasury_delta)
         throw std::overflow_error("Stability check would overflow treasury");
     if (outcome.unrest_delta < 0 && kingdom.unrest < -outcome.unrest_delta)
@@ -531,7 +575,7 @@ void apply_stability_check(Kingdom& kingdom, bool success, int failure_by, int r
     kingdom.treasury_bp += outcome.treasury_delta;
     kingdom.unrest += outcome.unrest_delta;
     kingdom.stability_checks.push_back({kingdom.turn, success, failure_by, rolled_unrest,
-        outcome.treasury_delta, outcome.unrest_delta});
+        outcome.treasury_delta, outcome.unrest_delta, kingdom.rule_profile});
     validate(kingdom);
 }
 
@@ -558,17 +602,21 @@ void apply_unrest_modification(Kingdom& kingdom, int negative_stat_count) {
     validate(kingdom);
 }
 
-void apply_gold_withdrawal(Kingdom& kingdom, int bp_withdrawn) {
+void apply_gold_withdrawal(Kingdom& kingdom, int bp_withdrawn, bool loyalty_check_success) {
     validate(kingdom);
     if (bp_withdrawn < 1) throw std::invalid_argument("Gold withdrawal must withdraw at least 1 BP");
     if (kingdom.treasury_bp < bp_withdrawn)
         throw std::invalid_argument("Gold withdrawal would make treasury negative");
     if (bp_withdrawn > std::numeric_limits<int>::max() / 2000)
         throw std::overflow_error("Gold withdrawal value overflow");
+    const int loyalty_failure_unrest_delta = loyalty_check_success ? 0 : bp_withdrawn;
+    if (kingdom.unrest > std::numeric_limits<int>::max() - bp_withdrawn - loyalty_failure_unrest_delta)
+        throw std::overflow_error("Gold withdrawal would overflow unrest");
     kingdom.treasury_bp -= bp_withdrawn;
-    kingdom.unrest += bp_withdrawn;
+    kingdom.unrest += bp_withdrawn + loyalty_failure_unrest_delta;
     kingdom.gold_withdrawals.push_back({kingdom.turn, bp_withdrawn, bp_withdrawn * 2000,
-        -bp_withdrawn, bp_withdrawn});
+        -bp_withdrawn, bp_withdrawn + loyalty_failure_unrest_delta,
+        loyalty_check_success, loyalty_failure_unrest_delta});
     validate(kingdom);
 }
 
@@ -590,19 +638,24 @@ void apply_gold_deposit(Kingdom& kingdom, int gold_deposited) {
 }
 
 int resolve_item_deposit_bp(int item_value) {
+    return resolve_item_deposit_bp(RuleProfile::Workbook, item_value);
+}
+
+int resolve_item_deposit_bp(RuleProfile profile, int item_value) {
     if (item_value < 1) throw std::invalid_argument("Item deposit must have a base value of at least 1 gp");
-    if (item_value % 8000 != 0)
-        throw std::invalid_argument("Item deposit must use exact 8,000 gp base-value units; rounding is not defined");
-    return item_value / 8000;
+    const int value_per_bp = profile == RuleProfile::CityInfo ? 4000 : 8000;
+    if (item_value % value_per_bp != 0)
+        throw std::invalid_argument("Item deposit must use exact profile value units; rounding is not defined");
+    return item_value / value_per_bp;
 }
 
 void apply_item_deposit(Kingdom& kingdom, int item_value) {
     validate(kingdom);
-    const int bp_received = resolve_item_deposit_bp(item_value);
+    const int bp_received = resolve_item_deposit_bp(kingdom.rule_profile, item_value);
     if (kingdom.treasury_bp > std::numeric_limits<int>::max() - bp_received)
         throw std::overflow_error("Item deposit would overflow treasury");
     kingdom.treasury_bp += bp_received;
-    kingdom.item_deposits.push_back({kingdom.turn, item_value, bp_received, bp_received});
+    kingdom.item_deposits.push_back({kingdom.turn, item_value, bp_received, bp_received, kingdom.rule_profile});
     validate(kingdom);
 }
 
@@ -622,6 +675,68 @@ void apply_loyalty_check(Kingdom& kingdom, bool success) {
         loyalty_delta = -1;
     }
     kingdom.loyalty_checks.push_back({kingdom.turn, success, unrest_delta, loyalty_delta});
+    validate(kingdom);
+}
+
+void apply_commission(Kingdom& kingdom, const std::string& item_name,
+                      const std::string& recipient, int cost_bp,
+                      int exotic_crafters_available) {
+    validate(kingdom);
+    if (item_name.empty() || recipient.empty())
+        throw std::invalid_argument("Commission requires an item name and recipient");
+    if (cost_bp < 1) throw std::invalid_argument("Commission cost must be at least 1 BP");
+    if (exotic_crafters_available < 1)
+        throw std::invalid_argument("Commission requires at least one available exotic crafter");
+    if (kingdom.treasury_bp < cost_bp)
+        throw std::invalid_argument("Commission would make treasury negative");
+    const int current_turn_commissions = static_cast<int>(std::count_if(
+        kingdom.commissions.begin(), kingdom.commissions.end(),
+        [&kingdom](const CommissionRecord& record) { return record.turn == kingdom.turn; }));
+    if (current_turn_commissions >= exotic_crafters_available)
+        throw std::invalid_argument("Available exotic crafters cannot support another commission this turn");
+    kingdom.treasury_bp -= cost_bp;
+    kingdom.commissions.push_back({kingdom.turn, item_name, recipient, cost_bp,
+        exotic_crafters_available});
+    validate(kingdom);
+}
+
+int magic_item_sale_bp(MagicItemCategory category) {
+    switch (category) {
+        case MagicItemCategory::Minor: return 2;
+        case MagicItemCategory::Medium: return 8;
+        case MagicItemCategory::Major: return 15;
+    }
+    throw std::invalid_argument("Unknown magic-item category");
+}
+
+const char* magic_item_category_name(MagicItemCategory category) {
+    switch (category) {
+        case MagicItemCategory::Minor: return "minor";
+        case MagicItemCategory::Medium: return "medium";
+        case MagicItemCategory::Major: return "major";
+    }
+    throw std::invalid_argument("Unknown magic-item category");
+}
+
+MagicItemCategory magic_item_category_from_name(const std::string& name) {
+    if (name == "minor") return MagicItemCategory::Minor;
+    if (name == "medium") return MagicItemCategory::Medium;
+    if (name == "major") return MagicItemCategory::Major;
+    throw std::invalid_argument("Unknown magic-item category: " + name);
+}
+
+void apply_magic_item_outcome(Kingdom& kingdom, MagicItemCategory category,
+                              bool sold, bool commissioned) {
+    validate(kingdom);
+    if (sold && commissioned)
+        throw std::invalid_argument("A magic item outcome cannot be both sold and commissioned");
+    const int sale_bp = magic_item_sale_bp(category);
+    const bool lost = !commissioned && !sold;
+    const int bp_received = commissioned || !sold ? 0 : sale_bp;
+    if (bp_received > 0 && kingdom.treasury_bp > std::numeric_limits<int>::max() - bp_received)
+        throw std::overflow_error("Magic-item sale would overflow treasury");
+    kingdom.treasury_bp += bp_received;
+    kingdom.magic_item_outcomes.push_back({kingdom.turn, category, sold, commissioned, lost, bp_received});
     validate(kingdom);
 }
 
@@ -913,6 +1028,16 @@ KingdomSummary calculate_kingdom_summary(int unrest, const KingdomRuleInputs& in
         population_total(input.kingdom_size, city_count, city_population)};
 }
 
+const char* rule_profile_name(RuleProfile profile) {
+    return profile == RuleProfile::CityInfo ? "city_info" : "workbook";
+}
+
+RuleProfile rule_profile_from_name(const std::string& name) {
+    if (name == "workbook") return RuleProfile::Workbook;
+    if (name == "city_info") return RuleProfile::CityInfo;
+    throw std::invalid_argument("Unknown rule profile: " + name);
+}
+
 void save(const Kingdom& k, const std::string& path) {
     validate(k);
     const auto dest = std::filesystem::u8path(path);
@@ -921,10 +1046,10 @@ void save(const Kingdom& k, const std::string& path) {
     temp += ".tmp";
     const Json document = {
         {"schema_version", k.schema_version}, {"name", k.name}, {"turn", k.turn},
-        {"treasury_bp", k.treasury_bp}, {"unrest", k.unrest},
+        {"treasury_bp", k.treasury_bp}, {"unrest", k.unrest}, {"rule_profile", rule_profile_name(k.rule_profile)},
         {"settlements", Json::array()}, {"buildings", Json::array()},
         {"turn_progress", Json::array()}, {"turn_actions", Json::array()}, {"tax_actions", Json::array()},
-                {"stability_checks", Json::array()}, {"consumption_actions", Json::array()}, {"unrest_modifications", Json::array()}, {"gold_withdrawals", Json::array()}, {"gold_deposits", Json::array()}, {"item_deposits", Json::array()}, {"loyalty_checks", Json::array()}, {"calendar_notes", Json::array()},
+                {"stability_checks", Json::array()}, {"consumption_actions", Json::array()}, {"unrest_modifications", Json::array()}, {"gold_withdrawals", Json::array()}, {"gold_deposits", Json::array()}, {"item_deposits", Json::array()}, {"loyalty_checks", Json::array()}, {"commissions", Json::array()}, {"magic_item_outcomes", Json::array()}, {"calendar_notes", Json::array()},
         {"greenbelt_map", {{"asset_path", k.greenbelt_map.asset_path},
             {"image_width", k.greenbelt_map.image_width}, {"image_height", k.greenbelt_map.image_height},
             {"calibration", {{"origin_x", k.greenbelt_map.calibration.origin_x},
@@ -966,16 +1091,20 @@ void save(const Kingdom& k, const std::string& path) {
     for (const auto& tax : k.tax_actions)
         output["tax_actions"].push_back({{"turn", tax.turn},
             {"economy_check_success", tax.economy_check_success},
-            {"result_divided_by_three", tax.result_divided_by_three},
-            {"other_bp_gained", tax.other_bp_gained}, {"treasury_delta", tax.treasury_delta}});
+            {"result_input", tax.result_input},
+            {"other_bp_gained", tax.other_bp_gained}, {"treasury_delta", tax.treasury_delta},
+            {"rule_profile", rule_profile_name(tax.rule_profile)}});
     for (const auto& withdrawal : k.gold_withdrawals)
         output["gold_withdrawals"].push_back({{"turn", withdrawal.turn},
             {"bp_withdrawn", withdrawal.bp_withdrawn}, {"gold_received", withdrawal.gold_received},
-            {"treasury_delta", withdrawal.treasury_delta}, {"unrest_delta", withdrawal.unrest_delta}});
+            {"treasury_delta", withdrawal.treasury_delta}, {"unrest_delta", withdrawal.unrest_delta},
+            {"loyalty_check_success", withdrawal.loyalty_check_success},
+            {"loyalty_failure_unrest_delta", withdrawal.loyalty_failure_unrest_delta}});
     for (const auto& stability : k.stability_checks)
         output["stability_checks"].push_back({{"turn", stability.turn}, {"success", stability.success},
             {"failure_by", stability.failure_by}, {"rolled_unrest", stability.rolled_unrest},
-            {"treasury_delta", stability.treasury_delta}, {"unrest_delta", stability.unrest_delta}});
+            {"treasury_delta", stability.treasury_delta}, {"unrest_delta", stability.unrest_delta},
+            {"rule_profile", rule_profile_name(stability.rule_profile)}});
     for (const auto& consumption : k.consumption_actions)
         output["consumption_actions"].push_back({{"turn", consumption.turn},
             {"consumption_bp", consumption.consumption_bp}, {"paid", consumption.paid},
@@ -990,10 +1119,20 @@ void save(const Kingdom& k, const std::string& path) {
     for (const auto& deposit : k.item_deposits)
         output["item_deposits"].push_back({{"turn", deposit.turn},
             {"item_value", deposit.item_value}, {"bp_received", deposit.bp_received},
-            {"treasury_delta", deposit.treasury_delta}});
+            {"treasury_delta", deposit.treasury_delta},
+            {"rule_profile", rule_profile_name(deposit.rule_profile)}});
     for (const auto& check : k.loyalty_checks)
         output["loyalty_checks"].push_back({{"turn", check.turn}, {"success", check.success},
             {"unrest_delta", check.unrest_delta}, {"loyalty_delta", check.loyalty_delta}});
+    for (const auto& commission : k.commissions)
+        output["commissions"].push_back({{"turn", commission.turn}, {"item_name", commission.item_name},
+            {"recipient", commission.recipient}, {"cost_bp", commission.cost_bp},
+            {"exotic_crafters_available", commission.exotic_crafters_available}});
+    for (const auto& outcome : k.magic_item_outcomes)
+        output["magic_item_outcomes"].push_back({{"turn", outcome.turn},
+            {"category", magic_item_category_name(outcome.category)}, {"sold", outcome.sold},
+            {"commissioned", outcome.commissioned}, {"lost", outcome.lost},
+            {"bp_received", outcome.bp_received}});
     for (const auto& note : k.calendar_notes)
         output["calendar_notes"].push_back({{"entry_id", note.entry_id}, {"holiday", note.holiday},
             {"kingdom_upgrades", note.kingdom_upgrades}, {"events", note.events}, {"other", note.other}});
@@ -1054,6 +1193,7 @@ Kingdom load(const std::string& path) {
     k.turn = required_int(root, "turn");
     k.treasury_bp = required_int(root, "treasury_bp");
     k.unrest = required_int(root, "unrest");
+    if (root.contains("rule_profile")) k.rule_profile = rule_profile_from_name(required_string(root, "rule_profile"));
     if (root.contains("rules")) k.rule_inputs = read_rule_inputs(root.at("rules"));
     for (const auto& item : root.at("settlements")) {
         if (!item.is_object() || !item.contains("name") || !item.contains("population")) throw std::runtime_error("Invalid settlement entry");
@@ -1142,27 +1282,40 @@ Kingdom load(const std::string& path) {
         if (!root.at("tax_actions").is_array()) throw std::runtime_error("tax_actions must be an array");
         for (const auto& item : root.at("tax_actions")) {
             if (!item.is_object()) throw std::runtime_error("Invalid tax action record");
+            const auto profile = item.contains("rule_profile")
+                ? pkkm::rule_profile_from_name(required_string(item, "rule_profile"))
+                : pkkm::RuleProfile::Workbook;
+            const int result_input = item.contains("result_input")
+                ? required_int(item, "result_input")
+                : required_int(item, "result_divided_by_three");
             k.tax_actions.push_back({required_int(item, "turn"), required_bool(item, "economy_check_success"),
-                required_int(item, "result_divided_by_three"), required_int(item, "other_bp_gained"),
-                required_int(item, "treasury_delta")});
+                result_input, required_int(item, "other_bp_gained"),
+                required_int(item, "treasury_delta"), profile});
         }
     }
     if (root.contains("gold_withdrawals")) {
         if (!root.at("gold_withdrawals").is_array()) throw std::runtime_error("gold_withdrawals must be an array");
         for (const auto& item : root.at("gold_withdrawals")) {
             if (!item.is_object()) throw std::runtime_error("Invalid gold withdrawal record");
+            const bool loyalty_success = item.contains("loyalty_check_success")
+                ? required_bool(item, "loyalty_check_success") : true;
+            const int loyalty_failure_delta = item.contains("loyalty_failure_unrest_delta")
+                ? required_int(item, "loyalty_failure_unrest_delta") : 0;
             k.gold_withdrawals.push_back({required_int(item, "turn"), required_int(item, "bp_withdrawn"),
                 required_int(item, "gold_received"), required_int(item, "treasury_delta"),
-                required_int(item, "unrest_delta")});
+                required_int(item, "unrest_delta"), loyalty_success, loyalty_failure_delta});
         }
     }
     if (root.contains("stability_checks")) {
         if (!root.at("stability_checks").is_array()) throw std::runtime_error("stability_checks must be an array");
         for (const auto& item : root.at("stability_checks")) {
             if (!item.is_object()) throw std::runtime_error("Invalid stability check record");
+            const auto profile = item.contains("rule_profile")
+                ? rule_profile_from_name(required_string(item, "rule_profile"))
+                : RuleProfile::Workbook;
             k.stability_checks.push_back({required_int(item, "turn"), required_bool(item, "success"),
                 required_int(item, "failure_by"), required_int(item, "rolled_unrest"),
-                required_int(item, "treasury_delta"), required_int(item, "unrest_delta")});
+                required_int(item, "treasury_delta"), required_int(item, "unrest_delta"), profile});
         }
     }
     if (root.contains("consumption_actions")) {
@@ -1193,8 +1346,11 @@ Kingdom load(const std::string& path) {
         if (!root.at("item_deposits").is_array()) throw std::runtime_error("item_deposits must be an array");
         for (const auto& item : root.at("item_deposits")) {
             if (!item.is_object()) throw std::runtime_error("Invalid item deposit record");
+            const auto profile = item.contains("rule_profile")
+                ? rule_profile_from_name(required_string(item, "rule_profile"))
+                : RuleProfile::Workbook;
             k.item_deposits.push_back({required_int(item, "turn"), required_int(item, "item_value"),
-                required_int(item, "bp_received"), required_int(item, "treasury_delta")});
+                required_int(item, "bp_received"), required_int(item, "treasury_delta"), profile});
         }
     }
     if (root.contains("loyalty_checks")) {
@@ -1203,6 +1359,25 @@ Kingdom load(const std::string& path) {
             if (!item.is_object()) throw std::runtime_error("Invalid loyalty check record");
             k.loyalty_checks.push_back({required_int(item, "turn"), required_bool(item, "success"),
                 required_int(item, "unrest_delta"), required_int(item, "loyalty_delta")});
+        }
+    }
+    if (root.contains("commissions")) {
+        if (!root.at("commissions").is_array()) throw std::runtime_error("commissions must be an array");
+        for (const auto& item : root.at("commissions")) {
+            if (!item.is_object()) throw std::runtime_error("Invalid commission record");
+            k.commissions.push_back({required_int(item, "turn"), required_string(item, "item_name"),
+                required_string(item, "recipient"), required_int(item, "cost_bp"),
+                required_int(item, "exotic_crafters_available")});
+        }
+    }
+    if (root.contains("magic_item_outcomes")) {
+        if (!root.at("magic_item_outcomes").is_array()) throw std::runtime_error("magic_item_outcomes must be an array");
+        for (const auto& item : root.at("magic_item_outcomes")) {
+            if (!item.is_object()) throw std::runtime_error("Invalid magic-item outcome record");
+            k.magic_item_outcomes.push_back({required_int(item, "turn"),
+                magic_item_category_from_name(required_string(item, "category")),
+                required_bool(item, "sold"), required_bool(item, "commissioned"),
+                required_bool(item, "lost"), required_int(item, "bp_received")});
         }
     }
     if (document_version >= 9) {

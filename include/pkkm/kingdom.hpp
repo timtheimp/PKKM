@@ -152,6 +152,7 @@ struct TurnProgress {
  std::vector<std::string> completed_step_ids;
 };
 const std::vector<TurnChecklistStep>& turn_checklist_steps();
+enum class RuleProfile { Workbook, CityInfo };
 enum class StabilityFailureOutcome { FailByLessThanFour, UnresolvedExactlyFour, FailByAtLeastFive };
 StabilityFailureOutcome classify_stability_failure(int failure_by);
 enum class StabilityCheckBranch { Success, FailByLessThanFour, FailByAtLeastFive };
@@ -161,6 +162,8 @@ struct StabilityCheckOutcome {
 };
 StabilityCheckOutcome resolve_stability_check(bool success, int current_unrest,
  int failure_by = 0, int rolled_unrest = 0);
+StabilityCheckOutcome resolve_stability_check(RuleProfile profile, bool success,
+ int current_unrest, int failure_by = 0, int rolled_unrest = 0);
 struct StabilityCheckRecord {
  int turn = 1;
  bool success = false;
@@ -168,6 +171,7 @@ struct StabilityCheckRecord {
  int rolled_unrest = 0;
  int treasury_delta = 0;
  int unrest_delta = 0;
+ RuleProfile rule_profile = RuleProfile::Workbook;
 };
 
 enum class TurnAction { ClaimHex, AbandonHex, AbandonCity };
@@ -193,16 +197,21 @@ struct TurnEconomyRates {
 };
 TurnEconomyRates turn_economy_rates();
 struct Kingdom;
-int resolve_tax_bp_delta(bool economy_check_success, int result_divided_by_three, int other_bp_gained);
+int resolve_tax_bp_delta(bool economy_check_success, int result_input, int other_bp_gained);
+int resolve_tax_bp_delta(RuleProfile profile, bool economy_check_success,
+    int result_input, int other_bp_gained);
 struct TaxCollectionRecord {
  int turn = 1;
  bool economy_check_success = false;
- int result_divided_by_three = 0;
+ // Caller-supplied tax result input; the active rule profile determines
+ // whether it is divided by three or five.
+ int result_input = 0;
  int other_bp_gained = 0;
  int treasury_delta = 0;
+ RuleProfile rule_profile = RuleProfile::Workbook;
 };
 void apply_tax_action(Kingdom& kingdom, bool economy_check_success,
- int result_divided_by_three, int other_bp_gained);
+ int result_input, int other_bp_gained);
 void apply_stability_check(Kingdom& kingdom, bool success, int failure_by = 0, int rolled_unrest = 0);
 struct ConsumptionRecord {
  int turn = 1;
@@ -224,8 +233,10 @@ struct GoldWithdrawalRecord {
  int gold_received = 0;
  int treasury_delta = 0;
  int unrest_delta = 0;
+ bool loyalty_check_success = false;
+ int loyalty_failure_unrest_delta = 0;
 };
-void apply_gold_withdrawal(Kingdom& kingdom, int bp_withdrawn);
+void apply_gold_withdrawal(Kingdom& kingdom, int bp_withdrawn, bool loyalty_check_success);
 struct GoldDepositRecord {
  int turn = 1;
  int gold_deposited = 0;
@@ -239,8 +250,10 @@ struct ItemDepositRecord {
  int item_value = 0;
  int bp_received = 0;
  int treasury_delta = 0;
+ RuleProfile rule_profile = RuleProfile::Workbook;
 };
 int resolve_item_deposit_bp(int item_value);
+int resolve_item_deposit_bp(RuleProfile profile, int item_value);
 void apply_item_deposit(Kingdom& kingdom, int item_value);
 struct LoyaltyCheckRecord {
  int turn = 1;
@@ -249,6 +262,29 @@ struct LoyaltyCheckRecord {
  int loyalty_delta = 0;
 };
 void apply_loyalty_check(Kingdom& kingdom, bool success);
+struct CommissionRecord {
+ int turn = 1;
+ std::string item_name;
+ std::string recipient;
+ int cost_bp = 0;
+ int exotic_crafters_available = 0;
+};
+void apply_commission(Kingdom& kingdom, const std::string& item_name,
+ const std::string& recipient, int cost_bp, int exotic_crafters_available);
+enum class MagicItemCategory { Minor, Medium, Major };
+int magic_item_sale_bp(MagicItemCategory category);
+const char* magic_item_category_name(MagicItemCategory category);
+MagicItemCategory magic_item_category_from_name(const std::string& name);
+struct MagicItemOutcomeRecord {
+ int turn = 1;
+ MagicItemCategory category = MagicItemCategory::Minor;
+ bool sold = false;
+ bool commissioned = false;
+ bool lost = false;
+ int bp_received = 0;
+};
+void apply_magic_item_outcome(Kingdom& kingdom, MagicItemCategory category,
+ bool sold, bool commissioned = false);
 struct MagicItemWorkflow {
  bool buy_item_moves_to_pc = true;
  bool success_recycles_item = true;
@@ -279,12 +315,15 @@ struct CalendarNote {
  std::string other;
 };
 const std::vector<CalendarTemplateEntry>& calendar_template_entries();
+const char* rule_profile_name(RuleProfile profile);
+RuleProfile rule_profile_from_name(const std::string& name);
 struct Kingdom {
  int schema_version = 10;
  std::string name = "New Kingdom";
  int turn = 1;
  int treasury_bp = 0;
  int unrest = 0;
+ RuleProfile rule_profile = RuleProfile::Workbook;
  KingdomRuleInputs rule_inputs;
  std::vector<Settlement> settlements;
  std::vector<Building> buildings;
@@ -298,6 +337,8 @@ struct Kingdom {
  std::vector<GoldDepositRecord> gold_deposits;
  std::vector<ItemDepositRecord> item_deposits;
  std::vector<LoyaltyCheckRecord> loyalty_checks;
+ std::vector<CommissionRecord> commissions;
+ std::vector<MagicItemOutcomeRecord> magic_item_outcomes;
  std::vector<CalendarNote> calendar_notes;
  GreenbeltMap greenbelt_map;
 };
