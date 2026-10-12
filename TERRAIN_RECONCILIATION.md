@@ -52,10 +52,12 @@ claim full supplemental coverage. In particular:
   terrain list and does not encode the desert water/Canal condition.
 - The current Fishery prerequisite text does not enumerate river and marsh
   terrain.
-- The current Mine, Quarry, and Sawmill terrain requirements are narrower than
-  the supplemental terrain lists.
-- The current Road and Highway records describe manual connectivity but do not
-  model river crossings, upgrade cost differences, or route length.
+- The current Mine and Quarry terrain requirements are narrower than the
+  supplemental terrain lists; the current Sawmill requirement is broader than
+  the supplemental Forest-or-Jungle restriction.
+- The current Road and Highway records add a claimed-land UI boundary and
+  describe manual connectivity, but do not model river crossings, upgrade cost
+  differences, or route length.
 
 These are recorded conflicts, not silent corrections. The workbook table and
 existing catalog remain unchanged until a source profile and executable rule
