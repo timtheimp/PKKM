@@ -219,6 +219,79 @@ int main(int argc, char** argv) {
       && withdrawal_r.gold_withdrawals[0].unrest_delta==3,
       "gold withdrawal records roundtrip through JSON persistence");
  std::remove(withdrawal_path.c_str());
+ must(pkkm::resolve_gold_deposit_bp(8000)==2,
+      "gold deposit converts exact 4,000 gp units to BP");
+ pkkm::Kingdom deposit_k=k;
+ pkkm::apply_gold_deposit(deposit_k, 8000);
+ must(deposit_k.treasury_bp==122 && deposit_k.gold_deposits.size()==1
+      && deposit_k.gold_deposits[0].gold_deposited==8000
+      && deposit_k.gold_deposits[0].bp_received==2
+      && deposit_k.gold_deposits[0].treasury_delta==2,
+      "gold deposit applies only the explicit BP conversion and records it");
+ const std::string deposit_path="pkkm_test_gold_deposit.json";
+ pkkm::save(deposit_k, deposit_path);
+ const auto deposit_r=pkkm::load(deposit_path);
+ must(deposit_r.gold_deposits.size()==1 && deposit_r.gold_deposits[0].gold_deposited==8000
+      && deposit_r.gold_deposits[0].bp_received==2,
+      "gold deposit records roundtrip through JSON persistence");
+ std::remove(deposit_path.c_str());
+ must_reject([&]{ (void)pkkm::resolve_gold_deposit_bp(4001); });
+ must(pkkm::resolve_stability_check(true, 0).treasury_delta==1,
+      "successful stability check at zero unrest yields one BP");
+ must(pkkm::resolve_stability_check(true, 3).unrest_delta==-1,
+      "successful stability check reduces positive unrest");
+ must(pkkm::resolve_stability_check(false, 0, 3).unrest_delta==1,
+      "stability failure by less than four yields one unrest");
+ must(pkkm::resolve_stability_check(false, 0, 5, 4).unrest_delta==4,
+      "stability failure by five or more preserves caller-supplied d4 unrest");
+ must_reject([&]{ (void)pkkm::resolve_stability_check(false, 0, 4, 0); });
+ must_reject([&]{ (void)pkkm::resolve_stability_check(false, 0, 5, 5); });
+ pkkm::Kingdom stability_k=k;
+ stability_k.unrest=0;
+ pkkm::apply_stability_check(stability_k, true);
+ must(stability_k.treasury_bp==121 && stability_k.stability_checks.size()==1
+      && stability_k.stability_checks[0].treasury_delta==1,
+      "successful stability check applies the zero-unrest BP branch");
+ stability_k.unrest=3;
+ pkkm::apply_stability_check(stability_k, true);
+ must(stability_k.unrest==2 && stability_k.stability_checks.size()==2,
+      "successful stability check applies the positive-unrest branch");
+ const std::string stability_path="pkkm_test_stability.json";
+ pkkm::save(stability_k, stability_path);
+ const auto stability_r=pkkm::load(stability_path);
+ must(stability_r.stability_checks.size()==2 && stability_r.stability_checks[1].unrest_delta==-1,
+      "stability check records roundtrip through JSON persistence");
+ std::remove(stability_path.c_str());
+ pkkm::Kingdom consumption_k=k;
+ consumption_k.treasury_bp=3;
+ consumption_k.unrest=0;
+ pkkm::apply_consumption_action(consumption_k, 2);
+ must(consumption_k.treasury_bp==1 && consumption_k.unrest==0
+      && consumption_k.consumption_actions[0].paid,
+      "consumption is paid when treasury covers the caller-supplied amount");
+ pkkm::apply_consumption_action(consumption_k, 2);
+ must(consumption_k.treasury_bp==1 && consumption_k.unrest==2
+      && !consumption_k.consumption_actions[1].paid,
+      "insufficient consumption payment adds the source-defined two unrest");
+ const std::string consumption_path="pkkm_test_consumption.json";
+ pkkm::save(consumption_k, consumption_path);
+ const auto consumption_r=pkkm::load(consumption_path);
+ must(consumption_r.consumption_actions.size()==2 && !consumption_r.consumption_actions[1].paid,
+      "consumption records roundtrip through JSON persistence");
+ std::remove(consumption_path.c_str());
+ pkkm::Kingdom unrest_k=k;
+ unrest_k.unrest=2;
+ pkkm::apply_unrest_modification(unrest_k, 3);
+ must(unrest_k.unrest==5 && unrest_k.unrest_modifications.size()==1
+      && unrest_k.unrest_modifications[0].unrest_delta==3,
+      "negative kingdom stat count adds one unrest per stat");
+ const std::string unrest_path="pkkm_test_unrest_modification.json";
+ pkkm::save(unrest_k, unrest_path);
+ const auto unrest_r=pkkm::load(unrest_path);
+ must(unrest_r.unrest_modifications.size()==1
+      && unrest_r.unrest_modifications[0].negative_stat_count==3,
+      "unrest modification records roundtrip through JSON persistence");
+ std::remove(unrest_path.c_str());
  const auto magic_items=pkkm::magic_item_workflow();
  must(magic_items.buy_item_moves_to_pc && magic_items.success_recycles_item
       && !magic_items.failure_recycles_item && magic_items.excess_checks_economy_delta==-1
@@ -412,7 +485,14 @@ int main(int argc, char** argv) {
  const auto building_totals=pkkm::calculate_settlement_building_totals(
      {"Effects",0,0,0,0,0,0,{{"Academy",2},{"Barracks",1}}},catalog);
  must(building_totals.lots==5 && building_totals.economy==4 && building_totals.loyalty==4
-      && building_totals.stability==0 && building_totals.defense==2 && building_totals.unrest==-1,
+      && building_totals.stability==0 && building_totals.defense==2 && building_totals.unrest==-1
+      && building_totals.corruption==academy->corruption*2
+      && building_totals.crime==academy->crime*2
+      && building_totals.law==academy->law*2
+      && building_totals.lore==academy->lore*2
+      && building_totals.society==academy->society*2
+      && building_totals.productivity==academy->productivity*2
+      && building_totals.fame==academy->fame*2,
       "building inventory totals preserve catalog stat bonuses as a separate preview");
  pkkm::Settlement preview_only{"Preview",0,0,3,-1,4,0,{{"Academy",2}}};
  const auto preview_totals=pkkm::aggregate_settlements({preview_only},catalog);
@@ -436,6 +516,39 @@ int main(int argc, char** argv) {
  must(building_summary.settlement_totals.lots==4 && building_summary.settlement_totals.districts==1
       && building_summary.settlement_totals.population==1000 && building_summary.population==1000,
       "catalog-derived settlement size feeds kingdom totals and population");
+ const auto market_reference=pkkm::calculate_settlement_market_reference(
+     {"Market Town",0,0,0,0,0,0,{{"Academy",2}}},catalog);
+ must(pkkm::calculate_settlement_catalog_cost(
+     {"Market Town",0,0,0,0,0,0,{{"Academy",2}}},catalog)==academy->cost*2,
+     "settlement catalog cost reference aggregates source costs without mutation");
+ auto invalid_cost_catalog=catalog;
+ for (auto& entry : invalid_cost_catalog) {
+     if (entry.name=="Academy") entry.cost=-1;
+ }
+ must_reject([&] { (void)pkkm::calculate_settlement_catalog_cost(
+     {"Invalid Cost",0,0,0,0,0,0,{{"Academy",1}}},invalid_cost_catalog); });
+ auto overflowing_cost_catalog=catalog;
+ for (auto& entry : overflowing_cost_catalog) {
+     if (entry.name=="Academy") entry.cost=std::numeric_limits<int>::max();
+ }
+ must_reject([&] { (void)pkkm::calculate_settlement_catalog_cost(
+     {"Overflow Cost",0,0,0,0,0,0,{{"Academy",2}}},overflowing_cost_catalog); });
+ must(market_reference.base_value==academy->base_value*2
+     && market_reference.buy_limit==market_reference.base_value+1000
+     && market_reference.sell_limit==market_reference.base_value+5000
+     && market_reference.spellcasting_level==4,
+     "settlement market reference follows workbook population tiers and catalog base value");
+ const auto market_boundary=pkkm::calculate_settlement_market_reference(
+     {"Small Town",250,0,0,0,0,0,{}},catalog);
+ must(market_boundary.buy_limit==1000 && market_boundary.sell_limit==2500
+     && market_boundary.spellcasting_level==4,
+     "settlement market reference preserves the 250-population boundary");
+ auto overflowing_market_catalog=catalog;
+ for (auto& entry : overflowing_market_catalog) {
+     if (entry.name=="Academy") entry.base_value=std::numeric_limits<int>::max();
+ }
+ must_reject([&] { (void)pkkm::calculate_settlement_market_reference(
+     {"Overflow Market",0,0,0,0,0,0,{{"Academy",1}}},overflowing_market_catalog); });
  const auto boundary_size=pkkm::calculate_settlement_size(
      {"Boundary Town",9000,1,0,0,0,0,{{"Academy",18}}},catalog);
  must(boundary_size.lots==36 && boundary_size.districts==1 && boundary_size.population==9000,

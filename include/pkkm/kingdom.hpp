@@ -154,6 +154,22 @@ struct TurnProgress {
 const std::vector<TurnChecklistStep>& turn_checklist_steps();
 enum class StabilityFailureOutcome { FailByLessThanFour, UnresolvedExactlyFour, FailByAtLeastFive };
 StabilityFailureOutcome classify_stability_failure(int failure_by);
+enum class StabilityCheckBranch { Success, FailByLessThanFour, FailByAtLeastFive };
+struct StabilityCheckOutcome {
+ int treasury_delta = 0;
+ int unrest_delta = 0;
+};
+StabilityCheckOutcome resolve_stability_check(bool success, int current_unrest,
+ int failure_by = 0, int rolled_unrest = 0);
+struct StabilityCheckRecord {
+ int turn = 1;
+ bool success = false;
+ int failure_by = 0;
+ int rolled_unrest = 0;
+ int treasury_delta = 0;
+ int unrest_delta = 0;
+};
+
 enum class TurnAction { ClaimHex, AbandonHex, AbandonCity };
 struct TurnActionOutcome { int treasury_delta = 0; int kingdom_size_delta = 0; int unrest_delta = 0; };
 TurnActionOutcome resolve_turn_action(TurnAction action);
@@ -187,6 +203,21 @@ struct TaxCollectionRecord {
 };
 void apply_tax_action(Kingdom& kingdom, bool economy_check_success,
  int result_divided_by_three, int other_bp_gained);
+void apply_stability_check(Kingdom& kingdom, bool success, int failure_by = 0, int rolled_unrest = 0);
+struct ConsumptionRecord {
+ int turn = 1;
+ int consumption_bp = 0;
+ bool paid = false;
+ int treasury_delta = 0;
+ int unrest_delta = 0;
+};
+void apply_consumption_action(Kingdom& kingdom, int consumption_bp);
+struct UnrestModificationRecord {
+ int turn = 1;
+ int negative_stat_count = 0;
+ int unrest_delta = 0;
+};
+void apply_unrest_modification(Kingdom& kingdom, int negative_stat_count);
 struct GoldWithdrawalRecord {
  int turn = 1;
  int bp_withdrawn = 0;
@@ -195,6 +226,14 @@ struct GoldWithdrawalRecord {
  int unrest_delta = 0;
 };
 void apply_gold_withdrawal(Kingdom& kingdom, int bp_withdrawn);
+struct GoldDepositRecord {
+ int turn = 1;
+ int gold_deposited = 0;
+ int bp_received = 0;
+ int treasury_delta = 0;
+};
+int resolve_gold_deposit_bp(int gold_deposited);
+void apply_gold_deposit(Kingdom& kingdom, int gold_deposited);
 struct MagicItemWorkflow {
  bool buy_item_moves_to_pc = true;
  bool success_recycles_item = true;
@@ -237,7 +276,11 @@ struct Kingdom {
  std::vector<TurnProgress> turn_progress;
  std::vector<TurnActionRecord> turn_actions;
  std::vector<TaxCollectionRecord> tax_actions;
+ std::vector<StabilityCheckRecord> stability_checks;
+ std::vector<ConsumptionRecord> consumption_actions;
+ std::vector<UnrestModificationRecord> unrest_modifications;
  std::vector<GoldWithdrawalRecord> gold_withdrawals;
+ std::vector<GoldDepositRecord> gold_deposits;
  std::vector<CalendarNote> calendar_notes;
  GreenbeltMap greenbelt_map;
 };

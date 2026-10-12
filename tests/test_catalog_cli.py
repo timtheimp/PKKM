@@ -5,11 +5,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-if len(sys.argv) != 3:
-    raise SystemExit("Usage: test_catalog_cli.py <pkkm.exe> <building_catalog.json>")
-EXECUTABLE = Path(sys.argv[1])
-CATALOG = Path(sys.argv[2])
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if len(sys.argv) == 3:
+    EXECUTABLE = Path(sys.argv[1])
+    CATALOG = Path(sys.argv[2])
+else:
+    EXECUTABLE = PROJECT_ROOT / "build" / "asset-copy-verify" / "Release" / "pkkm.exe"
+    CATALOG = PROJECT_ROOT / "assets" / "building_catalog.json"
 sys.argv = [sys.argv[0]]
 
 
@@ -28,6 +30,17 @@ class CatalogCliTests(unittest.TestCase):
             "building_inventory": [{"name": "Academy", "count": 2}],
             "apply_catalog_stat_effects": apply_effects,
             "map": {"rows": 0, "columns": 0, "placements": []},
+        }, {
+            "name": "Empty Settlement",
+            "population": 250,
+            "districts": 1,
+            "economy": 0,
+            "loyalty": 0,
+            "stability": 0,
+            "defense": 0,
+            "building_inventory": [],
+            "apply_catalog_stat_effects": False,
+            "map": {"rows": 0, "columns": 0, "placements": []},
         }]
         with tempfile.TemporaryDirectory() as directory:
             save_path = Path(directory) / "effects.json"
@@ -39,6 +52,52 @@ class CatalogCliTests(unittest.TestCase):
                 text=True,
             )
         return result.stdout
+
+    def test_cli_reports_project_version(self):
+        result = subprocess.run(
+            [str(EXECUTABLE), "--version"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.stdout.strip(), "PKKM 0.1.2")
+        alias_result = subprocess.run(
+            [str(EXECUTABLE), "version"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(alias_result.stdout.strip(), "PKKM 0.1.2")
+        version_flag = subprocess.run(
+            [str(EXECUTABLE), "--version"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(alias_result.stdout, version_flag.stdout)
+        help_result = subprocess.run(
+            [str(EXECUTABLE), "--help"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        self.assertIn("Usage: pkkm --help | --version", help_result.stdout)
+        help_alias = subprocess.run(
+            [str(EXECUTABLE), "help"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(help_alias.stdout, help_result.stdout)
+        invalid_result = subprocess.run(
+            [str(EXECUTABLE), "unknown-command"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(invalid_result.returncode, 2)
+        self.assertIn("Usage: pkkm --help | --version", invalid_result.stderr)
+
 
     def test_catalog_emits_one_physical_line_per_improvement(self):
         result = subprocess.run(
@@ -58,6 +117,11 @@ class CatalogCliTests(unittest.TestCase):
         self.assertIn("catalog effects preview (not applied)", output)
         self.assertIn("Economy +4 | Loyalty +4", output)
         self.assertIn("Improvements 0", output)
+        self.assertIn("population 1000", output)
+        self.assertIn("market base", output)
+        self.assertIn("catalog cost", output)
+        self.assertIn("Other previews: Corruption", output)
+        self.assertIn("Empty Settlement | population 250 | districts 1 | lots 0", output)
 
     def test_opted_in_catalog_stat_effects_are_applied_to_kingdom_totals(self):
         output = self.run_settlement_preview(True)

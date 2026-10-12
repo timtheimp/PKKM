@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Import supported workbook inputs into a schema-v9 kingdom JSON and report gaps."""
+"""Import supported workbook inputs into a schema-v10 kingdom JSON and report gaps."""
 
 from __future__ import annotations
 
@@ -350,7 +350,7 @@ def _import_map(sheet: Any, catalog_names: set[str], mapped_cell: Any, settlemen
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("workbook", type=Path)
-    parser.add_argument("output", type=Path, help="Destination schema-v9 kingdom JSON")
+    parser.add_argument("output", type=Path, help="Destination schema-v10 kingdom JSON")
     parser.add_argument("--report", type=Path, required=True, help="Destination mapping report JSON")
     parser.add_argument("--catalog", type=Path, help="Optional building_catalog.json for map placement classification")
     args = parser.parse_args()

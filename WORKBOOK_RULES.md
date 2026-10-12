@@ -84,6 +84,21 @@ python tools/import_building_catalog.py "C:/Users/darks/Downloads/Kingdom of Tem
 
 The Win32 settlement manager uses catalog improvements to add/remove per-settlement building counts and displays each selected improvement's cost and lot size. Schema v5 persists inventory names/counts and the opt-in flag; older saves default the flag off. Catalog lots drive effective settlement lots, districts, and population through the formulas above. When enabled, catalog Economy/Loyalty/Stability effects contribute to kingdom totals while saved settlement stat fields remain unchanged; Defense and Unrest are preview-only. This explicit policy preserves legacy totals and prevents implicit double-counting. Costs remain unapplied.
 
+## City improvement table boundaries (`Capital`, `City #`)
+
+The `Capital` and `City #` sheets use the same table-driven layout. `D37` is the sum of improvement lots, `C3` derives districts from `D37` unless the district override is greater than `D37/36`, and `C4` derives population as the greater of the population override and `D37*250`. The sheets also contain formula-driven buy limit, sell limit, spellcasting level, improvement benefits, discounts, and magic-item fields.
+
+PKKM preserves the supported direct inputs and catalog-derived settlement totals, but does not reproduce these formula cells as a generic transaction engine. In particular, the source does not define a complete standalone `Build Improvements` or `Create/Improve City` transaction row with an unambiguous payment timing, upgrade rule, discount application order, or automatic kingdom-stat mutation. The desktop manager therefore allows caller-supplied inventory counts and opt-in Economy/Loyalty/Stability previews, while costs, Defense/Unrest effects, buy/sell limits, spellcasting levels, discounts, upgrades, and magic-item transactions remain reference or manual-only.
+
+The source-specific formulas that are preserved as supported settlement sizing and reference calculations are:
+
+- `D37`: catalog lots multiplied by each stored inventory count.
+- `C3`: manual district override only when it exceeds `D37/36`; otherwise rounded-up lots-per-district sizing with the workbook's zero-lot fallback.
+- `C4`: the greater of the manual population override and `D37*250`.
+- Market reference: catalog `base_value` totals are combined with the workbook population tiers for buy limit, sell limit, and spellcasting level. This is a read-only reference calculation; it does not authorize purchases, sales, discounts, or automatic resource changes.
+
+No Qt migration is required for this boundary. The current Win32 editor already exposes the supported inputs and keeps unsupported table mechanics from becoming hidden side effects.
+
 ## Settlement map sheets (`Capital Map`, `City # Map`, `Example Map`, `Multi-District Map`)
 
 Read-only inspection of `Capital Map`, `City # Map`, `Example Map`, and `Multi-District Map` found zero formulas and zero cell data validations. These sheets specify visual merged-cell layouts, not terrain bonuses, movement costs, or corridor mechanics. Convert a merged range to the map model as zero-based `(row=min_row-1, column=min_column-1, width, height)`; the merged range, not a lot-count label, establishes that region's displayed footprint.
@@ -147,11 +162,16 @@ Kingdom rule inputs remain persisted under `rules`; schema v1-v9 documents migra
 
 ## Verification
 
-Tests in `tests/kingdom_tests.cpp` cover the worked total/check threshold, signed per-stat contribution breakdowns, alignment codes `N` and `CE`, invalid alignment rejection, combined edict/law effects, negative half-rounding, Cathedral consumption rounding, source-specific vacancies, staffed leadership bonuses with Baron/Spymaster benefits, settlement aggregation and summary integration, Control DC, population, schema-v10 settlement/Greenbelt/map/checklist/calendar persistence, schema-v1-v9 migrations, Greenbelt catalog provenance and non-mutating previews, calendar source row/order/text fidelity, separate repeated-month notes, calendar ID validation, checklist step validation and per-turn separation, label bounds and overlap validation, explicit placement footprints, all four workbook map presets and their merged regions, catalog row mapping/search filtering, catalog-derived lots/stat effects, and lot/district/population override boundaries. JSON integer fields outside the native `int` range are rejected rather than narrowed; inventory and catalog-derived totals include overflow checks. `tests/test_building_catalog_import.py` covers source-kind preservation and column mapping; `tests/test_catalog_cli.py` checks catalog output and opt-in/off status; `tests/test_package_release.py` checks the exact portable archive payload; `tests/test_workbook_import.py` checks direct-input mapping, workbook-map classification, Calendar notes, and formula reporting. The schema-v10 Release `pkkm_tests` build, focused `kingdom_domain` CTest, Calendar GUI save/read-back smoke, workbook import against the source template, and schema-v10 archive verification pass. Earlier map smoke applied/saved/reopened the schema-v7 fixture with 14 labels and one Castle placement; the template smoke loaded Multi-District and cancelled without saving. The source workbook remains untouched.
+Tests in `tests/kingdom_tests.cpp` cover the worked total/check threshold, signed per-stat contribution breakdowns, alignment codes `N` and `CE`, invalid alignment rejection, combined edict/law effects, negative half-rounding, Cathedral consumption rounding, source-specific vacancies, staffed leadership bonuses with Baron/Spymaster benefits, settlement aggregation and summary integration, Control DC, population, schema-v10 settlement/Greenbelt/map/checklist/calendar persistence, schema-v1-v9 migrations, Greenbelt catalog provenance and non-mutating previews, calendar source row/order/text fidelity, separate repeated-month notes, calendar ID validation, checklist step validation and per-turn separation, label bounds and overlap validation, explicit placement footprints, all four workbook map presets and their merged regions, catalog row mapping/search filtering, catalog-derived lots/stat effects, and lot/district/population override boundaries. JSON integer fields outside the native `int` range are rejected rather than narrowed; inventory and catalog-derived totals include overflow checks. `tests/test_building_catalog_import.py` covers source-kind preservation and column mapping; `tests/test_catalog_cli.py` checks catalog output and opt-in/off status; `tests/test_package_release.py` checks the exact portable archive payload; `tests/test_workbook_import.py` checks direct-input mapping, workbook-map classification, Calendar notes, and formula reporting. The schema-v10 Release `pkkm_tests` build, focused `kingdom_domain` and integrated `python_suite` CTest tests, Calendar GUI save/read-back smoke, workbook import against the source template, and schema-v10 archive verification pass. The version-aligned CPack package `PKKM-0.1.2-Windows.zip` and portable `PKKM-current-schema10.zip` both preserve the exact four-file end-user payload. Earlier map smoke applied/saved/reopened the schema-v7 fixture with 14 labels and one Castle placement; the template smoke loaded Multi-District and cancelled without saving. The source workbook remains untouched.
 
 ```text
 cmake --build build --config Debug
 ctest --test-dir build -C Debug --output-on-failure
 cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
+python -m pip install openpyxl
+python -m unittest discover -s tests -p 'test_*.py'
+cpack --config build/asset-copy-verify/CPackConfig.cmake -G ZIP -B build/deliverables
+python tests/test_cpack_package.py build/deliverables/PKKM-0.1.2-Windows.zip
+python tools/package_release.py --build-dir build/asset-copy-verify/Release --output build/deliverables/PKKM-current-schema10.zip
 ```

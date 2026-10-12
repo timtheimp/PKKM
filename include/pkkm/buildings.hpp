@@ -51,6 +51,20 @@ struct SettlementBuildingTotals {
     int stability = 0;
     int defense = 0;
     int unrest = 0;
+    int corruption = 0;
+    int crime = 0;
+    int law = 0;
+    int lore = 0;
+    int society = 0;
+    int productivity = 0;
+    int fame = 0;
+};
+
+struct SettlementMarketReference {
+    int base_value = 0;
+    int buy_limit = 0;
+    int sell_limit = 0;
+    int spellcasting_level = 0;
 };
 
 std::vector<BuildingCatalogEntry> load_building_catalog(const std::string& path);
@@ -59,6 +73,10 @@ std::vector<BuildingCatalogEntry> search_building_catalog(
 SettlementSize calculate_settlement_size(
     const Settlement& settlement, const std::vector<BuildingCatalogEntry>& catalog);
 SettlementBuildingTotals calculate_settlement_building_totals(
+    const Settlement& settlement, const std::vector<BuildingCatalogEntry>& catalog);
+int calculate_settlement_catalog_cost(
+    const Settlement& settlement, const std::vector<BuildingCatalogEntry>& catalog);
+SettlementMarketReference calculate_settlement_market_reference(
     const Settlement& settlement, const std::vector<BuildingCatalogEntry>& catalog);
 
 } // namespace pkkm

@@ -50,6 +50,14 @@ void print_stat(const char* name, const pkkm::KingdomStatBreakdown& stat) {
 
 int main(int argc, char** argv) {
     try {
+        if (argc == 2 && (std::string(argv[1]) == "--version" || std::string(argv[1]) == "version")) {
+            std::cout << "PKKM " << PKKM_VERSION << "\n";
+            return 0;
+        }
+        if (argc == 2 && (std::string(argv[1]) == "--help" || std::string(argv[1]) == "help")) {
+            std::cout << "Usage: pkkm --help | --version | new <kingdom.json> | show <kingdom.json> | catalog <catalog.json> [query]\n";
+            return 0;
+        }
         if (argc == 3 && std::string(argv[1]) == "new") {
             pkkm::Kingdom kingdom;
             pkkm::save(kingdom, argv[2]);
@@ -73,21 +81,45 @@ int main(int argc, char** argv) {
                           << " | lots " << totals.lots << "\n";
             }
             for (const auto& settlement : kingdom.settlements) {
-                if (settlement.building_inventory.empty()) continue;
                 const auto effects = pkkm::calculate_settlement_building_totals(settlement, catalog);
-                std::cout << "  " << single_line(settlement.name);
+                const auto size = pkkm::calculate_settlement_size(settlement, catalog);
+                const auto market = pkkm::calculate_settlement_market_reference(settlement, catalog);
+                const auto catalog_cost = pkkm::calculate_settlement_catalog_cost(settlement, catalog);
+                std::cout << "  " << single_line(settlement.name)
+                          << " | population " << size.population
+                          << " | districts " << size.districts
+                          << " | lots " << size.lots
+                          << " | market base " << market.base_value
+                          << " | buy limit " << market.buy_limit
+                          << " | sell limit " << market.sell_limit
+                          << " | spellcasting level " << market.spellcasting_level
+                          << " | catalog cost " << catalog_cost << " BP\n";
                 if (settlement.apply_catalog_stat_effects) {
                     std::cout << " catalog stat bonuses applied to kingdom totals: Economy "
                               << signed_component(effects.economy) << " | Loyalty " << signed_component(effects.loyalty)
                               << " | Stability " << signed_component(effects.stability)
                               << " | Defense/Unrest preview only: Defense " << signed_component(effects.defense)
-                              << " | Unrest " << signed_component(effects.unrest) << "\n";
+                              << " | Unrest " << signed_component(effects.unrest)
+                              << " | Other previews: Corruption " << signed_component(effects.corruption)
+                              << " | Crime " << signed_component(effects.crime)
+                              << " | Law " << signed_component(effects.law)
+                              << " | Lore " << signed_component(effects.lore)
+                              << " | Society " << signed_component(effects.society)
+                              << " | Productivity " << signed_component(effects.productivity)
+                              << " | Fame " << signed_component(effects.fame) << "\n";
                 } else {
                     std::cout << " catalog effects preview (not applied): Economy " << signed_component(effects.economy)
                               << " | Loyalty " << signed_component(effects.loyalty)
                               << " | Stability " << signed_component(effects.stability)
                               << " | Defense " << signed_component(effects.defense)
-                              << " | Unrest " << signed_component(effects.unrest) << "\n";
+                              << " | Unrest " << signed_component(effects.unrest)
+                              << " | Other previews: Corruption " << signed_component(effects.corruption)
+                              << " | Crime " << signed_component(effects.crime)
+                              << " | Law " << signed_component(effects.law)
+                              << " | Lore " << signed_component(effects.lore)
+                              << " | Society " << signed_component(effects.society)
+                              << " | Productivity " << signed_component(effects.productivity)
+                              << " | Fame " << signed_component(effects.fame) << "\n";
                 }
             }
             print_stat("Economy", summary.economy);
@@ -105,7 +137,14 @@ int main(int argc, char** argv) {
                           << " | Loyalty " << signed_component(building.loyalty)
                           << " | Stability " << signed_component(building.stability)
                           << " | Defense " << signed_component(building.defense)
-                          << " | Unrest " << signed_component(building.unrest);
+                          << " | Unrest " << signed_component(building.unrest)
+                          << " | Corruption " << signed_component(building.corruption)
+                          << " | Crime " << signed_component(building.crime)
+                          << " | Law " << signed_component(building.law)
+                          << " | Lore " << signed_component(building.lore)
+                          << " | Society " << signed_component(building.society)
+                          << " | Productivity " << signed_component(building.productivity)
+                          << " | Fame " << signed_component(building.fame);
                 if (!building.discounts.empty()) std::cout << " | Discounts: " << single_line(building.discounts);
                 if (!building.magic_item.empty()) std::cout << " | Magic items: " << single_line(building.magic_item);
                 if (!building.upgrade_from.empty()) std::cout << " | Upgrade from: " << single_line(building.upgrade_from);
@@ -114,7 +153,7 @@ int main(int argc, char** argv) {
             }
             return 0;
         }
-        std::cerr << "Usage: pkkm new|show <kingdom.json> | catalog <catalog.json> [query]\n";
+        std::cerr << "Usage: pkkm --help | --version | new <kingdom.json> | show <kingdom.json> | catalog <catalog.json> [query]\n";
         return 2;
     } catch (const std::exception& error) {
         std::cerr << error.what() << "\n";

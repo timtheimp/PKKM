@@ -316,6 +316,31 @@ void validate(const Kingdom& k) {
             || record.unrest_delta != record.bp_withdrawn)
             throw std::invalid_argument("Gold withdrawal record has inconsistent values");
     }
+    for (const auto& record : k.stability_checks) {
+        if (record.turn < 1 || record.failure_by < 0 || record.rolled_unrest < 0 || record.rolled_unrest > 4
+            || (record.success && (record.failure_by != 0 || record.rolled_unrest != 0))
+            || (!record.success && record.failure_by == 4)
+            || record.treasury_delta < 0 || record.unrest_delta < -1)
+            throw std::invalid_argument("Stability check record has inconsistent values");
+    }
+    for (const auto& record : k.consumption_actions) {
+        if (record.turn < 1 || record.consumption_bp < 1
+            || (record.paid && (record.treasury_delta != -record.consumption_bp || record.unrest_delta != 0))
+            || (!record.paid && (record.treasury_delta != 0 || record.unrest_delta != 2)))
+            throw std::invalid_argument("Consumption record has inconsistent values");
+    }
+    for (const auto& record : k.unrest_modifications) {
+        if (record.turn < 1 || record.negative_stat_count < 0
+            || record.unrest_delta != record.negative_stat_count)
+            throw std::invalid_argument("Unrest modification record has inconsistent values");
+    }
+    for (const auto& record : k.gold_deposits) {
+        const long long expected_gold = static_cast<long long>(record.bp_received) * 4000;
+        if (record.turn < 1 || record.gold_deposited < 1 || record.bp_received < 1
+            || expected_gold != record.gold_deposited
+            || record.treasury_delta != record.bp_received)
+            throw std::invalid_argument("Gold deposit record has inconsistent values");
+    }
     std::vector<std::string> seen_calendar_entries;
     for (const auto& note : k.calendar_notes) {
         const auto& entries = calendar_template_entries();
@@ -363,6 +388,23 @@ StabilityFailureOutcome classify_stability_failure(int failure_by) {
     if (failure_by < 4) return StabilityFailureOutcome::FailByLessThanFour;
     if (failure_by == 4) return StabilityFailureOutcome::UnresolvedExactlyFour;
     return StabilityFailureOutcome::FailByAtLeastFive;
+}
+
+StabilityCheckOutcome resolve_stability_check(bool success, int current_unrest,
+    int failure_by, int rolled_unrest) {
+    if (current_unrest < 0) throw std::invalid_argument("Current unrest cannot be negative");
+    if (success) return current_unrest == 0 ? StabilityCheckOutcome{1, 0} : StabilityCheckOutcome{0, -1};
+    if (failure_by < 0) throw std::invalid_argument("Stability failure margin cannot be negative");
+    switch (classify_stability_failure(failure_by)) {
+        case StabilityFailureOutcome::FailByLessThanFour: return {0, 1};
+        case StabilityFailureOutcome::UnresolvedExactlyFour:
+            throw std::invalid_argument("Stability failure by exactly 4 requires manual resolution");
+        case StabilityFailureOutcome::FailByAtLeastFive:
+            if (rolled_unrest < 1 || rolled_unrest > 4)
+                throw std::invalid_argument("Stability failure by 5 or more requires a caller-supplied 1d4 unrest result");
+            return {0, rolled_unrest};
+    }
+    throw std::logic_error("Unknown Stability failure outcome");
 }
 
 TurnActionOutcome resolve_turn_action(TurnAction action) {
@@ -466,6 +508,43 @@ void apply_tax_action(Kingdom& kingdom, bool economy_check_success,
     validate(kingdom);
 }
 
+void apply_stability_check(Kingdom& kingdom, bool success, int failure_by, int rolled_unrest) {
+    validate(kingdom);
+    const auto outcome = resolve_stability_check(success, kingdom.unrest, failure_by, rolled_unrest);
+    if (outcome.treasury_delta > 0 && kingdom.treasury_bp > std::numeric_limits<int>::max() - outcome.treasury_delta)
+        throw std::overflow_error("Stability check would overflow treasury");
+    if (outcome.unrest_delta < 0 && kingdom.unrest < -outcome.unrest_delta)
+        throw std::logic_error("Stability check would make unrest negative");
+    kingdom.treasury_bp += outcome.treasury_delta;
+    kingdom.unrest += outcome.unrest_delta;
+    kingdom.stability_checks.push_back({kingdom.turn, success, failure_by, rolled_unrest,
+        outcome.treasury_delta, outcome.unrest_delta});
+    validate(kingdom);
+}
+
+void apply_consumption_action(Kingdom& kingdom, int consumption_bp) {
+    validate(kingdom);
+    if (consumption_bp < 1) throw std::invalid_argument("Consumption must be at least 1 BP");
+    const bool paid = kingdom.treasury_bp >= consumption_bp;
+    const int treasury_delta = paid ? -consumption_bp : 0;
+    const int unrest_delta = paid ? 0 : 2;
+    if (paid) kingdom.treasury_bp += treasury_delta;
+    else kingdom.unrest += unrest_delta;
+    kingdom.consumption_actions.push_back({kingdom.turn, consumption_bp, paid,
+        treasury_delta, unrest_delta});
+    validate(kingdom);
+}
+
+void apply_unrest_modification(Kingdom& kingdom, int negative_stat_count) {
+    validate(kingdom);
+    if (negative_stat_count < 0) throw std::invalid_argument("Negative stat count cannot be negative");
+    if (negative_stat_count > std::numeric_limits<int>::max() - kingdom.unrest)
+        throw std::overflow_error("Unrest modification would overflow unrest");
+    kingdom.unrest += negative_stat_count;
+    kingdom.unrest_modifications.push_back({kingdom.turn, negative_stat_count, negative_stat_count});
+    validate(kingdom);
+}
+
 void apply_gold_withdrawal(Kingdom& kingdom, int bp_withdrawn) {
     validate(kingdom);
     if (bp_withdrawn < 1) throw std::invalid_argument("Gold withdrawal must withdraw at least 1 BP");
@@ -477,6 +556,23 @@ void apply_gold_withdrawal(Kingdom& kingdom, int bp_withdrawn) {
     kingdom.unrest += bp_withdrawn;
     kingdom.gold_withdrawals.push_back({kingdom.turn, bp_withdrawn, bp_withdrawn * 2000,
         -bp_withdrawn, bp_withdrawn});
+    validate(kingdom);
+}
+
+int resolve_gold_deposit_bp(int gold_deposited) {
+    if (gold_deposited < 1) throw std::invalid_argument("Gold deposit must deposit at least 1 gp");
+    if (gold_deposited % 4000 != 0)
+        throw std::invalid_argument("Gold deposit must use exact 4,000 gp units; rounding is not defined");
+    return gold_deposited / 4000;
+}
+
+void apply_gold_deposit(Kingdom& kingdom, int gold_deposited) {
+    validate(kingdom);
+    const int bp_received = resolve_gold_deposit_bp(gold_deposited);
+    if (kingdom.treasury_bp > std::numeric_limits<int>::max() - bp_received)
+        throw std::overflow_error("Gold deposit would overflow treasury");
+    kingdom.treasury_bp += bp_received;
+    kingdom.gold_deposits.push_back({kingdom.turn, gold_deposited, bp_received, bp_received});
     validate(kingdom);
 }
 
@@ -779,7 +875,7 @@ void save(const Kingdom& k, const std::string& path) {
         {"treasury_bp", k.treasury_bp}, {"unrest", k.unrest},
         {"settlements", Json::array()}, {"buildings", Json::array()},
         {"turn_progress", Json::array()}, {"turn_actions", Json::array()}, {"tax_actions", Json::array()},
-                {"gold_withdrawals", Json::array()}, {"calendar_notes", Json::array()},
+                {"stability_checks", Json::array()}, {"consumption_actions", Json::array()}, {"unrest_modifications", Json::array()}, {"gold_withdrawals", Json::array()}, {"gold_deposits", Json::array()}, {"calendar_notes", Json::array()},
         {"greenbelt_map", {{"asset_path", k.greenbelt_map.asset_path},
             {"image_width", k.greenbelt_map.image_width}, {"image_height", k.greenbelt_map.image_height},
             {"calibration", {{"origin_x", k.greenbelt_map.calibration.origin_x},
@@ -827,6 +923,21 @@ void save(const Kingdom& k, const std::string& path) {
         output["gold_withdrawals"].push_back({{"turn", withdrawal.turn},
             {"bp_withdrawn", withdrawal.bp_withdrawn}, {"gold_received", withdrawal.gold_received},
             {"treasury_delta", withdrawal.treasury_delta}, {"unrest_delta", withdrawal.unrest_delta}});
+    for (const auto& stability : k.stability_checks)
+        output["stability_checks"].push_back({{"turn", stability.turn}, {"success", stability.success},
+            {"failure_by", stability.failure_by}, {"rolled_unrest", stability.rolled_unrest},
+            {"treasury_delta", stability.treasury_delta}, {"unrest_delta", stability.unrest_delta}});
+    for (const auto& consumption : k.consumption_actions)
+        output["consumption_actions"].push_back({{"turn", consumption.turn},
+            {"consumption_bp", consumption.consumption_bp}, {"paid", consumption.paid},
+            {"treasury_delta", consumption.treasury_delta}, {"unrest_delta", consumption.unrest_delta}});
+    for (const auto& unrest : k.unrest_modifications)
+        output["unrest_modifications"].push_back({{"turn", unrest.turn},
+            {"negative_stat_count", unrest.negative_stat_count}, {"unrest_delta", unrest.unrest_delta}});
+    for (const auto& deposit : k.gold_deposits)
+        output["gold_deposits"].push_back({{"turn", deposit.turn},
+            {"gold_deposited", deposit.gold_deposited}, {"bp_received", deposit.bp_received},
+            {"treasury_delta", deposit.treasury_delta}});
     for (const auto& note : k.calendar_notes)
         output["calendar_notes"].push_back({{"entry_id", note.entry_id}, {"holiday", note.holiday},
             {"kingdom_upgrades", note.kingdom_upgrades}, {"events", note.events}, {"other", note.other}});
@@ -987,6 +1098,39 @@ Kingdom load(const std::string& path) {
             k.gold_withdrawals.push_back({required_int(item, "turn"), required_int(item, "bp_withdrawn"),
                 required_int(item, "gold_received"), required_int(item, "treasury_delta"),
                 required_int(item, "unrest_delta")});
+        }
+    }
+    if (root.contains("stability_checks")) {
+        if (!root.at("stability_checks").is_array()) throw std::runtime_error("stability_checks must be an array");
+        for (const auto& item : root.at("stability_checks")) {
+            if (!item.is_object()) throw std::runtime_error("Invalid stability check record");
+            k.stability_checks.push_back({required_int(item, "turn"), required_bool(item, "success"),
+                required_int(item, "failure_by"), required_int(item, "rolled_unrest"),
+                required_int(item, "treasury_delta"), required_int(item, "unrest_delta")});
+        }
+    }
+    if (root.contains("consumption_actions")) {
+        if (!root.at("consumption_actions").is_array()) throw std::runtime_error("consumption_actions must be an array");
+        for (const auto& item : root.at("consumption_actions")) {
+            if (!item.is_object()) throw std::runtime_error("Invalid consumption record");
+            k.consumption_actions.push_back({required_int(item, "turn"), required_int(item, "consumption_bp"),
+                required_bool(item, "paid"), required_int(item, "treasury_delta"), required_int(item, "unrest_delta")});
+        }
+    }
+    if (root.contains("unrest_modifications")) {
+        if (!root.at("unrest_modifications").is_array()) throw std::runtime_error("unrest_modifications must be an array");
+        for (const auto& item : root.at("unrest_modifications")) {
+            if (!item.is_object()) throw std::runtime_error("Invalid unrest modification record");
+            k.unrest_modifications.push_back({required_int(item, "turn"), required_int(item, "negative_stat_count"),
+                required_int(item, "unrest_delta")});
+        }
+    }
+    if (root.contains("gold_deposits")) {
+        if (!root.at("gold_deposits").is_array()) throw std::runtime_error("gold_deposits must be an array");
+        for (const auto& item : root.at("gold_deposits")) {
+            if (!item.is_object()) throw std::runtime_error("Invalid gold deposit record");
+            k.gold_deposits.push_back({required_int(item, "turn"), required_int(item, "gold_deposited"),
+                required_int(item, "bp_received"), required_int(item, "treasury_delta")});
         }
     }
     if (document_version >= 9) {

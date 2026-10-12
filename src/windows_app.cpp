@@ -81,6 +81,24 @@ constexpr int kWithdrawalBp = 6417;
 constexpr int kWithdrawalApply = 6418;
 constexpr int kWithdrawalStatus = 6419;
 constexpr int kWithdrawalHistory = 6420;
+constexpr int kDepositGold = 6421;
+constexpr int kDepositApply = 6422;
+constexpr int kDepositStatus = 6423;
+constexpr int kDepositHistory = 6424;
+constexpr int kStabilitySuccess = 6425;
+constexpr int kStabilityFailureBy = 6426;
+constexpr int kStabilityRoll = 6427;
+constexpr int kStabilityApply = 6428;
+constexpr int kStabilityStatus = 6429;
+constexpr int kStabilityHistory = 6430;
+constexpr int kConsumptionBp = 6431;
+constexpr int kConsumptionApply = 6432;
+constexpr int kConsumptionStatus = 6433;
+constexpr int kConsumptionHistory = 6434;
+constexpr int kUnrestNegativeStats = 6435;
+constexpr int kUnrestApply = 6436;
+constexpr int kUnrestStatus = 6437;
+constexpr int kUnrestHistory = 6438;
 constexpr int kCalendarEntryList = 7100;
 constexpr int kCalendarEntryTitle = 7101;
 constexpr int kCalendarHoliday = 7102;
@@ -125,7 +143,7 @@ constexpr int kGreenbeltApply = 8201;
 constexpr int kGreenbeltCancel = 8202;
 constexpr int kGreenbeltClose = 8203;
 constexpr int kGreenbeltContentHeight = 1015;
-constexpr int kTurnActionsContentHeight = 900;
+constexpr int kTurnActionsContentHeight = 1730;
 
 pkkm::Kingdom kingdom;
 pkkm::Kingdom edit_draft;
@@ -381,13 +399,20 @@ void refresh(HWND display) {
     if (kingdom.settlements.empty()) text += L"(none)\r\n";
     for (const auto& settlement : kingdom.settlements) {
         const auto size = pkkm::calculate_settlement_size(settlement, building_catalog);
+        const auto market = pkkm::calculate_settlement_market_reference(settlement, building_catalog);
+        const auto catalog_cost = pkkm::calculate_settlement_catalog_cost(settlement, building_catalog);
         text += L"- " + widen(settlement.name) + L" - population "
             + std::to_wstring(size.population) + L", districts " + std::to_wstring(size.districts)
             + L", lots " + std::to_wstring(size.lots)
             + L", Economy " + signed_component(settlement.economy)
             + L", Loyalty " + signed_component(settlement.loyalty)
             + L", Stability " + signed_component(settlement.stability)
-            + L", Defense " + signed_component(settlement.defense) + L"\r\n";
+            + L", Defense " + signed_component(settlement.defense) + L"\n"
+            + L"  Market reference only: base value " + std::to_wstring(market.base_value)
+            + L", buy limit " + std::to_wstring(market.buy_limit)
+            + L", sell limit " + std::to_wstring(market.sell_limit)
+            + L", spellcasting level " + std::to_wstring(market.spellcasting_level) + L"\n"
+            + L"  Catalog cost reference only: " + std::to_wstring(catalog_cost) + L" BP\n";
         if (!settlement.building_inventory.empty()) {
             text += L"  Building inventory: ";
             for (size_t index = 0; index < settlement.building_inventory.size(); ++index) {
@@ -395,20 +420,52 @@ void refresh(HWND display) {
                 const auto& building = settlement.building_inventory[index];
                 text += widen(building.name) + L" x " + std::to_wstring(building.count);
             }
-            text += L"\r\n";
+            text += L"\n";
+            for (const auto& building : settlement.building_inventory) {
+                const auto found = std::find_if(building_catalog.begin(), building_catalog.end(), [&building](const pkkm::BuildingCatalogEntry& entry) {
+                    return entry.kind == pkkm::CatalogRowKind::Improvement && entry.name == building.name;
+                });
+                if (found == building_catalog.end()) continue;
+                if (found->cost != 0 || found->lots != 0 || !found->upgrade_from.empty() || !found->upgrade_to.empty()
+                    || !found->discounts.empty() || !found->magic_item.empty()) {
+                    text += L"  Catalog reference: " + widen(found->name)
+                        + L" | source row " + std::to_wstring(found->source_row)
+                        + L" | cost " + std::to_wstring(found->cost) + L" BP"
+                        + L" | lots " + std::to_wstring(found->lots);
+                    if (!found->upgrade_from.empty()) text += L" | upgrades from " + widen(found->upgrade_from);
+                    if (!found->upgrade_to.empty()) text += L" | upgrades to " + widen(found->upgrade_to);
+                    if (!found->discounts.empty()) text += L" | discounts " + widen(found->discounts);
+                    if (!found->magic_item.empty()) text += L" | magic item " + widen(found->magic_item);
+                    text += L"\n";
+                }
+            }
             const auto effects = pkkm::calculate_settlement_building_totals(settlement, building_catalog);
             if (settlement.apply_catalog_stat_effects) {
                 text += L"  Catalog stat bonuses applied to kingdom totals: Economy " + signed_component(effects.economy)
                     + L" | Loyalty " + signed_component(effects.loyalty)
                     + L" | Stability " + signed_component(effects.stability)
                     + L" | Defense/Unrest preview only: Defense " + signed_component(effects.defense)
-                    + L" | Unrest " + signed_component(effects.unrest) + L"\r\n";
+                    + L" | Unrest " + signed_component(effects.unrest)
+                    + L" | Other source previews: Corruption " + signed_component(effects.corruption)
+                    + L" | Crime " + signed_component(effects.crime)
+                    + L" | Law " + signed_component(effects.law)
+                    + L" | Lore " + signed_component(effects.lore)
+                    + L" | Society " + signed_component(effects.society)
+                    + L" | Productivity " + signed_component(effects.productivity)
+                    + L" | Fame " + signed_component(effects.fame) + L"\r\n";
             } else {
                 text += L"  Catalog effects preview (not applied): Economy " + signed_component(effects.economy)
                     + L" | Loyalty " + signed_component(effects.loyalty)
                     + L" | Stability " + signed_component(effects.stability)
                     + L" | Defense " + signed_component(effects.defense)
-                    + L" | Unrest " + signed_component(effects.unrest) + L"\r\n";
+                    + L" | Unrest " + signed_component(effects.unrest)
+                    + L" | Other source previews: Corruption " + signed_component(effects.corruption)
+                    + L" | Crime " + signed_component(effects.crime)
+                    + L" | Law " + signed_component(effects.law)
+                    + L" | Lore " + signed_component(effects.lore)
+                    + L" | Society " + signed_component(effects.society)
+                    + L" | Productivity " + signed_component(effects.productivity)
+                    + L" | Fame " + signed_component(effects.fame) + L"\r\n";
             }
         }
     }
@@ -1194,6 +1251,90 @@ void create_turn_action_controls(HWND window) {
         WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOINTEGRALHEIGHT,
         20, 785, 575, 75, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kWithdrawalHistory)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Gold deposit (4,000 gp per BP; exact units only)",
+        WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 875, 450, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Gold to deposit", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 905, 110, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"4000", WS_CHILD | WS_VISIBLE | ES_NUMBER,
+        135, 903, 100, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kDepositGold)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Apply Deposit", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+        250, 900, 125, 30, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kDepositApply)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"No gold deposit applied this session.", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 940, 575, 22, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kDepositStatus)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Gold deposit history", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 970, 250, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", nullptr,
+        WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOINTEGRALHEIGHT,
+        20, 995, 575, 75, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kDepositHistory)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Stability Check (caller supplies branch inputs; no dice are rolled)",
+        WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 1085, 560, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Check succeeded", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        20, 1112, 160, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kStabilitySuccess)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Failure by", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        195, 1114, 75, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"0", WS_CHILD | WS_VISIBLE | ES_NUMBER,
+        270, 1111, 65, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kStabilityFailureBy)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"d4 unrest", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        350, 1114, 75, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"0", WS_CHILD | WS_VISIBLE | ES_NUMBER,
+        425, 1111, 65, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kStabilityRoll)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Apply Stability", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+        250, 1145, 140, 30, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kStabilityApply)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"No Stability Check applied this session.", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 1180, 575, 22, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kStabilityStatus)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Stability Check history", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 1210, 250, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", nullptr,
+        WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOINTEGRALHEIGHT,
+        20, 1235, 575, 75, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kStabilityHistory)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Pay Consumption (amount is caller-supplied)",
+        WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 1325, 400, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Consumption BP", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 1355, 110, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"1", WS_CHILD | WS_VISIBLE | ES_NUMBER,
+        135, 1353, 80, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kConsumptionBp)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Apply Consumption", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+        230, 1350, 150, 30, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kConsumptionApply)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"No consumption action applied this session.", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 1385, 575, 22, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kConsumptionStatus)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Consumption history", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 1415, 250, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", nullptr,
+        WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOINTEGRALHEIGHT,
+        20, 1440, 575, 75, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kConsumptionHistory)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Modify Unrest (caller supplies negative-stat count)",
+        WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 1530, 450, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Negative stats", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 1560, 110, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"0", WS_CHILD | WS_VISIBLE | ES_NUMBER,
+        135, 1558, 80, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kUnrestNegativeStats)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Apply Unrest", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+        230, 1555, 125, 30, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kUnrestApply)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"No unrest modification applied this session.", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 1590, 575, 22, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kUnrestStatus)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Unrest modification history", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 1620, 250, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", nullptr,
+        WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOINTEGRALHEIGHT,
+        20, 1645, 575, 75, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kUnrestHistory)), app_instance, nullptr);
 }
 
 const wchar_t* turn_action_label(pkkm::TurnAction action) {
@@ -1278,6 +1419,55 @@ void refresh_gold_withdrawal_history(HWND window) {
     }
 }
 
+void refresh_gold_deposit_history(HWND window) {
+    HWND list = GetDlgItem(window, kDepositHistory);
+    SendMessageW(list, LB_RESETCONTENT, 0, 0);
+    for (const auto& record : kingdom.gold_deposits) {
+        const std::wstring line = L"Turn " + std::to_wstring(record.turn)
+            + L" | Gold deposited " + std::to_wstring(record.gold_deposited)
+            + L" | BP received " + std::to_wstring(record.bp_received)
+            + L" | Treasury " + std::to_wstring(record.treasury_delta);
+        SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(line.c_str()));
+    }
+}
+
+void refresh_stability_history(HWND window) {
+    HWND list = GetDlgItem(window, kStabilityHistory);
+    SendMessageW(list, LB_RESETCONTENT, 0, 0);
+    for (const auto& record : kingdom.stability_checks) {
+        const std::wstring branch = record.success ? L"Success" : L"Failure by " + std::to_wstring(record.failure_by);
+        const std::wstring line = L"Turn " + std::to_wstring(record.turn)
+            + L" | " + branch + L" | d4 " + std::to_wstring(record.rolled_unrest)
+            + L" | BP " + std::to_wstring(record.treasury_delta)
+            + L" | Unrest " + std::to_wstring(record.unrest_delta);
+        SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(line.c_str()));
+    }
+}
+
+void refresh_consumption_history(HWND window) {
+    HWND list = GetDlgItem(window, kConsumptionHistory);
+    SendMessageW(list, LB_RESETCONTENT, 0, 0);
+    for (const auto& record : kingdom.consumption_actions) {
+        const std::wstring line = L"Turn " + std::to_wstring(record.turn)
+            + L" | BP " + std::to_wstring(record.consumption_bp)
+            + L" | " + (record.paid ? L"Paid" : L"Insufficient BP")
+            + L" | Treasury " + std::to_wstring(record.treasury_delta)
+            + L" | Unrest " + std::to_wstring(record.unrest_delta);
+        SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(line.c_str()));
+    }
+}
+
+void refresh_unrest_history(HWND window) {
+    HWND list = GetDlgItem(window, kUnrestHistory);
+    SendMessageW(list, LB_RESETCONTENT, 0, 0);
+    for (const auto& record : kingdom.unrest_modifications) {
+        const std::wstring line = L"Turn " + std::to_wstring(record.turn)
+            + L" | Negative stats " + std::to_wstring(record.negative_stat_count)
+            + L" | Unrest " + std::to_wstring(record.unrest_delta);
+        SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(line.c_str()));
+    }
+}
+
 void reverse_turn_action_dialog(HWND window) {
     HWND list = GetDlgItem(window, kActionHistory);
     const int selected = static_cast<int>(SendMessageW(
@@ -1338,6 +1528,66 @@ void apply_gold_withdrawal_dialog(HWND window) {
     SetWindowTextW(window, L"Turn Actions - Withdrawal Applied");
 }
 
+void apply_gold_deposit_dialog(HWND window) {
+    const int gold_deposited = parse_integer(manager_text(window, kDepositGold));
+    pkkm::apply_gold_deposit(kingdom, gold_deposited);
+    dirty = true;
+    refresh(GetDlgItem(GetParent(window), kDisplay));
+    const auto& record = kingdom.gold_deposits.back();
+    const std::wstring status = L"Deposit applied on Turn " + std::to_wstring(record.turn)
+        + L" | Gold deposited " + std::to_wstring(record.gold_deposited)
+        + L" | BP received " + std::to_wstring(record.bp_received)
+        + L" | Treasury " + std::to_wstring(record.treasury_delta);
+    SetWindowTextW(GetDlgItem(window, kDepositStatus), status.c_str());
+    refresh_gold_deposit_history(window);
+    SetWindowTextW(window, L"Turn Actions - Deposit Applied");
+}
+
+void apply_stability_dialog(HWND window) {
+    const bool success = SendMessageW(GetDlgItem(window, kStabilitySuccess), BM_GETCHECK, 0, 0) == BST_CHECKED;
+    const int failure_by = parse_integer(manager_text(window, kStabilityFailureBy));
+    const int rolled_unrest = parse_integer(manager_text(window, kStabilityRoll));
+    pkkm::apply_stability_check(kingdom, success, failure_by, rolled_unrest);
+    dirty = true;
+    refresh(GetDlgItem(GetParent(window), kDisplay));
+    const auto& record = kingdom.stability_checks.back();
+    const std::wstring status = L"Stability Check applied on Turn " + std::to_wstring(record.turn)
+        + L" | BP " + std::to_wstring(record.treasury_delta)
+        + L" | Unrest " + std::to_wstring(record.unrest_delta);
+    SetWindowTextW(GetDlgItem(window, kStabilityStatus), status.c_str());
+    refresh_stability_history(window);
+    SetWindowTextW(window, L"Turn Actions - Stability Applied");
+}
+
+void apply_consumption_dialog(HWND window) {
+    const int consumption_bp = parse_integer(manager_text(window, kConsumptionBp));
+    pkkm::apply_consumption_action(kingdom, consumption_bp);
+    dirty = true;
+    refresh(GetDlgItem(GetParent(window), kDisplay));
+    const auto& record = kingdom.consumption_actions.back();
+    const std::wstring status = L"Consumption applied on Turn " + std::to_wstring(record.turn)
+        + L" | " + (record.paid ? L"Paid" : L"Insufficient BP; +2 unrest")
+        + L" | Treasury " + std::to_wstring(record.treasury_delta)
+        + L" | Unrest " + std::to_wstring(record.unrest_delta);
+    SetWindowTextW(GetDlgItem(window, kConsumptionStatus), status.c_str());
+    refresh_consumption_history(window);
+    SetWindowTextW(window, L"Turn Actions - Consumption Applied");
+}
+
+void apply_unrest_dialog(HWND window) {
+    const int negative_stat_count = parse_integer(manager_text(window, kUnrestNegativeStats));
+    pkkm::apply_unrest_modification(kingdom, negative_stat_count);
+    dirty = true;
+    refresh(GetDlgItem(GetParent(window), kDisplay));
+    const auto& record = kingdom.unrest_modifications.back();
+    const std::wstring status = L"Unrest modification applied on Turn " + std::to_wstring(record.turn)
+        + L" | Unrest +" + std::to_wstring(record.unrest_delta)
+        + L" | Threshold outcomes remain manual";
+    SetWindowTextW(GetDlgItem(window, kUnrestStatus), status.c_str());
+    refresh_unrest_history(window);
+    SetWindowTextW(window, L"Turn Actions - Unrest Modified");
+}
+
 void update_turn_actions_scrollbar(HWND window) {
     RECT client{};
     GetClientRect(window, &client);
@@ -1378,6 +1628,10 @@ LRESULT CALLBACK turn_actions_proc(HWND window, UINT message, WPARAM wparam, LPA
             refresh_turn_action_history(window);
             refresh_tax_history(window);
             refresh_gold_withdrawal_history(window);
+            refresh_gold_deposit_history(window);
+            refresh_stability_history(window);
+            refresh_consumption_history(window);
+            refresh_unrest_history(window);
             update_turn_actions_scrollbar(window);
             SetWindowTextW(window, (L"Turn Actions - Turn " + std::to_wstring(kingdom.turn)).c_str());
             return 0;
@@ -1411,6 +1665,10 @@ LRESULT CALLBACK turn_actions_proc(HWND window, UINT message, WPARAM wparam, LPA
                 else if (LOWORD(wparam) == kActionReverse) reverse_turn_action_dialog(window);
                 else if (LOWORD(wparam) == kTaxApply) apply_tax_action_dialog(window);
                 else if (LOWORD(wparam) == kWithdrawalApply) apply_gold_withdrawal_dialog(window);
+                else if (LOWORD(wparam) == kDepositApply) apply_gold_deposit_dialog(window);
+                else if (LOWORD(wparam) == kStabilityApply) apply_stability_dialog(window);
+                else if (LOWORD(wparam) == kConsumptionApply) apply_consumption_dialog(window);
+                else if (LOWORD(wparam) == kUnrestApply) apply_unrest_dialog(window);
                 else if (LOWORD(wparam) == kActionFilter ||
                          LOWORD(wparam) == kActionFilterOriginal ||
                          LOWORD(wparam) == kActionFilterReversal) {
