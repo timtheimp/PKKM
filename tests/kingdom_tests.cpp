@@ -191,6 +191,8 @@ int main(int argc, char** argv) {
  must(pkkm::resolve_tax_bp_delta(true, 4, 2)==6
       && pkkm::resolve_tax_bp_delta(false, 99, 2)==2,
       "tax Turn branches preserve success and failure BP outcomes");
+ must(pkkm::resolve_tax_bp_delta(pkkm::RuleProfile::CityInfo, true, 10, 2)==4,
+      "City Info tax profile divides the economy result by five");
  pkkm::Kingdom tax_k=k;
  pkkm::apply_tax_action(tax_k, true, 4, 2);
  must(tax_k.treasury_bp==126 && tax_k.tax_actions.size()==1
@@ -200,13 +202,23 @@ int main(int argc, char** argv) {
  pkkm::save(tax_k, tax_path);
  const auto tax_r=pkkm::load(tax_path);
  must(tax_r.tax_actions.size()==1 && tax_r.tax_actions[0].economy_check_success
-      && tax_r.tax_actions[0].result_divided_by_three==4
+      && tax_r.tax_actions[0].result_input==4
       && tax_r.tax_actions[0].other_bp_gained==2
       && tax_r.tax_actions[0].treasury_delta==6,
       "tax action records roundtrip through JSON persistence");
+ auto legacy_tax_json=nlohmann::json::parse(contents(tax_path));
+ legacy_tax_json["tax_actions"][0]["result_divided_by_three"]
+     = legacy_tax_json["tax_actions"][0]["result_input"];
+ legacy_tax_json["tax_actions"][0].erase("result_input");
+ put(tax_path, legacy_tax_json.dump());
+ const auto legacy_tax_r=pkkm::load(tax_path);
+ must(legacy_tax_r.tax_actions.size()==1
+      && legacy_tax_r.tax_actions[0].result_input==4
+      && legacy_tax_r.tax_actions[0].rule_profile==pkkm::RuleProfile::Workbook,
+      "legacy tax result_divided_by_three records migrate to profile-neutral input");
  std::remove(tax_path.c_str());
  pkkm::Kingdom withdrawal_k=k;
- pkkm::apply_gold_withdrawal(withdrawal_k, 3);
+ pkkm::apply_gold_withdrawal(withdrawal_k, 3, true);
  must(withdrawal_k.treasury_bp==117 && withdrawal_k.unrest==5
       && withdrawal_k.gold_withdrawals.size()==1
       && withdrawal_k.gold_withdrawals[0].gold_received==6000,
@@ -221,6 +233,13 @@ int main(int argc, char** argv) {
       && withdrawal_r.gold_withdrawals[0].unrest_delta==3,
       "gold withdrawal records roundtrip through JSON persistence");
  std::remove(withdrawal_path.c_str());
+ pkkm::Kingdom withdrawal_failure_k=k;
+ pkkm::apply_gold_withdrawal(withdrawal_failure_k, 3, false);
+ must(withdrawal_failure_k.treasury_bp==117 && withdrawal_failure_k.unrest==8
+      && withdrawal_failure_k.gold_withdrawals[0].loyalty_check_success==false
+      && withdrawal_failure_k.gold_withdrawals[0].loyalty_failure_unrest_delta==3
+      && withdrawal_failure_k.gold_withdrawals[0].unrest_delta==6,
+      "failed withdrawal Loyalty Check adds unrest equal to BP withdrawn");
  must(pkkm::resolve_gold_deposit_bp(8000)==2,
       "gold deposit converts exact 4,000 gp units to BP");
  pkkm::Kingdom deposit_k=k;
@@ -240,6 +259,8 @@ int main(int argc, char** argv) {
  must_reject([&]{ (void)pkkm::resolve_gold_deposit_bp(4001); });
  must(pkkm::resolve_item_deposit_bp(16000)==2,
       "item deposit converts exact 8,000 gp base-value units to BP");
+ must(pkkm::resolve_item_deposit_bp(pkkm::RuleProfile::CityInfo, 16000)==4,
+      "City Info item deposit converts exact 4,000 gp units to BP");
  pkkm::Kingdom item_deposit_k=k;
  pkkm::apply_item_deposit(item_deposit_k, 16000);
  must(item_deposit_k.treasury_bp==122 && item_deposit_k.item_deposits.size()==1
@@ -255,6 +276,13 @@ int main(int argc, char** argv) {
       && item_deposit_r.item_deposits[0].bp_received==2,
       "item deposit records roundtrip through JSON persistence");
  std::remove(item_deposit_path.c_str());
+ pkkm::Kingdom city_info_item_deposit_k=k;
+ city_info_item_deposit_k.rule_profile=pkkm::RuleProfile::CityInfo;
+ pkkm::apply_item_deposit(city_info_item_deposit_k, 16000);
+ must(city_info_item_deposit_k.treasury_bp==124
+      && city_info_item_deposit_k.item_deposits[0].bp_received==4
+      && city_info_item_deposit_k.item_deposits[0].rule_profile==pkkm::RuleProfile::CityInfo,
+      "City Info item deposit applies its profile conversion");
  must_reject([&]{ (void)pkkm::resolve_item_deposit_bp(8001); });
  pkkm::Kingdom loyalty_success_k=k;
  loyalty_success_k.unrest=2;
@@ -278,6 +306,36 @@ int main(int argc, char** argv) {
       && loyalty_r.loyalty_checks[0].loyalty_delta==-1,
       "Loyalty Check records roundtrip through JSON persistence");
  std::remove(loyalty_path.c_str());
+ pkkm::Kingdom commission_k=k;
+ commission_k.treasury_bp=10;
+ pkkm::apply_commission(commission_k, "Minor Commission", "Alyssa", 3, 2);
+ pkkm::apply_commission(commission_k, "Medium Commission", "Borin", 2, 2);
+ must(commission_k.treasury_bp==5 && commission_k.commissions.size()==2
+      && commission_k.commissions[0].item_name=="Minor Commission"
+      && commission_k.commissions[0].recipient=="Alyssa",
+      "commission records manually entered item and commissioning player");
+ must_reject([&]{ pkkm::apply_commission(commission_k, "Third Commission", "Cora", 1, 2); });
+ const std::string commission_path="pkkm_test_commissions.json";
+ pkkm::save(commission_k, commission_path);
+ const auto commission_r=pkkm::load(commission_path);
+ must(commission_r.commissions.size()==2 && commission_r.commissions[1].cost_bp==2
+      && commission_r.commissions[1].exotic_crafters_available==2,
+      "commission records roundtrip through JSON persistence");
+ std::remove(commission_path.c_str());
+ pkkm::Kingdom unavailable_crafter_k=k;
+ must_reject([&]{ pkkm::apply_commission(unavailable_crafter_k, "Unavailable", "Dara", 1, 0); });
+ pkkm::Kingdom city_info_profile_k=k;
+ city_info_profile_k.rule_profile=pkkm::RuleProfile::CityInfo;
+ const std::string profile_path="pkkm_test_rule_profile.json";
+ pkkm::save(city_info_profile_k, profile_path);
+ const auto profile_r=pkkm::load(profile_path);
+ must(profile_r.rule_profile==pkkm::RuleProfile::CityInfo
+      && std::string(pkkm::rule_profile_name(profile_r.rule_profile))=="city_info",
+      "rule profile selection roundtrips through JSON persistence");
+ std::remove(profile_path.c_str());
+ must(pkkm::rule_profile_from_name("workbook")==pkkm::RuleProfile::Workbook,
+      "workbook rule profile name resolves");
+ must_reject([&]{ (void)pkkm::rule_profile_from_name("unknown"); });
  must(pkkm::resolve_stability_check(true, 0).treasury_delta==1,
       "successful stability check at zero unrest yields one BP");
  must(pkkm::resolve_stability_check(true, 3).unrest_delta==-1,
@@ -286,8 +344,34 @@ int main(int argc, char** argv) {
       "stability failure by less than four yields one unrest");
  must(pkkm::resolve_stability_check(false, 0, 5, 4).unrest_delta==4,
       "stability failure by five or more preserves caller-supplied d4 unrest");
+ must(pkkm::resolve_stability_check(pkkm::RuleProfile::CityInfo, false, 0, 5, 4).unrest_delta==2,
+      "City Info stability failure by five or more applies two unrest");
  must_reject([&]{ (void)pkkm::resolve_stability_check(false, 0, 4, 0); });
  must_reject([&]{ (void)pkkm::resolve_stability_check(false, 0, 5, 5); });
+ pkkm::Kingdom item_outcome_k=k;
+ pkkm::apply_magic_item_outcome(item_outcome_k, pkkm::MagicItemCategory::Minor, true);
+ pkkm::apply_magic_item_outcome(item_outcome_k, pkkm::MagicItemCategory::Medium, false);
+ pkkm::apply_magic_item_outcome(item_outcome_k, pkkm::MagicItemCategory::Major, false, true);
+ must_reject([&]{ pkkm::apply_magic_item_outcome(item_outcome_k,
+      pkkm::MagicItemCategory::Minor, true, true); });
+  auto invalid_magic_record=item_outcome_k;
+  invalid_magic_record.magic_item_outcomes.push_back({invalid_magic_record.turn,
+      pkkm::MagicItemCategory::Minor, true, true, false, 0});
+  must_reject([&]{ pkkm::validate(invalid_magic_record); });
+ must(item_outcome_k.treasury_bp==122 && item_outcome_k.magic_item_outcomes.size()==3
+      && item_outcome_k.magic_item_outcomes[0].bp_received==2
+      && item_outcome_k.magic_item_outcomes[1].lost
+      && item_outcome_k.magic_item_outcomes[2].commissioned
+      && item_outcome_k.magic_item_outcomes[2].bp_received==0,
+      "manual magic-item outcomes calculate sale BP and preserve commissioned exemptions");
+ const std::string item_outcome_path="pkkm_test_magic_item_outcomes.json";
+ pkkm::save(item_outcome_k, item_outcome_path);
+ const auto item_outcome_r=pkkm::load(item_outcome_path);
+ must(item_outcome_r.magic_item_outcomes.size()==3
+      && item_outcome_r.magic_item_outcomes[1].lost
+      && item_outcome_r.magic_item_outcomes[2].commissioned,
+      "magic-item outcome records roundtrip through JSON persistence");
+ std::remove(item_outcome_path.c_str());
  pkkm::Kingdom stability_k=k;
  stability_k.unrest=0;
  pkkm::apply_stability_check(stability_k, true);

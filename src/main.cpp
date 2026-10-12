@@ -71,7 +71,9 @@ int main(int argc, char** argv) {
             const auto catalog = pkkm::load_building_catalog(catalog_path);
             const auto summary = pkkm::calculate_kingdom_summary(
                 kingdom.unrest, kingdom.rule_inputs, kingdom.settlements, &catalog);
-            std::cout << kingdom.name << " | turn " << kingdom.turn << " | treasury " << kingdom.treasury_bp
+            std::cout << kingdom.name << " | turn " << kingdom.turn
+                      << " | rule profile " << pkkm::rule_profile_name(kingdom.rule_profile)
+                      << " | treasury " << kingdom.treasury_bp
                       << " BP | unrest " << kingdom.unrest << "\n";
             std::cout << "Audit records | Turn actions " << kingdom.turn_actions.size()
                       << " | Taxes " << kingdom.tax_actions.size()
@@ -81,7 +83,9 @@ int main(int argc, char** argv) {
                       << " | Gold withdrawals " << kingdom.gold_withdrawals.size()
                       << " | Gold deposits " << kingdom.gold_deposits.size()
                       << " | Item deposits " << kingdom.item_deposits.size()
-                      << " | Loyalty checks " << kingdom.loyalty_checks.size() << "\n";
+                      << " | Loyalty checks " << kingdom.loyalty_checks.size()
+                      << " | Commissions " << kingdom.commissions.size()
+                      << " | Magic-item outcomes " << kingdom.magic_item_outcomes.size() << "\n";
             std::cout << "Control DC " << summary.control_dc << " | population " << summary.population << "\n";
             if (summary.settlement_totals.count > 0) {
                 const auto& totals = summary.settlement_totals;

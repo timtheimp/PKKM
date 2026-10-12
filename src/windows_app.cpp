@@ -93,6 +93,21 @@ constexpr int kLoyaltySuccess = 6443;
 constexpr int kLoyaltyApply = 6444;
 constexpr int kLoyaltyStatus = 6445;
 constexpr int kLoyaltyHistory = 6446;
+constexpr int kCommissionItem = 6447;
+constexpr int kCommissionRecipient = 6448;
+constexpr int kCommissionCost = 6449;
+constexpr int kCommissionCrafters = 6450;
+constexpr int kCommissionApply = 6451;
+constexpr int kCommissionStatus = 6452;
+constexpr int kCommissionHistory = 6453;
+constexpr int kRuleProfileChoice = 6454;
+constexpr int kWithdrawalLoyaltySuccess = 6455;
+constexpr int kMagicItemCategory = 6456;
+constexpr int kMagicItemSold = 6457;
+constexpr int kMagicItemCommissioned = 6458;
+constexpr int kMagicItemApply = 6459;
+constexpr int kMagicItemStatus = 6460;
+constexpr int kMagicItemHistory = 6461;
 constexpr int kStabilitySuccess = 6425;
 constexpr int kStabilityFailureBy = 6426;
 constexpr int kStabilityRoll = 6427;
@@ -151,7 +166,7 @@ constexpr int kGreenbeltApply = 8201;
 constexpr int kGreenbeltCancel = 8202;
 constexpr int kGreenbeltClose = 8203;
 constexpr int kGreenbeltContentHeight = 1015;
-constexpr int kTurnActionsContentHeight = 1730;
+constexpr int kTurnActionsContentHeight = 2205;
 
 pkkm::Kingdom kingdom;
 pkkm::Kingdom edit_draft;
@@ -1171,7 +1186,15 @@ void apply_turn_checklist(HWND window) {
 
 void create_turn_action_controls(HWND window) {
     CreateWindowExW(0, L"STATIC", L"Current turn actions are explicit only. No event or date automation is performed.",
-        WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 18, 560, 24, window, nullptr, app_instance, nullptr);
+        WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 18, 390, 24, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Rules", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        420, 18, 45, 22, window, nullptr, app_instance, nullptr);
+    HWND profile = CreateWindowExW(0, L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST,
+        468, 14, 105, 120, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kRuleProfileChoice)), app_instance, nullptr);
+    SendMessageW(profile, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Workbook"));
+    SendMessageW(profile, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"City Info"));
+    SendMessageW(profile, CB_SETCURSEL, kingdom.rule_profile == pkkm::RuleProfile::CityInfo ? 1 : 0, 0);
     CreateWindowExW(0, L"STATIC", L"Action", WS_CHILD | WS_VISIBLE | SS_LEFT,
         20, 62, 120, 22, window, nullptr, app_instance, nullptr);
     HWND choice = CreateWindowExW(0, L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST,
@@ -1222,7 +1245,7 @@ void create_turn_action_controls(HWND window) {
     CreateWindowExW(0, L"BUTTON", L"Economy check succeeded", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
         20, 492, 210, 24, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kTaxSuccess)), app_instance, nullptr);
-    CreateWindowExW(0, L"STATIC", L"Result / 3", WS_CHILD | WS_VISIBLE | SS_LEFT,
+    CreateWindowExW(0, L"STATIC", L"Result input (profile divisor)", WS_CHILD | WS_VISIBLE | SS_LEFT,
         215, 492, 75, 22, window, nullptr, app_instance, nullptr);
     CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"0", WS_CHILD | WS_VISIBLE | ES_NUMBER,
         290, 490, 65, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kTaxResult)), app_instance, nullptr);
@@ -1240,7 +1263,7 @@ void create_turn_action_controls(HWND window) {
         WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOINTEGRALHEIGHT,
         20, 580, 575, 75, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kTaxHistory)), app_instance, nullptr);
-    CreateWindowExW(0, L"STATIC", L"Gold withdrawal (2,000 gp per BP; +1 unrest per BP)",
+    CreateWindowExW(0, L"STATIC", L"Gold withdrawal (2,000 gp per BP; +1 unrest per BP; failed Loyalty adds BP withdrawn again)",
         WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 665, 450, 22, window, nullptr, app_instance, nullptr);
     CreateWindowExW(0, L"STATIC", L"BP to withdraw", WS_CHILD | WS_VISIBLE | SS_LEFT,
         20, 695, 110, 22, window, nullptr, app_instance, nullptr);
@@ -1250,16 +1273,19 @@ void create_turn_action_controls(HWND window) {
     CreateWindowExW(0, L"BUTTON", L"Apply Withdrawal", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
         230, 690, 145, 30, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kWithdrawalApply)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Loyalty Check succeeded", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        230, 722, 185, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kWithdrawalLoyaltySuccess)), app_instance, nullptr);
     CreateWindowExW(0, L"STATIC", L"No gold withdrawal applied this session.", WS_CHILD | WS_VISIBLE | SS_LEFT,
-        20, 730, 575, 22, window,
+        20, 752, 575, 22, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kWithdrawalStatus)), app_instance, nullptr);
     CreateWindowExW(0, L"STATIC", L"Gold withdrawal history", WS_CHILD | WS_VISIBLE | SS_LEFT,
-        20, 760, 250, 22, window, nullptr, app_instance, nullptr);
+        20, 782, 250, 22, window, nullptr, app_instance, nullptr);
     CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", nullptr,
         WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOINTEGRALHEIGHT,
-        20, 785, 575, 75, window,
+        20, 807, 575, 55, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kWithdrawalHistory)), app_instance, nullptr);
-    CreateWindowExW(0, L"STATIC", L"Gold deposit (4,000 gp per BP; exact units only)",
+    CreateWindowExW(0, L"STATIC", L"Gold/item deposit (profile conversion; exact units only)",
         WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 875, 450, 22, window, nullptr, app_instance, nullptr);
     CreateWindowExW(0, L"STATIC", L"Gold to deposit", WS_CHILD | WS_VISIBLE | SS_LEFT,
         20, 905, 110, 22, window, nullptr, app_instance, nullptr);
@@ -1300,7 +1326,7 @@ void create_turn_action_controls(HWND window) {
     CreateWindowExW(0, L"STATIC", L"No Loyalty Check applied.", WS_CHILD | WS_VISIBLE | SS_LEFT,
         380, 1060, 200, 22, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kLoyaltyStatus)), app_instance, nullptr);
-    CreateWindowExW(0, L"STATIC", L"Stability Check (caller supplies branch inputs; no dice are rolled)",
+    CreateWindowExW(0, L"STATIC", L"Stability Check (profile resolves failure branch; exactly 4 remains manual)",
         WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 1085, 560, 22, window, nullptr, app_instance, nullptr);
     CreateWindowExW(0, L"BUTTON", L"Check succeeded", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
         20, 1112, 160, 24, window,
@@ -1365,6 +1391,59 @@ void create_turn_action_controls(HWND window) {
         WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOINTEGRALHEIGHT,
         20, 1645, 575, 75, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kUnrestHistory)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Commissioned item (manual record; distribution remains manual)",
+        WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 1740, 520, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Item name", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 1770, 80, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+        105, 1768, 180, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCommissionItem)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Recipient", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        300, 1770, 70, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+        375, 1768, 180, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCommissionRecipient)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Cost BP", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 1805, 80, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"1", WS_CHILD | WS_VISIBLE | ES_NUMBER,
+        105, 1803, 80, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCommissionCost)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Available exotic crafters", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        200, 1805, 155, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"1", WS_CHILD | WS_VISIBLE | ES_NUMBER,
+        360, 1803, 80, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCommissionCrafters)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Apply Commission", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+        450, 1800, 130, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCommissionApply)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"No commission applied this session.", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 1840, 575, 22, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCommissionStatus)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Commission history", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 1870, 250, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", nullptr,
+        WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOINTEGRALHEIGHT,
+        20, 1895, 575, 75, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCommissionHistory)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Magic-item outcome (manual valuation record)",
+        WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 1990, 520, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Category", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 2020, 70, 22, window, nullptr, app_instance, nullptr);
+    HWND category = CreateWindowExW(0, L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST,
+        95, 2017, 100, 120, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kMagicItemCategory)), app_instance, nullptr);
+    SendMessageW(category, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Minor"));
+    SendMessageW(category, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Medium"));
+    SendMessageW(category, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Major"));
+    SendMessageW(category, CB_SETCURSEL, 0, 0);
+    CreateWindowExW(0, L"BUTTON", L"Sold", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        210, 2017, 75, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kMagicItemSold)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Commissioned", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        295, 2017, 105, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kMagicItemCommissioned)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Apply Item Outcome", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+        410, 2014, 170, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kMagicItemApply)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"No magic-item outcome applied this session.", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 2052, 575, 22, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kMagicItemStatus)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Magic-item outcome history", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 2082, 280, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", nullptr,
+        WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOINTEGRALHEIGHT,
+        20, 2107, 575, 85, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kMagicItemHistory)), app_instance, nullptr);
 }
 
 const wchar_t* turn_action_label(pkkm::TurnAction action) {
@@ -1427,11 +1506,15 @@ void refresh_tax_history(HWND window) {
     HWND list = GetDlgItem(window, kTaxHistory);
     SendMessageW(list, LB_RESETCONTENT, 0, 0);
     for (const auto& record : kingdom.tax_actions) {
+        const bool city_info = record.rule_profile == pkkm::RuleProfile::CityInfo;
+        const std::wstring profile = city_info ? L"City Info" : L"Workbook";
+        const std::wstring input_label = city_info ? L"Economy result/5 " : L"Result/3 ";
         const std::wstring line = L"Turn " + std::to_wstring(record.turn)
             + L" | " + (record.economy_check_success ? L"Economy success" : L"Economy failure")
-            + L" | Result/3 " + std::to_wstring(record.result_divided_by_three)
+            + L" | " + input_label + std::to_wstring(record.result_input)
             + L" | Other BP " + std::to_wstring(record.other_bp_gained)
-            + L" | Treasury " + std::to_wstring(record.treasury_delta);
+            + L" | Treasury " + std::to_wstring(record.treasury_delta)
+            + L" | Profile " + profile;
         SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(line.c_str()));
     }
 }
@@ -1444,7 +1527,8 @@ void refresh_gold_withdrawal_history(HWND window) {
             + L" | BP " + std::to_wstring(record.bp_withdrawn)
             + L" | Gold received " + std::to_wstring(record.gold_received)
             + L" | Treasury " + std::to_wstring(record.treasury_delta)
-            + L" | Unrest " + std::to_wstring(record.unrest_delta);
+            + L" | Unrest " + std::to_wstring(record.unrest_delta)
+            + L" | Loyalty " + (record.loyalty_check_success ? L"success" : L"failure");
         SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(line.c_str()));
     }
 }
@@ -1498,6 +1582,69 @@ void refresh_unrest_history(HWND window) {
     }
 }
 
+void refresh_commission_history(HWND window) {
+    HWND list = GetDlgItem(window, kCommissionHistory);
+    SendMessageW(list, LB_RESETCONTENT, 0, 0);
+    for (const auto& record : kingdom.commissions) {
+        const std::wstring line = L"Turn " + std::to_wstring(record.turn)
+            + L" | " + widen(record.item_name)
+            + L" | Recipient " + widen(record.recipient)
+            + L" | Cost " + std::to_wstring(record.cost_bp) + L" BP"
+            + L" | Crafters " + std::to_wstring(record.exotic_crafters_available);
+        SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(line.c_str()));
+    }
+}
+
+void refresh_magic_item_history(HWND window) {
+    HWND list = GetDlgItem(window, kMagicItemHistory);
+    SendMessageW(list, LB_RESETCONTENT, 0, 0);
+    for (const auto& record : kingdom.magic_item_outcomes) {
+        const std::wstring line = L"Turn " + std::to_wstring(record.turn)
+            + L" | " + widen(pkkm::magic_item_category_name(record.category))
+            + L" | " + (record.commissioned ? L"Commissioned" : record.sold ? L"Sold" : L"Unsold / lost")
+            + L" | BP " + std::to_wstring(record.bp_received);
+        SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(line.c_str()));
+    }
+}
+
+void apply_magic_item_dialog(HWND window) {
+    const int selected = static_cast<int>(SendMessageW(
+        GetDlgItem(window, kMagicItemCategory), CB_GETCURSEL, 0, 0));
+    if (selected < 0 || selected > 2) throw std::invalid_argument("Select a magic-item category.");
+    const bool sold = SendMessageW(GetDlgItem(window, kMagicItemSold), BM_GETCHECK, 0, 0) == BST_CHECKED;
+    const bool commissioned = SendMessageW(GetDlgItem(window, kMagicItemCommissioned), BM_GETCHECK, 0, 0) == BST_CHECKED;
+    pkkm::apply_magic_item_outcome(kingdom, static_cast<pkkm::MagicItemCategory>(selected), sold, commissioned);
+    dirty = true;
+    refresh(GetDlgItem(GetParent(window), kDisplay));
+    const auto& record = kingdom.magic_item_outcomes.back();
+    const std::wstring status = L"Item outcome recorded on Turn " + std::to_wstring(record.turn)
+        + L" | " + widen(pkkm::magic_item_category_name(record.category))
+        + L" | BP received " + std::to_wstring(record.bp_received)
+        + (record.lost ? L" | Ordinary item lost" : record.commissioned ? L" | Commissioned exemption" : L" | Sold");
+    SetWindowTextW(GetDlgItem(window, kMagicItemStatus), status.c_str());
+    refresh_magic_item_history(window);
+    SetWindowTextW(window, L"Turn Actions - Magic-Item Outcome Recorded");
+}
+
+void apply_commission_dialog(HWND window) {
+    const std::string item_name = narrow(manager_text(window, kCommissionItem));
+    const std::string recipient = narrow(manager_text(window, kCommissionRecipient));
+    const int cost_bp = parse_integer(manager_text(window, kCommissionCost));
+    const int exotic_crafters = parse_integer(manager_text(window, kCommissionCrafters));
+    pkkm::apply_commission(kingdom, item_name, recipient, cost_bp, exotic_crafters);
+    dirty = true;
+    refresh(GetDlgItem(GetParent(window), kDisplay));
+    const auto& record = kingdom.commissions.back();
+    const std::wstring status = L"Commission recorded on Turn " + std::to_wstring(record.turn)
+        + L" | " + widen(record.item_name)
+        + L" | Recipient " + widen(record.recipient)
+        + L" | BP " + std::to_wstring(record.cost_bp)
+        + L" | Distribution remains manual";
+    SetWindowTextW(GetDlgItem(window, kCommissionStatus), status.c_str());
+    refresh_commission_history(window);
+    SetWindowTextW(window, L"Turn Actions - Commission Recorded");
+}
+
 void reverse_turn_action_dialog(HWND window) {
     HWND list = GetDlgItem(window, kActionHistory);
     const int selected = static_cast<int>(SendMessageW(
@@ -1529,12 +1676,13 @@ void apply_turn_action_dialog(HWND window) {
 
 void apply_tax_action_dialog(HWND window) {
     const bool success = SendMessageW(GetDlgItem(window, kTaxSuccess), BM_GETCHECK, 0, 0) == BST_CHECKED;
-    const int result_divided_by_three = parse_integer(manager_text(window, kTaxResult));
+    const int result_input = parse_integer(manager_text(window, kTaxResult));
     const int other_bp_gained = parse_integer(manager_text(window, kTaxOther));
-    pkkm::apply_tax_action(kingdom, success, result_divided_by_three, other_bp_gained);
+    pkkm::apply_tax_action(kingdom, success, result_input, other_bp_gained);
     dirty = true;
     refresh(GetDlgItem(GetParent(window), kDisplay));
-    const int delta = pkkm::resolve_tax_bp_delta(success, result_divided_by_three, other_bp_gained);
+    const int delta = pkkm::resolve_tax_bp_delta(
+        kingdom.rule_profile, success, result_input, other_bp_gained);
     const std::wstring status = L"Tax action applied on Turn " + std::to_wstring(kingdom.turn)
         + L" | BP delta " + std::to_wstring(delta)
         + (success ? L" | Economy branch: success" : L" | Economy branch: failure");
@@ -1545,14 +1693,17 @@ void apply_tax_action_dialog(HWND window) {
 
 void apply_gold_withdrawal_dialog(HWND window) {
     const int bp_withdrawn = parse_integer(manager_text(window, kWithdrawalBp));
-    pkkm::apply_gold_withdrawal(kingdom, bp_withdrawn);
+    const bool loyalty_success = SendMessageW(
+        GetDlgItem(window, kWithdrawalLoyaltySuccess), BM_GETCHECK, 0, 0) == BST_CHECKED;
+    pkkm::apply_gold_withdrawal(kingdom, bp_withdrawn, loyalty_success);
     dirty = true;
     refresh(GetDlgItem(GetParent(window), kDisplay));
     const auto& record = kingdom.gold_withdrawals.back();
     const std::wstring status = L"Withdrawal applied on Turn " + std::to_wstring(record.turn)
         + L" | Gold received " + std::to_wstring(record.gold_received)
         + L" | Treasury " + std::to_wstring(record.treasury_delta)
-        + L" | Unrest " + std::to_wstring(record.unrest_delta);
+        + L" | Unrest " + std::to_wstring(record.unrest_delta)
+        + L" | Loyalty " + (record.loyalty_check_success ? L"success" : L"failure");
     SetWindowTextW(GetDlgItem(window, kWithdrawalStatus), status.c_str());
     refresh_gold_withdrawal_history(window);
     SetWindowTextW(window, L"Turn Actions - Withdrawal Applied");
@@ -1652,7 +1803,12 @@ void update_turn_actions_scrollbar(HWND window) {
     info.nMax = kTurnActionsContentHeight - 1;
     info.nPage = static_cast<UINT>(std::max(0L, client.bottom - client.top));
     const int max_position = std::max(0, info.nMax - static_cast<int>(info.nPage) + 1);
+    const int previous_position = turn_actions_scroll_y;
     turn_actions_scroll_y = std::clamp(turn_actions_scroll_y, 0, max_position);
+    if (turn_actions_scroll_y != previous_position) {
+        ScrollWindowEx(window, 0, previous_position - turn_actions_scroll_y, nullptr, nullptr,
+            nullptr, nullptr, SW_SCROLLCHILDREN | SW_INVALIDATE | SW_ERASE);
+    }
     info.nPos = turn_actions_scroll_y;
     SetScrollInfo(window, SB_VERT, &info, TRUE);
 }
@@ -1688,6 +1844,8 @@ LRESULT CALLBACK turn_actions_proc(HWND window, UINT message, WPARAM wparam, LPA
             refresh_stability_history(window);
             refresh_consumption_history(window);
             refresh_unrest_history(window);
+            refresh_commission_history(window);
+            refresh_magic_item_history(window);
             update_turn_actions_scrollbar(window);
             SetWindowTextW(window, (L"Turn Actions - Turn " + std::to_wstring(kingdom.turn)).c_str());
             return 0;
@@ -1717,7 +1875,14 @@ LRESULT CALLBACK turn_actions_proc(HWND window, UINT message, WPARAM wparam, LPA
             return 0;
         case WM_COMMAND:
             try {
-                if (LOWORD(wparam) == kActionApply) apply_turn_action_dialog(window);
+                if (LOWORD(wparam) == kRuleProfileChoice && HIWORD(wparam) == CBN_SELCHANGE) {
+                    const int selected = static_cast<int>(SendMessageW(
+                        GetDlgItem(window, kRuleProfileChoice), CB_GETCURSEL, 0, 0));
+                    kingdom.rule_profile = selected == 1 ? pkkm::RuleProfile::CityInfo : pkkm::RuleProfile::Workbook;
+                    dirty = true;
+                    refresh(GetDlgItem(GetParent(window), kDisplay));
+                    SetWindowTextW(window, L"Turn Actions - Rule Profile Updated");
+                } else if (LOWORD(wparam) == kActionApply) apply_turn_action_dialog(window);
                 else if (LOWORD(wparam) == kActionReverse) reverse_turn_action_dialog(window);
                 else if (LOWORD(wparam) == kTaxApply) apply_tax_action_dialog(window);
                 else if (LOWORD(wparam) == kWithdrawalApply) apply_gold_withdrawal_dialog(window);
@@ -1727,6 +1892,8 @@ LRESULT CALLBACK turn_actions_proc(HWND window, UINT message, WPARAM wparam, LPA
                 else if (LOWORD(wparam) == kStabilityApply) apply_stability_dialog(window);
                 else if (LOWORD(wparam) == kConsumptionApply) apply_consumption_dialog(window);
                 else if (LOWORD(wparam) == kUnrestApply) apply_unrest_dialog(window);
+                else if (LOWORD(wparam) == kCommissionApply) apply_commission_dialog(window);
+                else if (LOWORD(wparam) == kMagicItemApply) apply_magic_item_dialog(window);
                 else if (LOWORD(wparam) == kActionFilter ||
                          LOWORD(wparam) == kActionFilterOriginal ||
                          LOWORD(wparam) == kActionFilterReversal) {
