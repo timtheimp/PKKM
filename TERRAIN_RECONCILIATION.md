@@ -76,9 +76,15 @@ The current Greenbelt catalog and editor may display these improvements as manua
 - convert a visual corridor or terrain label into a rule-bearing object;
 - treat workbook cost strings as executable payment instructions.
 
+The domain now exposes an additive, non-mutating preview overload that accepts
+explicit caller-supplied facts for terrain, claim state, water/river/Canal
+adjacency, neighboring Farms, Road connectivity, river crossings, and kingdom
+Size. It can preserve the reconciled Farm, Fishery, and Highway warnings while
+leaving all effects and costs manual.
+
 ## Safest next implementation slice
 
-Implement a non-mutating terrain-improvement preview model with explicit caller-supplied facts:
+The first non-mutating terrain-improvement preview slice is implemented with explicit caller-supplied facts:
 
 1. terrain type;
 2. claimed status;
@@ -87,6 +93,7 @@ Implement a non-mutating terrain-improvement preview model with explicit caller-
 5. connected Road/Highway facts;
 6. kingdom Size;
 7. existing improvements and requested upgrade;
-8. selected rule profile.
+8. rule-profile selection remains a deferred boundary until profile-specific
+   terrain semantics are approved.
 
-The preview should return eligibility warnings, source metadata, and reference cost only. It should not spend BP, alter inventory, mutate map geometry, or apply kingdom-stat deltas. Automatic application remains deferred until workbook authority, City Info conflicts, and topology semantics are explicitly resolved.
+The preview returns eligibility warnings and source metadata only. It does not spend BP, alter inventory, mutate map geometry, or apply kingdom-stat deltas. Automatic application remains deferred until workbook authority, City Info conflicts, and topology semantics are explicitly resolved.

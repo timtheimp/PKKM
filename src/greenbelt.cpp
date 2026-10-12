@@ -156,4 +156,50 @@ GreenbeltImprovementPreview preview_greenbelt_improvement(
     return preview;
 }
 
+GreenbeltImprovementPreview preview_greenbelt_improvement(
+    const std::vector<GreenbeltImprovementDefinition>& catalog,
+    const std::string& id, const GreenbeltImprovementPreviewFacts& facts,
+    bool manual_override) {
+    GreenbeltImprovementPreview preview;
+    const auto* item = find_greenbelt_improvement(catalog, id);
+    if (!item) {
+        preview.warnings.push_back("Improvement is not present in the Greenbelt catalog.");
+        return preview;
+    }
+    preview.known = true;
+    preview.summary = item->name + ": " + item->effect
+        + " Preview only; BP and kingdom totals are unchanged.";
+    if (!facts.claimed && !manual_override)
+        preview.warnings.push_back("The hex is not claimed; manual override is required to preview placement.");
+
+    bool terrain_allowed = terrain_matches(item->terrain_requirement, facts.terrain);
+    if (id == "farm") {
+        terrain_allowed = facts.terrain == "plains" || facts.terrain == "hills"
+            || facts.terrain == "grassland" || facts.terrain == "desert";
+        if (facts.terrain == "desert"
+            && !(facts.water_adjacent || facts.river_adjacent || facts.canal_adjacent))
+            preview.warnings.push_back("A desert Farm requires water access or a Canal.");
+    } else if (id == "fishery") {
+        terrain_allowed = facts.terrain == "water" || facts.terrain == "coast"
+            || facts.terrain == "river" || facts.terrain == "marsh";
+    }
+    if (!terrain_allowed && !manual_override)
+        preview.warnings.push_back("Terrain does not meet the reconciled prerequisite.");
+
+    if (id == "highway") {
+        if (!facts.connected_road && !manual_override)
+            preview.warnings.push_back("Highway requires a connected Road network.");
+        if (facts.kingdom_size < 26 && !manual_override)
+            preview.warnings.push_back("Highway requires kingdom Size 26 or greater.");
+    }
+    if ((id == "road" || id == "highway") && facts.river_crossing)
+        preview.warnings.push_back("River crossing doubles the reference Road cost; confirm the manual cost.");
+    if (item->reference_only)
+        preview.warnings.push_back("Placement or derived rule effects remain manual-only.");
+    preview.allowed = preview.warnings.empty() || manual_override;
+    if (manual_override && !preview.warnings.empty())
+        preview.warnings.push_back("Manual override accepted; unresolved prerequisites remain recorded.");
+    return preview;
+}
+
 } // namespace pkkm

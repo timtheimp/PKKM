@@ -39,6 +39,18 @@ struct GreenbeltImprovementPreview {
     std::vector<std::string> warnings;
 };
 
+struct GreenbeltImprovementPreviewFacts {
+    std::string terrain;
+    bool claimed = false;
+    bool water_adjacent = false;
+    bool river_adjacent = false;
+    bool canal_adjacent = false;
+    int neighboring_farms = 0;
+    bool connected_road = false;
+    bool river_crossing = false;
+    int kingdom_size = 0;
+};
+
 const std::vector<GreenbeltImprovementDefinition>& greenbelt_improvement_catalog();
 GreenbeltPoint greenbelt_hex_center(const GreenbeltCalibration& calibration, int q, int r);
 std::vector<GreenbeltPoint> greenbelt_hex_vertices(
@@ -50,6 +62,10 @@ const GreenbeltImprovementDefinition* find_greenbelt_improvement(
 GreenbeltImprovementPreview preview_greenbelt_improvement(
     const std::vector<GreenbeltImprovementDefinition>& catalog,
     const std::string& id, const std::string& terrain, bool claimed,
+    bool manual_override);
+GreenbeltImprovementPreview preview_greenbelt_improvement(
+    const std::vector<GreenbeltImprovementDefinition>& catalog,
+    const std::string& id, const GreenbeltImprovementPreviewFacts& facts,
     bool manual_override);
 
 } // namespace pkkm

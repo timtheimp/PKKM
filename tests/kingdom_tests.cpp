@@ -87,6 +87,29 @@ int main(int argc, char** argv) {
  must(highway_preview.known && !highway_preview.allowed
       && !highway_preview.warnings.empty(),
       "Greenbelt preview preserves unmet Highway prerequisites as warnings");
+ pkkm::GreenbeltImprovementPreviewFacts desert_farm_facts;
+ desert_farm_facts.terrain="desert";
+ desert_farm_facts.claimed=true;
+ const auto blocked_desert_farm=pkkm::preview_greenbelt_improvement(
+     greenbelt_catalog,"farm",desert_farm_facts,false);
+ must(blocked_desert_farm.known && !blocked_desert_farm.allowed
+      && !blocked_desert_farm.warnings.empty(),
+      "Terrain preview rejects a desert Farm without water access");
+ desert_farm_facts.river_adjacent=true;
+ const auto allowed_desert_farm=pkkm::preview_greenbelt_improvement(
+     greenbelt_catalog,"farm",desert_farm_facts,false);
+ must(allowed_desert_farm.known && allowed_desert_farm.allowed,
+      "Terrain preview accepts a desert Farm with river access");
+ pkkm::GreenbeltImprovementPreviewFacts highway_facts;
+ highway_facts.terrain="plains";
+ highway_facts.claimed=true;
+ highway_facts.connected_road=true;
+ highway_facts.kingdom_size=25;
+ const auto undersized_highway=pkkm::preview_greenbelt_improvement(
+     greenbelt_catalog,"highway",highway_facts,false);
+ must(undersized_highway.known && !undersized_highway.allowed
+      && !undersized_highway.warnings.empty(),
+      "Terrain preview preserves the Highway kingdom-size prerequisite");
  const auto center=pkkm::greenbelt_hex_center({100.0,50.0,20.0,10.0,1.0},2,4);
  must(center.x==180.0 && center.y==90.0,"Greenbelt calibration projects axial coordinates");
  const auto single_perimeter=pkkm::greenbelt_claimed_perimeter({{0,0,"plains",true,1,"",{}}});
