@@ -167,6 +167,7 @@ GreenbeltImprovementPreview preview_greenbelt_improvement(
         return preview;
     }
     preview.known = true;
+    preview.rule_profile = facts.rule_profile;
     preview.summary = item->name + ": " + item->effect
         + " Preview only; BP and kingdom totals are unchanged. Rule profile: "
         + rule_profile_name(facts.rule_profile) + ".";

@@ -34,6 +34,7 @@ struct GreenbeltImprovementPreview {
     bool known = false;
     bool allowed = false;
     bool manual_effect = true;
+    RuleProfile rule_profile = RuleProfile::Workbook;
     int bp_delta = 0;
     std::string summary;
     std::vector<std::string> warnings;
