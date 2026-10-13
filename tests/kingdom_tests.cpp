@@ -100,6 +100,20 @@ int main(int argc, char** argv) {
      greenbelt_catalog,"farm",desert_farm_facts,false);
  must(allowed_desert_farm.known && allowed_desert_farm.allowed,
       "Terrain preview accepts a desert Farm with river access");
+ pkkm::GreenbeltImprovementPreviewFacts isolated_farm_facts;
+ isolated_farm_facts.terrain="plains";
+ isolated_farm_facts.claimed=true;
+ const auto isolated_farm=pkkm::preview_greenbelt_improvement(
+     greenbelt_catalog,"farm",isolated_farm_facts,false);
+ must(std::any_of(isolated_farm.warnings.begin(), isolated_farm.warnings.end(),
+      [](const auto& warning){ return warning.find("two existing Farms")!=std::string::npos; }),
+      "Terrain preview warns when a Farm lacks water access and Farm adjacency");
+ isolated_farm_facts.neighboring_farms=2;
+ const auto adjacent_farm=pkkm::preview_greenbelt_improvement(
+     greenbelt_catalog,"farm",isolated_farm_facts,false);
+ must(!std::any_of(adjacent_farm.warnings.begin(), adjacent_farm.warnings.end(),
+      [](const auto& warning){ return warning.find("two existing Farms")!=std::string::npos; }),
+      "Terrain preview accepts Farm adjacency as an alternative prerequisite");
  pkkm::GreenbeltImprovementPreviewFacts highway_facts;
  highway_facts.terrain="plains";
  highway_facts.claimed=true;

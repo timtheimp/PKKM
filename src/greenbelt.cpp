@@ -186,6 +186,10 @@ GreenbeltImprovementPreview preview_greenbelt_improvement(
         if (facts.terrain == "desert"
             && !(facts.water_adjacent || facts.river_adjacent || facts.canal_adjacent))
             preview.warnings.push_back("A desert Farm requires water access or a Canal.");
+        if (facts.terrain != "desert"
+            && !(facts.water_adjacent || facts.river_adjacent || facts.canal_adjacent)
+            && facts.neighboring_farms < 2)
+            preview.warnings.push_back("A Farm requires water access or adjacency to two existing Farms.");
     } else if (id == "fishery") {
         terrain_allowed = facts.terrain == "water" || facts.terrain == "coast"
             || facts.terrain == "river" || facts.terrain == "marsh";

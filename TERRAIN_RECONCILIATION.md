@@ -83,7 +83,8 @@ Size, plus existing improvement IDs, a requested upgrade, and route length. It
 can preserve the reconciled Farm, Fishery, and Highway warnings, including the
 requirement for an existing Road when a Highway upgrade is requested, while
 leaving all effects and costs manual. It also warns when a non-shareable
-improvement already occupies the hex and permits existing shareable records.
+improvement already occupies the hex, permits existing shareable records, and
+checks the Farm alternative of water access or adjacency to two existing Farms.
 
 ## Safest next implementation slice
 
