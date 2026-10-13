@@ -224,11 +224,15 @@ int main(int argc, char** argv) {
      greenbelt_catalog,"aqueduct",aqueduct_facts,false);
  must(incomplete_aqueduct.summary.find("Rule profile: workbook")!=std::string::npos,
       "Terrain preview records the selected rule profile in its summary");
+ must(incomplete_aqueduct.rule_profile==pkkm::RuleProfile::Workbook,
+      "Terrain preview returns the Workbook rule profile as structured context");
  aqueduct_facts.rule_profile=pkkm::RuleProfile::CityInfo;
  const auto city_info_aqueduct=pkkm::preview_greenbelt_improvement(
      greenbelt_catalog,"aqueduct",aqueduct_facts,false);
  must(city_info_aqueduct.summary.find("Rule profile: city_info")!=std::string::npos,
       "Terrain preview records the City Info rule profile in its summary");
+ must(city_info_aqueduct.rule_profile==pkkm::RuleProfile::CityInfo,
+      "Terrain preview returns the City Info rule profile as structured context");
  must(std::any_of(incomplete_aqueduct.warnings.begin(), incomplete_aqueduct.warnings.end(),
       [](const auto& warning){ return warning.find("connected water source")!=std::string::npos; }),
       "Terrain preview warns when an Aqueduct lacks a connected water source");

@@ -115,4 +115,6 @@ The preview returns eligibility warnings and source metadata only. It does not s
 
 The facts-based preview now accepts the persisted `RuleProfile` value and
 records its lowercase name in the preview summary. This is source context
-only; it does not silently apply profile-specific terrain semantics.
+only; it does not silently apply profile-specific terrain semantics. The
+returned preview also exposes the selected profile as structured context so
+callers do not need to parse the summary text.
