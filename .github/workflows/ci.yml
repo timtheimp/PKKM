@@ -48,7 +48,7 @@ jobs:
         shell: pwsh
         run: |
           cpack --config build/ci/CPackConfig.cmake -G ZIP -B build/ci/cpack
-          python tests/test_cpack_package.py build/ci/cpack/PKKM-0.1.5-Windows.zip
+          python tests/test_cpack_package.py build/ci/cpack/PKKM-0.1.6-Windows.zip
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
@@ -56,5 +56,5 @@ jobs:
           name: pkkm-windows-release
           path: |
             build/ci/PKKM-current-schema10.zip
-            build/ci/cpack/PKKM-0.1.5-Windows.zip
+            build/ci/cpack/PKKM-0.1.6-Windows.zip
           if-no-files-found: error
