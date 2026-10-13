@@ -90,7 +90,8 @@ Quarry, and Sawmill without changing the conservative catalog definitions.
 It preserves the source occupancy warning that a Watchtower cannot share a hex
 with a Fort or another Watchtower. Aqueduct previews additionally accept
 explicit water-source and settlement-endpoint facts and warn when either is
-absent.
+absent. Bridge previews require an explicit river-crossing fact, while Road
+previews report supplied river crossings without applying their cost effects.
 
 ## Safest next implementation slice
 
@@ -98,7 +99,7 @@ The first non-mutating terrain-improvement preview slice is implemented with exp
 
 1. terrain type;
 2. claimed status;
-3. river/coast/water and settlement-endpoint facts;
+3. river/coast/water, settlement-endpoint, and river-crossing facts;
 4. neighboring Farm count;
 5. connected Road/Highway facts;
 6. kingdom Size;

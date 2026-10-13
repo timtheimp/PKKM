@@ -172,6 +172,8 @@ GreenbeltImprovementPreview preview_greenbelt_improvement(
     if (facts.route_length > 0)
         preview.summary += " Route length " + std::to_string(facts.route_length)
             + " supplied; route effects remain manual.";
+    if (facts.river_crossing)
+        preview.summary += " River crossing supplied; crossing costs and effects remain manual.";
     if (!facts.claimed && !manual_override)
         preview.warnings.push_back("The hex is not claimed; manual override is required to preview placement.");
     if (id == "watchtower" && !manual_override
@@ -186,6 +188,8 @@ GreenbeltImprovementPreview preview_greenbelt_improvement(
         if (!facts.settlement_endpoint)
             preview.warnings.push_back("An Aqueduct requires a settlement endpoint.");
     }
+    if (id == "bridge" && !facts.river_crossing && !manual_override)
+        preview.warnings.push_back("A Bridge requires an explicit river crossing fact.");
     if (std::find(facts.existing_improvements.begin(), facts.existing_improvements.end(), id)
             != facts.existing_improvements.end()
         && !item->shareable && !manual_override)

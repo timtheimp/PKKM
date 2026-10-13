@@ -207,6 +207,27 @@ int main(int argc, char** argv) {
       [](const auto& warning){ return warning.find("connected water source")!=std::string::npos
           || warning.find("settlement endpoint")!=std::string::npos; }),
       "Terrain preview accepts an Aqueduct with explicit water and settlement facts");
+ pkkm::GreenbeltImprovementPreviewFacts crossing_facts;
+ crossing_facts.terrain="plains";
+ crossing_facts.claimed=true;
+ crossing_facts.river_crossing=true;
+ const auto crossing_road=pkkm::preview_greenbelt_improvement(
+     greenbelt_catalog,"road",crossing_facts,false);
+ must(crossing_road.summary.find("River crossing supplied")!=std::string::npos,
+      "Terrain preview reports supplied Road river crossings without applying costs");
+ crossing_facts.terrain="river";
+ crossing_facts.river_crossing=false;
+ const auto incomplete_bridge=pkkm::preview_greenbelt_improvement(
+     greenbelt_catalog,"bridge",crossing_facts,false);
+ must(std::any_of(incomplete_bridge.warnings.begin(), incomplete_bridge.warnings.end(),
+      [](const auto& warning){ return warning.find("river crossing fact")!=std::string::npos; }),
+      "Terrain preview warns when a Bridge lacks an explicit river crossing fact");
+ crossing_facts.river_crossing=true;
+ const auto valid_bridge=pkkm::preview_greenbelt_improvement(
+     greenbelt_catalog,"bridge",crossing_facts,false);
+ must(!std::any_of(valid_bridge.warnings.begin(), valid_bridge.warnings.end(),
+      [](const auto& warning){ return warning.find("river crossing fact")!=std::string::npos; }),
+      "Terrain preview accepts a Bridge with an explicit river crossing fact");
  const auto center=pkkm::greenbelt_hex_center({100.0,50.0,20.0,10.0,1.0},2,4);
  must(center.x==180.0 && center.y==90.0,"Greenbelt calibration projects axial coordinates");
  const auto single_perimeter=pkkm::greenbelt_claimed_perimeter({{0,0,"plains",true,1,"",{}}});
