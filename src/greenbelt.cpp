@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cmath>
+#include <sstream>
 #include <unordered_set>
 #include <utility>
 
@@ -16,14 +18,22 @@ GreenbeltImprovementDefinition definition(
     return {id, name, terrain, effect, cost, cost_bp, fixed, shareable, third_party, reference_only};
 }
 
+bool has_terrain_token(const std::vector<std::string>& tokens, const std::string& token) {
+    return std::find(tokens.begin(), tokens.end(), token) != tokens.end();
+}
+
 bool terrain_matches(const std::string& requirement, const std::string& terrain) {
-    if (requirement == "any claimed land") return !terrain.empty() && terrain != "water";
-    if (requirement == "plains or grassland") return terrain == "plains" || terrain == "grassland";
-    if (requirement == "hills") return terrain == "hills";
-    if (requirement == "mountains") return terrain == "mountains";
-    if (requirement == "water or coast") return terrain == "water" || terrain == "coast";
-    if (requirement == "river") return terrain == "river";
-    return requirement.empty() || requirement == terrain;
+    const auto tokens = greenbelt_terrain_tokens(terrain);
+    if (requirement == "any claimed land")
+        return !tokens.empty() && !has_terrain_token(tokens, "water");
+    if (requirement == "plains or grassland")
+        return has_terrain_token(tokens, "plains") || has_terrain_token(tokens, "grassland");
+    if (requirement == "hills") return has_terrain_token(tokens, "hills");
+    if (requirement == "mountains") return has_terrain_token(tokens, "mountains");
+    if (requirement == "water or coast")
+        return has_terrain_token(tokens, "water") || has_terrain_token(tokens, "coast");
+    if (requirement == "river") return has_terrain_token(tokens, "river");
+    return requirement.empty() || has_terrain_token(tokens, requirement);
 }
 
 } // namespace
@@ -32,19 +42,45 @@ GreenbeltPoint greenbelt_hex_center(const GreenbeltCalibration& calibration, int
     const double scale = calibration.scale;
     return {calibration.origin_x + (static_cast<double>(q) + static_cast<double>(r) * 0.5)
             * calibration.hex_width * scale,
-        calibration.origin_y + static_cast<double>(r) * calibration.hex_height * scale};
+        calibration.origin_y + static_cast<double>(r) * calibration.hex_height * scale * 0.75};
+}
+
+GreenbeltCoordinate greenbelt_hex_at_point(
+    const GreenbeltCalibration& calibration, double x, double y) {
+    const double scaled_width = calibration.hex_width * calibration.scale;
+    const double scaled_height = calibration.hex_height * calibration.scale;
+    if (scaled_width <= 0.0 || scaled_height <= 0.0)
+        return {};
+    const double r = (y - calibration.origin_y) / (scaled_height * 0.75);
+    const double q = (x - calibration.origin_x) / scaled_width - r * 0.5;
+    return {static_cast<int>(std::lround(q)), static_cast<int>(std::lround(r))};
+}
+
+bool greenbelt_hex_inside_image(const GreenbeltCalibration& calibration, int q, int r,
+    int image_width, int image_height) {
+    if (image_width <= 0 || image_height <= 0 || calibration.scale <= 0.0
+        || calibration.hex_width <= 0.0 || calibration.hex_height <= 0.0)
+        return false;
+    for (const auto& vertex : greenbelt_hex_vertices(calibration, q, r)) {
+        if (vertex.x < 0.0 || vertex.y < 0.0
+            || vertex.x > static_cast<double>(image_width)
+            || vertex.y > static_cast<double>(image_height))
+            return false;
+    }
+    return true;
 }
 
 std::vector<GreenbeltPoint> greenbelt_hex_vertices(
     const GreenbeltCalibration& calibration, int q, int r) {
     const GreenbeltPoint center = greenbelt_hex_center(calibration, q, r);
-    const double radius_x = calibration.hex_width * calibration.scale * 0.5;
+    constexpr double sqrt_three = 1.73205080756887729353;
+    const double radius_x = calibration.hex_width * calibration.scale / sqrt_three;
     const double radius_y = calibration.hex_height * calibration.scale * 0.5;
     std::vector<GreenbeltPoint> vertices;
     vertices.reserve(6);
     constexpr double pi = 3.14159265358979323846;
     for (int side = 0; side < 6; ++side) {
-        const double angle = static_cast<double>(side) * pi / 3.0;
+        const double angle = -pi * 0.5 + static_cast<double>(side) * pi / 3.0;
         vertices.push_back({center.x + radius_x * std::cos(angle),
             center.y + radius_y * std::sin(angle)});
     }
@@ -57,8 +93,8 @@ std::vector<GreenbeltBoundaryEdge> greenbelt_claimed_perimeter(
         return std::to_string(q) + ":" + std::to_string(r);
     };
     const std::array<std::pair<int, int>, 6> directions = {
-        std::pair<int, int>{1, 0}, std::pair<int, int>{0, 1}, std::pair<int, int>{-1, 1},
-        std::pair<int, int>{-1, 0}, std::pair<int, int>{0, -1}, std::pair<int, int>{1, -1}};
+        std::pair<int, int>{1, -1}, std::pair<int, int>{1, 0}, std::pair<int, int>{0, 1},
+        std::pair<int, int>{-1, 1}, std::pair<int, int>{-1, 0}, std::pair<int, int>{0, -1}};
     std::unordered_set<std::string> claimed;
     for (const auto& hex : hexes) if (hex.claimed) claimed.insert(key(hex.q, hex.r));
     std::vector<GreenbeltBoundaryEdge> perimeter;
@@ -129,6 +165,23 @@ GreenbeltHex make_next_greenbelt_hex(const std::vector<GreenbeltHex>& hexes) {
         ++result.q;
     }
     return result;
+}
+
+std::vector<std::string> greenbelt_terrain_tokens(const std::string& terrain) {
+    std::vector<std::string> tokens;
+    std::stringstream input(terrain);
+    std::string token;
+    while (std::getline(input, token, ',')) {
+        const auto first = token.find_first_not_of(" \t");
+        if (first == std::string::npos) continue;
+        const auto last = token.find_last_not_of(" \t");
+        token = token.substr(first, last - first + 1);
+        std::transform(token.begin(), token.end(), token.begin(), [](unsigned char value) {
+            return static_cast<char>(std::tolower(value));
+        });
+        if (!token.empty()) tokens.push_back(token);
+    }
+    return tokens;
 }
 
 const GreenbeltImprovementDefinition* find_greenbelt_improvement(

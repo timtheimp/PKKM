@@ -11,6 +11,11 @@ struct GreenbeltPoint {
     double y = 0.0;
 };
 
+struct GreenbeltCoordinate {
+    int q = 0;
+    int r = 0;
+};
+
 struct GreenbeltBoundaryEdge {
     int q = 0;
     int r = 0;
@@ -59,7 +64,12 @@ struct GreenbeltImprovementPreviewFacts {
 
 const std::vector<GreenbeltImprovementDefinition>& greenbelt_improvement_catalog();
 GreenbeltHex make_next_greenbelt_hex(const std::vector<GreenbeltHex>& hexes);
+std::vector<std::string> greenbelt_terrain_tokens(const std::string& terrain);
 GreenbeltPoint greenbelt_hex_center(const GreenbeltCalibration& calibration, int q, int r);
+GreenbeltCoordinate greenbelt_hex_at_point(
+    const GreenbeltCalibration& calibration, double x, double y);
+bool greenbelt_hex_inside_image(const GreenbeltCalibration& calibration, int q, int r,
+    int image_width, int image_height);
 std::vector<GreenbeltPoint> greenbelt_hex_vertices(
     const GreenbeltCalibration& calibration, int q, int r);
 std::vector<GreenbeltBoundaryEdge> greenbelt_claimed_perimeter(
