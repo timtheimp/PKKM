@@ -169,6 +169,9 @@ GreenbeltImprovementPreview preview_greenbelt_improvement(
     preview.known = true;
     preview.summary = item->name + ": " + item->effect
         + " Preview only; BP and kingdom totals are unchanged.";
+    if (facts.route_length > 0)
+        preview.summary += " Route length " + std::to_string(facts.route_length)
+            + " supplied; route effects remain manual.";
     if (!facts.claimed && !manual_override)
         preview.warnings.push_back("The hex is not claimed; manual override is required to preview placement.");
 
@@ -191,6 +194,11 @@ GreenbeltImprovementPreview preview_greenbelt_improvement(
             preview.warnings.push_back("Highway requires a connected Road network.");
         if (facts.kingdom_size < 26 && !manual_override)
             preview.warnings.push_back("Highway requires kingdom Size 26 or greater.");
+        if (facts.requested_upgrade == "highway"
+            && std::find(facts.existing_improvements.begin(), facts.existing_improvements.end(), "road")
+                == facts.existing_improvements.end()
+            && !manual_override)
+            preview.warnings.push_back("Highway upgrade requires an existing Road.");
     }
     if ((id == "road" || id == "highway") && facts.river_crossing)
         preview.warnings.push_back("River crossing doubles the reference Road cost; confirm the manual cost.");

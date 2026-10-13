@@ -79,7 +79,9 @@ The current Greenbelt catalog and editor may display these improvements as manua
 The domain now exposes an additive, non-mutating preview overload that accepts
 explicit caller-supplied facts for terrain, claim state, water/river/Canal
 adjacency, neighboring Farms, Road connectivity, river crossings, and kingdom
-Size. It can preserve the reconciled Farm, Fishery, and Highway warnings while
+Size, plus existing improvement IDs, a requested upgrade, and route length. It
+can preserve the reconciled Farm, Fishery, and Highway warnings, including the
+requirement for an existing Road when a Highway upgrade is requested, while
 leaving all effects and costs manual.
 
 ## Safest next implementation slice
@@ -92,7 +94,7 @@ The first non-mutating terrain-improvement preview slice is implemented with exp
 4. neighboring Farm count;
 5. connected Road/Highway facts;
 6. kingdom Size;
-7. existing improvements and requested upgrade;
+7. existing improvements, requested upgrade, and route length;
 8. rule-profile selection remains a deferred boundary until profile-specific
    terrain semantics are approved.
 

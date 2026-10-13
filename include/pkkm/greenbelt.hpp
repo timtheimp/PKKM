@@ -49,6 +49,9 @@ struct GreenbeltImprovementPreviewFacts {
     bool connected_road = false;
     bool river_crossing = false;
     int kingdom_size = 0;
+    std::vector<std::string> existing_improvements;
+    std::string requested_upgrade;
+    int route_length = 0;
 };
 
 const std::vector<GreenbeltImprovementDefinition>& greenbelt_improvement_catalog();
