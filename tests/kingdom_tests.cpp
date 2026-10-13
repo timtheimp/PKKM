@@ -156,6 +156,20 @@ int main(int argc, char** argv) {
  must(!std::any_of(watchtower_upgrade.warnings.begin(), watchtower_upgrade.warnings.end(),
       [](const auto& warning){ return warning.find("existing Watchtower")!=std::string::npos; }),
       "Terrain preview clears resolved Fort upgrade prerequisites");
+ pkkm::GreenbeltImprovementPreviewFacts canal_facts;
+ canal_facts.terrain="plains";
+ canal_facts.claimed=true;
+ const auto plains_canal=pkkm::preview_greenbelt_improvement(
+     greenbelt_catalog,"canal",canal_facts,false);
+ must(!std::any_of(plains_canal.warnings.begin(), plains_canal.warnings.end(),
+      [](const auto& warning){ return warning.find("Terrain does not meet")!=std::string::npos; }),
+      "Terrain preview accepts supplemental Canal terrain");
+ canal_facts.terrain="water";
+ const auto water_canal=pkkm::preview_greenbelt_improvement(
+     greenbelt_catalog,"canal",canal_facts,false);
+ must(std::any_of(water_canal.warnings.begin(), water_canal.warnings.end(),
+      [](const auto& warning){ return warning.find("Terrain does not meet")!=std::string::npos; }),
+      "Terrain preview rejects a Canal on a water hex");
  pkkm::GreenbeltImprovementPreviewFacts duplicate_facts;
  duplicate_facts.terrain="plains";
  duplicate_facts.claimed=true;

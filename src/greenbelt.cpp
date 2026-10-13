@@ -217,6 +217,9 @@ GreenbeltImprovementPreview preview_greenbelt_improvement(
             || facts.terrain == "mountains";
     } else if (id == "sawmill") {
         terrain_allowed = facts.terrain == "forest" || facts.terrain == "jungle";
+    } else if (id == "canal") {
+        terrain_allowed = facts.terrain == "desert" || facts.terrain == "hills"
+            || facts.terrain == "plains" || facts.terrain == "grassland";
     }
     if (!terrain_allowed && !manual_override)
         preview.warnings.push_back("Terrain does not meet the reconciled prerequisite.");

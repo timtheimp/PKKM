@@ -50,6 +50,8 @@ claim full supplemental coverage. In particular:
 
 - The current Farm prerequisite text is narrower than the supplemental Farm
   terrain list and does not encode the desert water/Canal condition.
+- The current Canal terrain requirement is water/coast, while the supplemental
+  terrain list places Canals on desert, hills, and plains/grassland hexes.
 - The current Fishery prerequisite text does not enumerate river and marsh
   terrain.
 - The current Mine and Quarry terrain requirements are narrower than the
@@ -85,8 +87,8 @@ requirement for an existing Road when a Highway upgrade is requested, while
 leaving all effects and costs manual. It also warns when a non-shareable
 improvement already occupies the hex, permits existing shareable records, and
 checks the Farm alternative of water access or adjacency to two existing Farms.
-The preview also accepts the reconciled supplemental terrain sets for Mine,
-Quarry, and Sawmill without changing the conservative catalog definitions.
+The preview also accepts the reconciled supplemental terrain sets for Canal,
+Mine, Quarry, and Sawmill without changing the conservative catalog definitions.
 It preserves the source occupancy warning that a Watchtower cannot share a hex
 with a Fort or another Watchtower. Aqueduct previews additionally accept
 explicit water-source and settlement-endpoint facts and warn when either is
