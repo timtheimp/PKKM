@@ -156,6 +156,18 @@ int main(int argc, char** argv) {
  must(!std::any_of(shareable_farm.warnings.begin(), shareable_farm.warnings.end(),
       [](const auto& warning){ return warning.find("not shareable")!=std::string::npos; }),
       "Terrain preview permits shareable improvement occupancy");
+ duplicate_facts.existing_improvements={"fort"};
+ const auto fort_watchtower=pkkm::preview_greenbelt_improvement(
+     greenbelt_catalog,"watchtower",duplicate_facts,false);
+ must(std::any_of(fort_watchtower.warnings.begin(), fort_watchtower.warnings.end(),
+      [](const auto& warning){ return warning.find("Fort or another Watchtower")!=std::string::npos; }),
+      "Terrain preview preserves Watchtower and Fort exclusivity");
+ duplicate_facts.existing_improvements={"watchtower"};
+ const auto watchtower_duplicate=pkkm::preview_greenbelt_improvement(
+     greenbelt_catalog,"watchtower",duplicate_facts,false);
+ must(std::any_of(watchtower_duplicate.warnings.begin(), watchtower_duplicate.warnings.end(),
+      [](const auto& warning){ return warning.find("Fort or another Watchtower")!=std::string::npos; }),
+      "Terrain preview preserves duplicate Watchtower exclusivity");
  pkkm::GreenbeltImprovementPreviewFacts mine_facts;
  mine_facts.terrain="desert";
  mine_facts.claimed=true;
