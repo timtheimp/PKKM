@@ -174,6 +174,12 @@ GreenbeltImprovementPreview preview_greenbelt_improvement(
             + " supplied; route effects remain manual.";
     if (!facts.claimed && !manual_override)
         preview.warnings.push_back("The hex is not claimed; manual override is required to preview placement.");
+    if (id == "watchtower" && !manual_override
+        && (std::find(facts.existing_improvements.begin(), facts.existing_improvements.end(), "fort")
+                != facts.existing_improvements.end()
+            || std::find(facts.existing_improvements.begin(), facts.existing_improvements.end(), "watchtower")
+                != facts.existing_improvements.end()))
+        preview.warnings.push_back("A Watchtower cannot share a hex with a Fort or another Watchtower.");
     if (std::find(facts.existing_improvements.begin(), facts.existing_improvements.end(), id)
             != facts.existing_improvements.end()
         && !item->shareable && !manual_override)
@@ -193,6 +199,14 @@ GreenbeltImprovementPreview preview_greenbelt_improvement(
     } else if (id == "fishery") {
         terrain_allowed = facts.terrain == "water" || facts.terrain == "coast"
             || facts.terrain == "river" || facts.terrain == "marsh";
+    } else if (id == "mine") {
+        terrain_allowed = facts.terrain == "cavern" || facts.terrain == "desert"
+            || facts.terrain == "hills" || facts.terrain == "mountains";
+    } else if (id == "quarry") {
+        terrain_allowed = facts.terrain == "cavern" || facts.terrain == "hills"
+            || facts.terrain == "mountains";
+    } else if (id == "sawmill") {
+        terrain_allowed = facts.terrain == "forest" || facts.terrain == "jungle";
     }
     if (!terrain_allowed && !manual_override)
         preview.warnings.push_back("Terrain does not meet the reconciled prerequisite.");

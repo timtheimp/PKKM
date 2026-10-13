@@ -156,6 +156,38 @@ int main(int argc, char** argv) {
  must(!std::any_of(shareable_farm.warnings.begin(), shareable_farm.warnings.end(),
       [](const auto& warning){ return warning.find("not shareable")!=std::string::npos; }),
       "Terrain preview permits shareable improvement occupancy");
+ duplicate_facts.existing_improvements={"fort"};
+ const auto fort_watchtower=pkkm::preview_greenbelt_improvement(
+     greenbelt_catalog,"watchtower",duplicate_facts,false);
+ must(std::any_of(fort_watchtower.warnings.begin(), fort_watchtower.warnings.end(),
+      [](const auto& warning){ return warning.find("Fort or another Watchtower")!=std::string::npos; }),
+      "Terrain preview preserves Watchtower and Fort exclusivity");
+ duplicate_facts.existing_improvements={"watchtower"};
+ const auto watchtower_duplicate=pkkm::preview_greenbelt_improvement(
+     greenbelt_catalog,"watchtower",duplicate_facts,false);
+ must(std::any_of(watchtower_duplicate.warnings.begin(), watchtower_duplicate.warnings.end(),
+      [](const auto& warning){ return warning.find("Fort or another Watchtower")!=std::string::npos; }),
+      "Terrain preview preserves duplicate Watchtower exclusivity");
+ pkkm::GreenbeltImprovementPreviewFacts mine_facts;
+ mine_facts.terrain="desert";
+ mine_facts.claimed=true;
+ const auto desert_mine=pkkm::preview_greenbelt_improvement(
+     greenbelt_catalog,"mine",mine_facts,false);
+ must(!std::any_of(desert_mine.warnings.begin(), desert_mine.warnings.end(),
+      [](const auto& warning){ return warning.find("Terrain does not meet")!=std::string::npos; }),
+      "Terrain preview accepts supplemental Mine terrain");
+ mine_facts.terrain="cavern";
+ const auto cavern_quarry=pkkm::preview_greenbelt_improvement(
+     greenbelt_catalog,"quarry",mine_facts,false);
+ must(!std::any_of(cavern_quarry.warnings.begin(), cavern_quarry.warnings.end(),
+      [](const auto& warning){ return warning.find("Terrain does not meet")!=std::string::npos; }),
+      "Terrain preview accepts supplemental Quarry terrain");
+ mine_facts.terrain="jungle";
+ const auto jungle_sawmill=pkkm::preview_greenbelt_improvement(
+     greenbelt_catalog,"sawmill",mine_facts,false);
+ must(!std::any_of(jungle_sawmill.warnings.begin(), jungle_sawmill.warnings.end(),
+      [](const auto& warning){ return warning.find("Terrain does not meet")!=std::string::npos; }),
+      "Terrain preview accepts supplemental Sawmill terrain");
  const auto center=pkkm::greenbelt_hex_center({100.0,50.0,20.0,10.0,1.0},2,4);
  must(center.x==180.0 && center.y==90.0,"Greenbelt calibration projects axial coordinates");
  const auto single_perimeter=pkkm::greenbelt_claimed_perimeter({{0,0,"plains",true,1,"",{}}});

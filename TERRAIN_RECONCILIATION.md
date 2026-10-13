@@ -85,6 +85,10 @@ requirement for an existing Road when a Highway upgrade is requested, while
 leaving all effects and costs manual. It also warns when a non-shareable
 improvement already occupies the hex, permits existing shareable records, and
 checks the Farm alternative of water access or adjacency to two existing Farms.
+The preview also accepts the reconciled supplemental terrain sets for Mine,
+Quarry, and Sawmill without changing the conservative catalog definitions.
+It preserves the source occupancy warning that a Watchtower cannot share a hex
+with a Fort or another Watchtower.
 
 ## Safest next implementation slice
 
