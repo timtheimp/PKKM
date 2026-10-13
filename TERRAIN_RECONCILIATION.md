@@ -112,3 +112,7 @@ The first non-mutating terrain-improvement preview slice is implemented with exp
    terrain semantics are approved.
 
 The preview returns eligibility warnings and source metadata only. It does not spend BP, alter inventory, mutate map geometry, or apply kingdom-stat deltas. Automatic application remains deferred until workbook authority, City Info conflicts, and topology semantics are explicitly resolved.
+
+The facts-based preview now accepts the persisted `RuleProfile` value and
+records its lowercase name in the preview summary. This is source context
+only; it does not silently apply profile-specific terrain semantics.

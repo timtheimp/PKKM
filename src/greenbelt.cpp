@@ -168,7 +168,8 @@ GreenbeltImprovementPreview preview_greenbelt_improvement(
     }
     preview.known = true;
     preview.summary = item->name + ": " + item->effect
-        + " Preview only; BP and kingdom totals are unchanged.";
+        + " Preview only; BP and kingdom totals are unchanged. Rule profile: "
+        + rule_profile_name(facts.rule_profile) + ".";
     if (facts.route_length > 0)
         preview.summary += " Route length " + std::to_string(facts.route_length)
             + " supplied; route effects remain manual.";
