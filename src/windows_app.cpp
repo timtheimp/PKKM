@@ -1941,8 +1941,12 @@ void refresh_greenbelt_preview(HWND window) {
         return;
     }
     const auto& item = greenbelt_catalog[static_cast<size_t>(selected - 1)];
+    pkkm::GreenbeltImprovementPreviewFacts facts;
+    facts.terrain = hex.terrain;
+    facts.claimed = hex.claimed;
+    facts.rule_profile = kingdom.rule_profile;
     const auto preview = pkkm::preview_greenbelt_improvement(
-        greenbelt_catalog, item.id, hex.terrain, hex.claimed, false);
+        greenbelt_catalog, item.id, facts, false);
     std::wstring text = widen(preview.summary);
     for (const auto& warning : preview.warnings) text += L"\r\nWarning: " + widen(warning);
     set_manager_text(window, kGreenbeltPreview, text);
