@@ -232,6 +232,11 @@ GreenbeltImprovementPreview preview_greenbelt_improvement(
             && !manual_override)
             preview.warnings.push_back("Highway upgrade requires an existing Road.");
     }
+    if (id == "fort" && facts.requested_upgrade == "fort"
+        && std::find(facts.existing_improvements.begin(), facts.existing_improvements.end(), "watchtower")
+            == facts.existing_improvements.end()
+        && !manual_override)
+        preview.warnings.push_back("A Fort upgrade requires an existing Watchtower improvement.");
     if ((id == "road" || id == "highway") && facts.river_crossing)
         preview.warnings.push_back("River crossing doubles the reference Road cost; confirm the manual cost.");
     if (item->reference_only)
