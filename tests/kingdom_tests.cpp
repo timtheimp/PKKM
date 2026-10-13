@@ -127,6 +127,21 @@ int main(int argc, char** argv) {
       "Terrain preview clears resolved Highway upgrade prerequisites");
  must(road_upgrade.summary.find("Route length 3")!=std::string::npos,
       "Terrain preview reports supplied route length without applying route effects");
+ pkkm::GreenbeltImprovementPreviewFacts duplicate_facts;
+ duplicate_facts.terrain="plains";
+ duplicate_facts.claimed=true;
+ duplicate_facts.existing_improvements.push_back("aqueduct");
+ const auto duplicate_aqueduct=pkkm::preview_greenbelt_improvement(
+     greenbelt_catalog,"aqueduct",duplicate_facts,false);
+ must(std::any_of(duplicate_aqueduct.warnings.begin(), duplicate_aqueduct.warnings.end(),
+      [](const auto& warning){ return warning.find("not shareable")!=std::string::npos; }),
+      "Terrain preview warns when a non-shareable improvement already occupies the hex");
+ duplicate_facts.existing_improvements.push_back("farm");
+ const auto shareable_farm=pkkm::preview_greenbelt_improvement(
+     greenbelt_catalog,"farm",duplicate_facts,false);
+ must(!std::any_of(shareable_farm.warnings.begin(), shareable_farm.warnings.end(),
+      [](const auto& warning){ return warning.find("not shareable")!=std::string::npos; }),
+      "Terrain preview permits shareable improvement occupancy");
  const auto center=pkkm::greenbelt_hex_center({100.0,50.0,20.0,10.0,1.0},2,4);
  must(center.x==180.0 && center.y==90.0,"Greenbelt calibration projects axial coordinates");
  const auto single_perimeter=pkkm::greenbelt_claimed_perimeter({{0,0,"plains",true,1,"",{}}});
