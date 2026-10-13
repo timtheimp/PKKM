@@ -85,6 +85,8 @@ requirement for an existing Road when a Highway upgrade is requested, while
 leaving all effects and costs manual. It also warns when a non-shareable
 improvement already occupies the hex, permits existing shareable records, and
 checks the Farm alternative of water access or adjacency to two existing Farms.
+The preview also accepts the reconciled supplemental terrain sets for Mine,
+Quarry, and Sawmill without changing the conservative catalog definitions.
 
 ## Safest next implementation slice
 

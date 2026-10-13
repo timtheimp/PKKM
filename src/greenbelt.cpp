@@ -193,6 +193,14 @@ GreenbeltImprovementPreview preview_greenbelt_improvement(
     } else if (id == "fishery") {
         terrain_allowed = facts.terrain == "water" || facts.terrain == "coast"
             || facts.terrain == "river" || facts.terrain == "marsh";
+    } else if (id == "mine") {
+        terrain_allowed = facts.terrain == "cavern" || facts.terrain == "desert"
+            || facts.terrain == "hills" || facts.terrain == "mountains";
+    } else if (id == "quarry") {
+        terrain_allowed = facts.terrain == "cavern" || facts.terrain == "hills"
+            || facts.terrain == "mountains";
+    } else if (id == "sawmill") {
+        terrain_allowed = facts.terrain == "forest" || facts.terrain == "jungle";
     }
     if (!terrain_allowed && !manual_override)
         preview.warnings.push_back("Terrain does not meet the reconciled prerequisite.");
