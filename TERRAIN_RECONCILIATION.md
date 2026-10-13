@@ -88,7 +88,9 @@ checks the Farm alternative of water access or adjacency to two existing Farms.
 The preview also accepts the reconciled supplemental terrain sets for Mine,
 Quarry, and Sawmill without changing the conservative catalog definitions.
 It preserves the source occupancy warning that a Watchtower cannot share a hex
-with a Fort or another Watchtower.
+with a Fort or another Watchtower. Aqueduct previews additionally accept
+explicit water-source and settlement-endpoint facts and warn when either is
+absent.
 
 ## Safest next implementation slice
 
@@ -96,7 +98,7 @@ The first non-mutating terrain-improvement preview slice is implemented with exp
 
 1. terrain type;
 2. claimed status;
-3. river/coast/water adjacency facts;
+3. river/coast/water and settlement-endpoint facts;
 4. neighboring Farm count;
 5. connected Road/Highway facts;
 6. kingdom Size;

@@ -180,6 +180,12 @@ GreenbeltImprovementPreview preview_greenbelt_improvement(
             || std::find(facts.existing_improvements.begin(), facts.existing_improvements.end(), "watchtower")
                 != facts.existing_improvements.end()))
         preview.warnings.push_back("A Watchtower cannot share a hex with a Fort or another Watchtower.");
+    if (id == "aqueduct" && !manual_override) {
+        if (!(facts.water_adjacent || facts.river_adjacent || facts.canal_adjacent))
+            preview.warnings.push_back("An Aqueduct requires a connected water source.");
+        if (!facts.settlement_endpoint)
+            preview.warnings.push_back("An Aqueduct requires a settlement endpoint.");
+    }
     if (std::find(facts.existing_improvements.begin(), facts.existing_improvements.end(), id)
             != facts.existing_improvements.end()
         && !item->shareable && !manual_override)

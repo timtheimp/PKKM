@@ -188,6 +188,25 @@ int main(int argc, char** argv) {
  must(!std::any_of(jungle_sawmill.warnings.begin(), jungle_sawmill.warnings.end(),
       [](const auto& warning){ return warning.find("Terrain does not meet")!=std::string::npos; }),
       "Terrain preview accepts supplemental Sawmill terrain");
+ pkkm::GreenbeltImprovementPreviewFacts aqueduct_facts;
+ aqueduct_facts.terrain="plains";
+ aqueduct_facts.claimed=true;
+ const auto incomplete_aqueduct=pkkm::preview_greenbelt_improvement(
+     greenbelt_catalog,"aqueduct",aqueduct_facts,false);
+ must(std::any_of(incomplete_aqueduct.warnings.begin(), incomplete_aqueduct.warnings.end(),
+      [](const auto& warning){ return warning.find("connected water source")!=std::string::npos; }),
+      "Terrain preview warns when an Aqueduct lacks a connected water source");
+ must(std::any_of(incomplete_aqueduct.warnings.begin(), incomplete_aqueduct.warnings.end(),
+      [](const auto& warning){ return warning.find("settlement endpoint")!=std::string::npos; }),
+      "Terrain preview warns when an Aqueduct lacks a settlement endpoint");
+ aqueduct_facts.water_adjacent=true;
+ aqueduct_facts.settlement_endpoint=true;
+ const auto valid_aqueduct=pkkm::preview_greenbelt_improvement(
+     greenbelt_catalog,"aqueduct",aqueduct_facts,false);
+ must(!std::any_of(valid_aqueduct.warnings.begin(), valid_aqueduct.warnings.end(),
+      [](const auto& warning){ return warning.find("connected water source")!=std::string::npos
+          || warning.find("settlement endpoint")!=std::string::npos; }),
+      "Terrain preview accepts an Aqueduct with explicit water and settlement facts");
  const auto center=pkkm::greenbelt_hex_center({100.0,50.0,20.0,10.0,1.0},2,4);
  must(center.x==180.0 && center.y==90.0,"Greenbelt calibration projects axial coordinates");
  const auto single_perimeter=pkkm::greenbelt_claimed_perimeter({{0,0,"plains",true,1,"",{}}});

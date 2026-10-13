@@ -45,6 +45,7 @@ struct GreenbeltImprovementPreviewFacts {
     bool water_adjacent = false;
     bool river_adjacent = false;
     bool canal_adjacent = false;
+    bool settlement_endpoint = false;
     int neighboring_farms = 0;
     bool connected_road = false;
     bool river_crossing = false;
