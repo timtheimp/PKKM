@@ -82,6 +82,14 @@ int main(int argc, char** argv) {
  must(farm_preview.known && farm_preview.allowed && farm_preview.bp_delta==0
       && farm_preview.manual_effect && farm_preview.summary.find("Consumption")!=std::string::npos,
       "Greenbelt improvement preview records effects without spending BP");
+ const auto next_hex=pkkm::make_next_greenbelt_hex(k.greenbelt_map.hexes);
+ must(next_hex.q==0 && next_hex.r==0 && next_hex.terrain=="unresolved"
+      && !next_hex.claimed && next_hex.improvements.empty(),
+      "Greenbelt Add Hex supplies a blank first hex");
+ k.greenbelt_map.hexes.push_back(next_hex);
+ const auto following_hex=pkkm::make_next_greenbelt_hex(k.greenbelt_map.hexes);
+ must(following_hex.q==1 && following_hex.r==0,
+      "Greenbelt Add Hex chooses an unused coordinate");
  const auto highway_preview=pkkm::preview_greenbelt_improvement(
      greenbelt_catalog,"highway","plains",true,false);
  must(highway_preview.known && !highway_preview.allowed
