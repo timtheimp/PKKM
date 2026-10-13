@@ -174,6 +174,10 @@ GreenbeltImprovementPreview preview_greenbelt_improvement(
             + " supplied; route effects remain manual.";
     if (!facts.claimed && !manual_override)
         preview.warnings.push_back("The hex is not claimed; manual override is required to preview placement.");
+    if (std::find(facts.existing_improvements.begin(), facts.existing_improvements.end(), id)
+            != facts.existing_improvements.end()
+        && !item->shareable && !manual_override)
+        preview.warnings.push_back("This improvement is not shareable with an existing copy on the hex.");
 
     bool terrain_allowed = terrain_matches(item->terrain_requirement, facts.terrain);
     if (id == "farm") {
