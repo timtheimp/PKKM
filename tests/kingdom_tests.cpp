@@ -110,6 +110,21 @@ int main(int argc, char** argv) {
  must(undersized_highway.known && !undersized_highway.allowed
       && !undersized_highway.warnings.empty(),
       "Terrain preview preserves the Highway kingdom-size prerequisite");
+ highway_facts.kingdom_size=26;
+ highway_facts.requested_upgrade="highway";
+ const auto missing_road_upgrade=pkkm::preview_greenbelt_improvement(
+     greenbelt_catalog,"highway",highway_facts,false);
+ must(std::any_of(missing_road_upgrade.warnings.begin(), missing_road_upgrade.warnings.end(),
+      [](const auto& warning){ return warning.find("existing Road")!=std::string::npos; }),
+      "Terrain preview requires an existing Road for a Highway upgrade");
+ highway_facts.existing_improvements.push_back("road");
+ highway_facts.route_length=3;
+ const auto road_upgrade=pkkm::preview_greenbelt_improvement(
+     greenbelt_catalog,"highway",highway_facts,false);
+ must(!std::any_of(road_upgrade.warnings.begin(), road_upgrade.warnings.end(),
+      [](const auto& warning){ return warning.find("existing Road")!=std::string::npos
+          || warning.find("Size 26")!=std::string::npos; }),
+      "Terrain preview clears resolved Highway upgrade prerequisites");
  const auto center=pkkm::greenbelt_hex_center({100.0,50.0,20.0,10.0,1.0},2,4);
  must(center.x==180.0 && center.y==90.0,"Greenbelt calibration projects axial coordinates");
  const auto single_perimeter=pkkm::greenbelt_claimed_perimeter({{0,0,"plains",true,1,"",{}}});

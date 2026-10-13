@@ -191,6 +191,11 @@ GreenbeltImprovementPreview preview_greenbelt_improvement(
             preview.warnings.push_back("Highway requires a connected Road network.");
         if (facts.kingdom_size < 26 && !manual_override)
             preview.warnings.push_back("Highway requires kingdom Size 26 or greater.");
+        if (facts.requested_upgrade == "highway"
+            && std::find(facts.existing_improvements.begin(), facts.existing_improvements.end(), "road")
+                == facts.existing_improvements.end()
+            && !manual_override)
+            preview.warnings.push_back("Highway upgrade requires an existing Road.");
     }
     if ((id == "road" || id == "highway") && facts.river_crossing)
         preview.warnings.push_back("River crossing doubles the reference Road cost; confirm the manual cost.");
