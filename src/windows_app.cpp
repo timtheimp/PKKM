@@ -162,6 +162,7 @@ constexpr int kGreenbeltCustomCost = 8127;
 constexpr int kGreenbeltCustomManual = 8128;
 constexpr int kGreenbeltCustomSave = 8129;
 constexpr int kGreenbeltCustomRemove = 8130;
+constexpr int kGreenbeltAddHex = 8131;
 constexpr int kGreenbeltApply = 8201;
 constexpr int kGreenbeltCancel = 8202;
 constexpr int kGreenbeltClose = 8203;
@@ -2018,6 +2019,15 @@ void save_greenbelt_form(HWND window) {
     if (hex.terrain.empty()) throw std::invalid_argument("Greenbelt terrain must not be empty.");
 }
 
+void add_greenbelt_hex(HWND window) {
+    if (greenbelt_active_index >= 0
+        && greenbelt_active_index < static_cast<int>(greenbelt_draft.hexes.size()))
+        save_greenbelt_form(window);
+    greenbelt_draft.hexes.push_back(pkkm::make_next_greenbelt_hex(greenbelt_draft.hexes));
+    greenbelt_active_index = static_cast<int>(greenbelt_draft.hexes.size()) - 1;
+    refresh_greenbelt_hex_list(window);
+}
+
 void load_greenbelt_special_form(HWND window) {
     const bool selected = greenbelt_special_active_index >= 0
         && greenbelt_special_active_index < static_cast<int>(greenbelt_draft.special_terrain.size());
@@ -2240,6 +2250,8 @@ void create_greenbelt_controls(HWND window) {
         WS_CHILD | WS_VISIBLE | SS_LEFT, 125, 45, 440, 22, window, nullptr, app_instance, nullptr);
     CreateWindowExW(0, L"STATIC", L"Hexes", WS_CHILD | WS_VISIBLE | SS_LEFT,
         20, 78, 280, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Add Hex", WS_CHILD | WS_VISIBLE,
+        260, 74, 90, 26, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltAddHex)), app_instance, nullptr);
     CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"",
         WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY, 20, 365, 330, 145, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltHexList)), app_instance, nullptr);
@@ -2411,6 +2423,8 @@ LRESULT CALLBACK greenbelt_proc(HWND window, UINT message, WPARAM wparam, LPARAM
                     greenbelt_active_index = static_cast<int>(SendMessageW(
                         GetDlgItem(window, kGreenbeltHexList), LB_GETCURSEL, 0, 0));
                     load_greenbelt_form(window);
+                } else if (id == kGreenbeltAddHex) {
+                    add_greenbelt_hex(window);
                 } else if (id == kGreenbeltSpecialList && HIWORD(wparam) == LBN_SELCHANGE) {
                     greenbelt_special_active_index = static_cast<int>(SendMessageW(
                         GetDlgItem(window, kGreenbeltSpecialList), LB_GETCURSEL, 0, 0));
@@ -2440,6 +2454,7 @@ LRESULT CALLBACK greenbelt_proc(HWND window, UINT message, WPARAM wparam, LPARAM
                         improvements.push_back(item.id);
                     refresh_greenbelt_hex_list(window);
                 } else if (id == kGreenbeltImprovement && HIWORD(wparam) == CBN_SELCHANGE) {
+                    save_greenbelt_form(window);
                     refresh_greenbelt_preview(window);
                 } else if (id == kGreenbeltApply) {
                     apply_greenbelt(window);

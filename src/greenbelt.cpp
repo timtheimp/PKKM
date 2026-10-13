@@ -121,6 +121,16 @@ const std::vector<GreenbeltImprovementDefinition>& greenbelt_improvement_catalog
     return catalog;
 }
 
+GreenbeltHex make_next_greenbelt_hex(const std::vector<GreenbeltHex>& hexes) {
+    GreenbeltHex result;
+    while (std::find_if(hexes.begin(), hexes.end(), [&result](const GreenbeltHex& hex) {
+        return hex.q == result.q && hex.r == result.r;
+    }) != hexes.end()) {
+        ++result.q;
+    }
+    return result;
+}
+
 const GreenbeltImprovementDefinition* find_greenbelt_improvement(
     const std::vector<GreenbeltImprovementDefinition>& catalog, const std::string& id) {
     const auto found = std::find_if(catalog.begin(), catalog.end(), [&id](const auto& item) {

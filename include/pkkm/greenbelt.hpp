@@ -58,6 +58,7 @@ struct GreenbeltImprovementPreviewFacts {
 };
 
 const std::vector<GreenbeltImprovementDefinition>& greenbelt_improvement_catalog();
+GreenbeltHex make_next_greenbelt_hex(const std::vector<GreenbeltHex>& hexes);
 GreenbeltPoint greenbelt_hex_center(const GreenbeltCalibration& calibration, int q, int r);
 std::vector<GreenbeltPoint> greenbelt_hex_vertices(
     const GreenbeltCalibration& calibration, int q, int r);
