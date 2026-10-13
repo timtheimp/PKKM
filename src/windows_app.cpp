@@ -1928,16 +1928,20 @@ LRESULT CALLBACK turn_actions_proc(HWND window, UINT message, WPARAM wparam, LPA
 }
 
 void refresh_greenbelt_preview(HWND window) {
+    const std::wstring profile = widen(pkkm::rule_profile_name(kingdom.rule_profile));
     if (greenbelt_active_index < 0
         || greenbelt_active_index >= static_cast<int>(greenbelt_draft.hexes.size())) {
-        set_manager_text(window, kGreenbeltPreview, L"Select a hex for an improvement preview.");
+        set_manager_text(window, kGreenbeltPreview,
+            L"Select a hex for an improvement preview. Rule profile: " + profile + L".");
         return;
     }
     const auto& hex = greenbelt_draft.hexes[static_cast<size_t>(greenbelt_active_index)];
     const int selected = static_cast<int>(SendMessageW(
         GetDlgItem(window, kGreenbeltImprovement), CB_GETCURSEL, 0, 0));
     if (selected <= 0 || selected > static_cast<int>(greenbelt_catalog.size())) {
-        set_manager_text(window, kGreenbeltPreview, L"Select an improvement. Preview only; BP and kingdom totals remain unchanged.");
+        set_manager_text(window, kGreenbeltPreview,
+            L"Select an improvement. Preview only; BP and kingdom totals remain unchanged. Rule profile: "
+            + profile + L".");
         return;
     }
     const auto& item = greenbelt_catalog[static_cast<size_t>(selected - 1)];
