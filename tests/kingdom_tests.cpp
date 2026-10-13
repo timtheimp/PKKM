@@ -222,6 +222,8 @@ int main(int argc, char** argv) {
  aqueduct_facts.claimed=true;
  const auto incomplete_aqueduct=pkkm::preview_greenbelt_improvement(
      greenbelt_catalog,"aqueduct",aqueduct_facts,false);
+ must(incomplete_aqueduct.summary.find("Rule profile: workbook")!=std::string::npos,
+      "Terrain preview records the selected rule profile in its summary");
  must(std::any_of(incomplete_aqueduct.warnings.begin(), incomplete_aqueduct.warnings.end(),
       [](const auto& warning){ return warning.find("connected water source")!=std::string::npos; }),
       "Terrain preview warns when an Aqueduct lacks a connected water source");

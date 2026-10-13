@@ -41,6 +41,7 @@ struct GreenbeltImprovementPreview {
 
 struct GreenbeltImprovementPreviewFacts {
     std::string terrain;
+    RuleProfile rule_profile = RuleProfile::Workbook;
     bool claimed = false;
     bool water_adjacent = false;
     bool river_adjacent = false;
