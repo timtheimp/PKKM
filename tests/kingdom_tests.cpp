@@ -82,10 +82,35 @@ int main(int argc, char** argv) {
  must(farm_preview.known && farm_preview.allowed && farm_preview.bp_delta==0
       && farm_preview.manual_effect && farm_preview.summary.find("Consumption")!=std::string::npos,
       "Greenbelt improvement preview records effects without spending BP");
+ const auto terrain_tokens=pkkm::greenbelt_terrain_tokens(" Plains, River ");
+ must(terrain_tokens.size()==2 && terrain_tokens[0]=="plains" && terrain_tokens[1]=="river",
+      "Greenbelt terrain input normalizes comma-separated tokens");
+ const auto river_farm_preview=pkkm::preview_greenbelt_improvement(
+     greenbelt_catalog,"farm","Plains, River",true,false);
+ must(river_farm_preview.known && river_farm_preview.allowed,
+      "Greenbelt terrain preview accepts a base terrain with a feature token");
  const auto next_hex=pkkm::make_next_greenbelt_hex(k.greenbelt_map.hexes);
  must(next_hex.q==0 && next_hex.r==0 && next_hex.terrain=="unresolved"
       && !next_hex.claimed && next_hex.improvements.empty(),
       "Greenbelt Add Hex supplies a blank first hex");
+ pkkm::GreenbeltCalibration calibration;
+ calibration.origin_x=100.0;
+ calibration.origin_y=80.0;
+ calibration.hex_width=40.0;
+ calibration.hex_height=34.0;
+ calibration.scale=2.0;
+ const auto hit_center=pkkm::greenbelt_hex_center(calibration,2,3);
+ const auto coordinate=pkkm::greenbelt_hex_at_point(calibration,hit_center.x+1.0,hit_center.y-1.0);
+ must(coordinate.q==2 && coordinate.r==3,
+      "Greenbelt map hit-testing converts a point back to its axial coordinate");
+ const auto rotated_vertices=pkkm::greenbelt_hex_vertices(calibration,0,0);
+ must(std::abs(rotated_vertices[0].x-pkkm::greenbelt_hex_center(calibration,0,0).x)<0.001
+      && rotated_vertices[0].y<pkkm::greenbelt_hex_center(calibration,0,0).y,
+      "Greenbelt overlay uses the map's pointy-top 90-degree orientation");
+ must(pkkm::greenbelt_hex_inside_image(calibration, 0, 0, 1000, 1000),
+      "Greenbelt alignment accepts a complete hex inside the image bounds");
+ must(!pkkm::greenbelt_hex_inside_image(calibration, -4, -4, 1000, 1000),
+      "Greenbelt alignment rejects partial hexes outside the image bounds");
  k.greenbelt_map.hexes.push_back(next_hex);
  const auto following_hex=pkkm::make_next_greenbelt_hex(k.greenbelt_map.hexes);
  must(following_hex.q==1 && following_hex.r==0,
@@ -277,12 +302,40 @@ int main(int argc, char** argv) {
       [](const auto& warning){ return warning.find("river crossing fact")!=std::string::npos; }),
       "Terrain preview accepts a Bridge with an explicit river crossing fact");
  const auto center=pkkm::greenbelt_hex_center({100.0,50.0,20.0,10.0,1.0},2,4);
- must(center.x==180.0 && center.y==90.0,"Greenbelt calibration projects axial coordinates");
+ must(center.x==180.0 && center.y==80.0,"Greenbelt calibration projects pointy-top axial coordinates without horizontal gaps");
+ const auto left_hex=pkkm::greenbelt_hex_vertices({100.0,50.0,20.0,10.0,1.0},0,0);
+ const auto right_hex=pkkm::greenbelt_hex_vertices({100.0,50.0,20.0,10.0,1.0},1,0);
+ must(std::any_of(left_hex.begin(),left_hex.end(),[&](const auto& left_point){
+     return std::any_of(right_hex.begin(),right_hex.end(),[&](const auto& right_point){
+         return std::abs(left_point.x-right_point.x)<0.001
+             && std::abs(left_point.y-right_point.y)<0.001;
+     });
+ }),"Adjacent pointy-top Greenbelt hexes share a border");
+ const auto down_hex=pkkm::greenbelt_hex_vertices({100.0,50.0,20.0,10.0,1.0},0,1);
+ must(std::any_of(left_hex.begin(),left_hex.end(),[&](const auto& left_point){
+     return std::any_of(down_hex.begin(),down_hex.end(),[&](const auto& down_point){
+         return std::abs(left_point.x-down_point.x)<0.001
+             && std::abs(left_point.y-down_point.y)<0.001;
+     });
+ }),"Adjacent offset Greenbelt hexes share a border");
  const auto single_perimeter=pkkm::greenbelt_claimed_perimeter({{0,0,"plains",true,1,"",{}}});
  const auto adjacent_perimeter=pkkm::greenbelt_claimed_perimeter({
      {0,0,"plains",true,1,"",{}},{1,0,"plains",true,1,"",{}}});
  must(single_perimeter.size()==6 && adjacent_perimeter.size()==10,
       "Greenbelt perimeter removes shared edges between adjacent claimed hexes");
+ const auto rotated_pair = pkkm::greenbelt_claimed_perimeter({
+     {0,0,"plains",true,1,"",{}},{0,-1,"plains",true,1,"",{}}});
+ const auto has_edge = [](const auto& edges, int q, int r, int side) {
+     return std::any_of(edges.begin(), edges.end(), [=](const auto& edge) {
+         return edge.q == q && edge.r == r && edge.side == side;
+     });
+ };
+ must(!has_edge(rotated_pair, 0, 0, 5) && !has_edge(rotated_pair, 0, -1, 2),
+      "Greenbelt perimeter maps pointy-top north-west shared edges correctly");
+ const auto horizontal_pair = pkkm::greenbelt_claimed_perimeter({
+     {0,0,"plains",true,1,"",{}},{1,0,"plains",true,1,"",{}}});
+ must(!has_edge(horizontal_pair, 0, 0, 1) && !has_edge(horizontal_pair, 1, 0, 4),
+      "Greenbelt perimeter maps pointy-top horizontal shared edges correctly");
  must(r.calendar_notes.size()==2 && r.calendar_notes[0].entry_id=="calendar.row.2"
       && r.calendar_notes[0].other=="Opening month"
       && r.calendar_notes[1].entry_id=="calendar.row.14"

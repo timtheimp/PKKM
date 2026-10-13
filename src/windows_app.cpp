@@ -163,10 +163,27 @@ constexpr int kGreenbeltCustomManual = 8128;
 constexpr int kGreenbeltCustomSave = 8129;
 constexpr int kGreenbeltCustomRemove = 8130;
 constexpr int kGreenbeltAddHex = 8131;
+constexpr int kGreenbeltAutodetected = 8132;
+constexpr int kGreenbeltOpenMap = 8133;
+constexpr int kGreenbeltZoomIn = 8134;
+constexpr int kGreenbeltZoomOut = 8135;
+constexpr int kGreenbeltZoomFit = 8136;
+constexpr int kGreenbeltPopoutClose = 8137;
+constexpr int kGreenbeltAlignMode = 8138;
+constexpr int kGreenbeltPanLeft = 8139;
+constexpr int kGreenbeltPanRight = 8140;
+constexpr int kGreenbeltPanUp = 8141;
+constexpr int kGreenbeltPanDown = 8142;
+constexpr int kGreenbeltGrowWidth = 8143;
+constexpr int kGreenbeltShrinkWidth = 8144;
+constexpr int kGreenbeltGrowHeight = 8145;
+constexpr int kGreenbeltShrinkHeight = 8146;
+constexpr int kGreenbeltResetPan = 8147;
+constexpr int kGreenbeltAlignmentStatus = 8148;
 constexpr int kGreenbeltApply = 8201;
 constexpr int kGreenbeltCancel = 8202;
 constexpr int kGreenbeltClose = 8203;
-constexpr int kGreenbeltContentHeight = 1015;
+constexpr int kGreenbeltContentHeight = 1445;
 constexpr int kTurnActionsContentHeight = 2205;
 
 pkkm::Kingdom kingdom;
@@ -178,6 +195,15 @@ HWND checklist_window = nullptr;
 HWND action_window = nullptr;
 HWND calendar_window = nullptr;
 HWND greenbelt_window = nullptr;
+HWND greenbelt_popout_window = nullptr;
+double greenbelt_popout_zoom = 1.0;
+double greenbelt_popout_pan_x = 0.0;
+double greenbelt_popout_pan_y = 0.0;
+bool greenbelt_popout_dragging = false;
+POINT greenbelt_popout_drag_start{};
+double greenbelt_popout_drag_origin_x = 0.0;
+double greenbelt_popout_drag_origin_y = 0.0;
+bool greenbelt_alignment_mode = false;
 HWND greenbelt_canvas = nullptr;
 HINSTANCE app_instance = nullptr;
 bool dirty = false;
@@ -198,6 +224,8 @@ ULONG_PTR gdiplus_token = 0;
 int greenbelt_scroll_y = 0;
 int turn_actions_scroll_y = 0;
 int turn_action_filter = 0;
+
+void open_greenbelt_popout(HWND owner);
 
 void set_minimum_track_size(LPARAM lparam, int width, int height) {
     auto* info = reinterpret_cast<MINMAXINFO*>(lparam);
@@ -246,6 +274,21 @@ std::wstring widen(const std::string& value) {
         throw std::runtime_error("Could not convert text from UTF-8");
     }
     return result;
+}
+
+std::string next_settlement_id(const std::vector<pkkm::Settlement>& settlements) {
+    for (size_t candidate = 1;; ++candidate) {
+        const std::string id = "settlement." + std::to_string(candidate);
+        const auto found = std::find_if(settlements.begin(), settlements.end(),
+            [&id](const auto& settlement) { return settlement.id == id; });
+        if (found == settlements.end()) return id;
+    }
+}
+
+void ensure_settlement_ids(std::vector<pkkm::Settlement>& settlements) {
+    for (auto& settlement : settlements)
+        if (settlement.id.empty())
+            settlement.id = next_settlement_id(settlements);
 }
 
 int parse_integer(const std::wstring& text) {
@@ -823,6 +866,7 @@ void add_settlement(HWND window) {
     save_active_settlement(window);
     pkkm::Settlement settlement;
     settlement.name = "Settlement " + std::to_string(settlement_draft.size() + 1);
+    settlement.id = next_settlement_id(settlement_draft);
     settlement_draft.push_back(std::move(settlement));
     settlement_active_index = static_cast<int>(settlement_draft.size()) - 1;
     refresh_settlement_list(window, settlement_active_index);
@@ -877,6 +921,7 @@ void remove_inventory_building(HWND window) {
 void apply_settlement_manager(HWND window) {
     try {
         save_active_settlement(window);
+        ensure_settlement_ids(settlement_draft);
         pkkm::Kingdom candidate = kingdom;
         candidate.settlements = settlement_draft;
         pkkm::validate(candidate);
@@ -1074,6 +1119,7 @@ void command(HWND window, int id) {
                 SetForegroundWindow(greenbelt_window);
                 return;
             }
+            ensure_settlement_ids(kingdom.settlements);
             greenbelt_draft = kingdom.greenbelt_map;
             if (greenbelt_draft.asset_path.empty()) {
                 greenbelt_draft.asset_path = "Kingmaker-Greenbelt-Map.jpg";
@@ -1087,7 +1133,7 @@ void command(HWND window, int id) {
             greenbelt_scroll_y = 0;
             greenbelt_window = CreateWindowExW(WS_EX_DLGMODALFRAME, L"PKKMGreenbeltMap",
                 L"Greenbelt Map", WS_CAPTION | WS_SYSMENU | WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_VSCROLL,
-                CW_USEDEFAULT, CW_USEDEFAULT, 1250, 980, window, nullptr, app_instance, nullptr);
+                CW_USEDEFAULT, CW_USEDEFAULT, 1500, 1080, window, nullptr, app_instance, nullptr);
             if (!greenbelt_window) throw std::runtime_error("Could not open the Greenbelt Map manager");
             EnableWindow(window, FALSE);
             ShowWindow(greenbelt_window, SW_SHOW);
@@ -1967,6 +2013,8 @@ void load_greenbelt_form(HWND window) {
     if (!has_selection) {
         for (const int id : {kGreenbeltQ, kGreenbeltR, kGreenbeltTerrain, kGreenbeltClaimTurn})
             set_manager_text(window, id, L"");
+        set_manager_text(window, kGreenbeltAutodetected,
+            L"Auto-detection unavailable until a map hex is selected; output is advisory and editable.");
         SendMessageW(GetDlgItem(window, kGreenbeltClaimed), BM_SETCHECK, BST_UNCHECKED, 0);
         SendMessageW(GetDlgItem(window, kGreenbeltSettlement), CB_SETCURSEL, 0, 0);
         refresh_greenbelt_preview(window);
@@ -1980,9 +2028,16 @@ void load_greenbelt_form(HWND window) {
     SendMessageW(GetDlgItem(window, kGreenbeltClaimed), BM_SETCHECK,
         hex.claimed ? BST_CHECKED : BST_UNCHECKED, 0);
     int settlement_selection = 0;
-    for (size_t index = 0; index < kingdom.settlements.size(); ++index) {
-        if (kingdom.settlements[index].id == hex.settlement_id)
-            settlement_selection = static_cast<int>(index) + 1;
+    const HWND settlement_combo = GetDlgItem(window, kGreenbeltSettlement);
+    const int settlement_count = static_cast<int>(SendMessageW(
+        settlement_combo, CB_GETCOUNT, 0, 0));
+    for (int item = 0; item < settlement_count; ++item) {
+        const LRESULT item_data = SendMessageW(settlement_combo, CB_GETITEMDATA, item, 0);
+        if (item_data > 0 && item_data <= static_cast<LRESULT>(kingdom.settlements.size())
+            && kingdom.settlements[static_cast<size_t>(item_data - 1)].id == hex.settlement_id) {
+            settlement_selection = item;
+            break;
+        }
     }
     SendMessageW(GetDlgItem(window, kGreenbeltSettlement), CB_SETCURSEL, settlement_selection, 0);
     refresh_greenbelt_preview(window);
@@ -1995,6 +2050,12 @@ void refresh_greenbelt_hex_list(HWND window) {
         std::wstring label = L"(" + std::to_wstring(hex.q) + L", " + std::to_wstring(hex.r) + L") "
             + widen(hex.terrain) + (hex.claimed ? L" | claimed" : L" | unclaimed")
             + L" | I" + std::to_wstring(hex.improvements.size());
+        if (!hex.settlement_id.empty()) {
+            const auto found = std::find_if(kingdom.settlements.begin(), kingdom.settlements.end(),
+                [&hex](const auto& settlement) { return settlement.id == hex.settlement_id; });
+            if (found != kingdom.settlements.end())
+                label += L" | settlement: " + widen(found->name);
+        }
         SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label.c_str()));
     }
     if (greenbelt_active_index >= 0
@@ -2012,10 +2073,15 @@ void save_greenbelt_form(HWND window) {
     hex.terrain = narrow(manager_text(window, kGreenbeltTerrain));
     hex.claimed = SendMessageW(GetDlgItem(window, kGreenbeltClaimed), BM_GETCHECK, 0, 0) == BST_CHECKED;
     hex.claim_turn = parse_integer(manager_text(window, kGreenbeltClaimTurn));
-    const int settlement = static_cast<int>(SendMessageW(
-        GetDlgItem(window, kGreenbeltSettlement), CB_GETCURSEL, 0, 0));
-    hex.settlement_id = settlement <= 0 ? std::string{}
-        : kingdom.settlements[static_cast<size_t>(settlement - 1)].id;
+    const HWND settlement_combo = GetDlgItem(window, kGreenbeltSettlement);
+    const int settlement_selection = static_cast<int>(SendMessageW(
+        settlement_combo, CB_GETCURSEL, 0, 0));
+    const LRESULT settlement_item = settlement_selection < 0 ? CB_ERR
+        : SendMessageW(settlement_combo, CB_GETITEMDATA, settlement_selection, 0);
+    hex.settlement_id = settlement_item <= 0
+        || settlement_item > static_cast<LRESULT>(kingdom.settlements.size())
+        ? std::string{}
+        : kingdom.settlements[static_cast<size_t>(settlement_item - 1)].id;
     if (hex.terrain.empty()) throw std::invalid_argument("Greenbelt terrain must not be empty.");
 }
 
@@ -2025,6 +2091,130 @@ void add_greenbelt_hex(HWND window) {
         save_greenbelt_form(window);
     greenbelt_draft.hexes.push_back(pkkm::make_next_greenbelt_hex(greenbelt_draft.hexes));
     greenbelt_active_index = static_cast<int>(greenbelt_draft.hexes.size()) - 1;
+    set_manager_text(window, kGreenbeltAutodetected,
+        L"Auto-detection was not run for this manually added hex. Enter or confirm terrain below.");
+    refresh_greenbelt_hex_list(window);
+}
+
+struct GreenbeltDetectionResult {
+    std::string terrain;
+    std::wstring note;
+};
+
+GreenbeltDetectionResult detect_greenbelt_terrain(
+    const std::filesystem::path& image_path, double center_x, double center_y,
+    double radius_x, double radius_y) {
+    try {
+        Gdiplus::Image image(image_path.wstring().c_str());
+        if (image.GetLastStatus() != Gdiplus::Ok || image.GetWidth() == 0 || image.GetHeight() == 0)
+            return {{}, L"Auto-detection unavailable: the map image could not be loaded."};
+        Gdiplus::Bitmap bitmap(image_path.wstring().c_str(), FALSE);
+        int water = 0;
+        int forest = 0;
+        int mountain = 0;
+        int samples = 0;
+        const int min_x = std::max(0, static_cast<int>(std::floor(center_x - radius_x * 0.55)));
+        const int max_x = std::min(static_cast<int>(image.GetWidth()) - 1,
+            static_cast<int>(std::ceil(center_x + radius_x * 0.55)));
+        const int min_y = std::max(0, static_cast<int>(std::floor(center_y - radius_y * 0.55)));
+        const int max_y = std::min(static_cast<int>(image.GetHeight()) - 1,
+            static_cast<int>(std::ceil(center_y + radius_y * 0.55)));
+        const int step_x = std::max(1, (max_x - min_x) / 12);
+        const int step_y = std::max(1, (max_y - min_y) / 12);
+        for (int y = min_y; y <= max_y; y += step_y) {
+            for (int x = min_x; x <= max_x; x += step_x) {
+                Gdiplus::Color color;
+                if (bitmap.GetPixel(x, y, &color) != Gdiplus::Ok) continue;
+                const int red = color.GetRed();
+                const int green = color.GetGreen();
+                const int blue = color.GetBlue();
+                if (blue > green + 18 && blue > red + 18) ++water;
+                if (green > red + 18 && green > blue + 8 && green < 145) ++forest;
+                if (std::abs(red - green) < 14 && std::abs(green - blue) < 14 && red < 150) ++mountain;
+                ++samples;
+            }
+        }
+        if (samples == 0) return {{}, L"Auto-detection unavailable: the selected map region is empty."};
+        const auto fraction = [samples](int count) {
+            return static_cast<double>(count) / static_cast<double>(samples);
+        };
+        if (fraction(water) >= 0.18)
+            return {"water", L"Auto-detected: Water (confidence: low; confirm or correct)"};
+        if (fraction(water) >= 0.04)
+            return {"river", L"Auto-detected: River feature (confidence: low; confirm or correct)"};
+        if (fraction(forest) >= 0.28)
+            return {"forest", L"Auto-detected: Forest (confidence: low; confirm or correct)"};
+        if (fraction(mountain) >= 0.30)
+            return {"mountains", L"Auto-detected: Mountains (confidence: low; confirm or correct)"};
+        return {{}, L"Auto-detection unavailable: no reliable terrain signature was found."};
+    } catch (...) {
+        return {{}, L"Auto-detection unavailable: the selected map region could not be read."};
+    }
+}
+
+std::filesystem::path greenbelt_image_path() {
+    std::filesystem::path image_path = std::filesystem::u8path(greenbelt_draft.asset_path);
+    if (image_path.empty() || !image_path.is_absolute())
+        image_path = std::filesystem::u8path(bundled_greenbelt_path());
+    return image_path;
+}
+
+void seed_greenbelt_calibration_if_empty() {
+    const auto& calibration = greenbelt_draft.calibration;
+    if (calibration.hex_width > 0.0 && calibration.hex_height > 0.0) return;
+    greenbelt_draft.calibration.origin_x = 132.0;
+    greenbelt_draft.calibration.origin_y = 93.0;
+    greenbelt_draft.calibration.hex_width = 279.0;
+    greenbelt_draft.calibration.hex_height = 322.0;
+    greenbelt_draft.calibration.scale = 1.0;
+}
+
+void select_greenbelt_hex_at(HWND window, int q, int r) {
+    if (greenbelt_active_index >= 0
+        && greenbelt_active_index < static_cast<int>(greenbelt_draft.hexes.size()))
+        save_greenbelt_form(window);
+    const auto found = std::find_if(greenbelt_draft.hexes.begin(), greenbelt_draft.hexes.end(),
+        [q, r](const auto& hex) { return hex.q == q && hex.r == r; });
+    if (found == greenbelt_draft.hexes.end()) return;
+    greenbelt_active_index = static_cast<int>(std::distance(greenbelt_draft.hexes.begin(), found));
+    set_manager_text(window, kGreenbeltAutodetected,
+        L"Auto-detection is advisory. Existing terrain was preserved; confirm or edit it below.");
+    refresh_greenbelt_hex_list(window);
+}
+
+void toggle_greenbelt_hex_at(HWND window, int q, int r, double image_x, double image_y) {
+    if (greenbelt_active_index >= 0
+        && greenbelt_active_index < static_cast<int>(greenbelt_draft.hexes.size()))
+        save_greenbelt_form(window);
+    const auto found = std::find_if(greenbelt_draft.hexes.begin(), greenbelt_draft.hexes.end(),
+        [q, r](const auto& hex) { return hex.q == q && hex.r == r; });
+    if (found != greenbelt_draft.hexes.end()) {
+        if (found->claimed || !found->settlement_id.empty()) {
+            const int result = MessageBoxW(window,
+                L"This hex is claimed or linked to a settlement. Remove it from the Greenbelt map?",
+                L"Remove Greenbelt Hex", MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2);
+            if (result != IDYES) return;
+        }
+        const int removed_index = static_cast<int>(std::distance(greenbelt_draft.hexes.begin(), found));
+        greenbelt_draft.hexes.erase(found);
+        if (greenbelt_draft.hexes.empty()) greenbelt_active_index = -1;
+        else greenbelt_active_index = std::min(removed_index, static_cast<int>(greenbelt_draft.hexes.size()) - 1);
+        refresh_greenbelt_hex_list(window);
+        return;
+    }
+    {
+        pkkm::GreenbeltHex hex;
+        hex.q = q;
+        hex.r = r;
+        const auto detected = detect_greenbelt_terrain(
+            greenbelt_image_path(), image_x, image_y,
+            greenbelt_draft.calibration.hex_width * greenbelt_draft.calibration.scale / 1.73205080756887729353,
+            greenbelt_draft.calibration.hex_height * greenbelt_draft.calibration.scale * 0.5);
+        hex.terrain = detected.terrain.empty() ? "unresolved" : detected.terrain;
+        greenbelt_draft.hexes.push_back(std::move(hex));
+        greenbelt_active_index = static_cast<int>(greenbelt_draft.hexes.size()) - 1;
+        set_manager_text(window, kGreenbeltAutodetected, detected.note);
+    }
     refresh_greenbelt_hex_list(window);
 }
 
@@ -2179,17 +2369,155 @@ void scroll_greenbelt_to(HWND window, int requested_position) {
     InvalidateRect(window, nullptr, FALSE);
 }
 
+Gdiplus::Color greenbelt_improvement_color(const std::string& id) {
+    if (id == "road" || id == "highway") return Gdiplus::Color(255, 130, 75, 35);
+    if (id == "bridge" || id == "canal" || id == "aqueduct") return Gdiplus::Color(255, 30, 110, 210);
+    if (id == "fort" || id == "watchtower") return Gdiplus::Color(255, 130, 45, 155);
+    if (id == "farm" || id == "fishery") return Gdiplus::Color(255, 30, 130, 55);
+    if (id == "mine" || id == "quarry") return Gdiplus::Color(255, 120, 75, 35);
+    if (id == "sawmill" || id == "lumber_camp") return Gdiplus::Color(255, 85, 55, 25);
+    if (id == "vineyard") return Gdiplus::Color(255, 145, 35, 115);
+    return Gdiplus::Color(255, 70, 70, 70);
+}
+
+std::wstring greenbelt_improvement_label(const std::string& id) {
+    const auto found = std::find_if(greenbelt_catalog.begin(), greenbelt_catalog.end(),
+        [&id](const auto& item) { return item.id == id; });
+    return found == greenbelt_catalog.end() ? widen(id) : widen(found->name);
+}
+
+std::wstring greenbelt_improvement_display_label(const std::string& id) {
+    if (id == "road") return L"Road";
+    if (id == "highway") return L"Highway";
+    if (id == "bridge") return L"Bridge";
+    if (id == "canal") return L"Canal";
+    if (id == "aqueduct") return L"Aqueduct";
+    if (id == "fort") return L"Fort";
+    if (id == "watchtower") return L"Watchtower";
+    if (id == "farm") return L"Farm";
+    if (id == "fishery") return L"Fishery";
+    if (id == "mine") return L"Mine";
+    if (id == "quarry") return L"Quarry";
+    if (id == "sawmill") return L"Sawmill";
+    if (id == "lumber_camp") return L"Lumber";
+    if (id == "vineyard") return L"Vineyard";
+    return greenbelt_improvement_label(id);
+}
+
+void draw_greenbelt_improvement_marker(Gdiplus::Graphics& graphics,
+    Gdiplus::Pen& pen, const std::string& id, float x, float y, float size) {
+    const float half = size * 0.5F;
+    if (id == "road" || id == "highway" || id == "bridge" || id == "canal" || id == "aqueduct") {
+        graphics.DrawLine(&pen, x - half, y, x + half, y);
+        if (id == "highway")
+            graphics.DrawLine(&pen, x - half, y + 2.0F, x + half, y + 2.0F);
+        if (id == "bridge" || id == "canal" || id == "aqueduct") {
+            graphics.DrawLine(&pen, x - half * 0.55F, y - half, x - half * 0.55F, y + half);
+            graphics.DrawLine(&pen, x + half * 0.55F, y - half, x + half * 0.55F, y + half);
+        }
+    } else if (id == "fort") {
+        graphics.DrawRectangle(&pen, x - half, y - half, size, size);
+    } else if (id == "watchtower") {
+        Gdiplus::PointF tower[3] = {
+            {x, y - half}, {x - half, y + half}, {x + half, y + half}};
+        graphics.DrawPolygon(&pen, tower, 3);
+    } else {
+        graphics.DrawEllipse(&pen, x - half, y - half, size, size);
+    }
+}
+
+void draw_greenbelt_settlement_label(Gdiplus::Graphics& graphics,
+    const pkkm::GreenbeltCalibration& calibration, const pkkm::GreenbeltHex& hex,
+    float left, float top, double image_scale) {
+    if (hex.settlement_id.empty())
+        return;
+    const auto found = std::find_if(kingdom.settlements.begin(), kingdom.settlements.end(),
+        [&hex](const auto& settlement) { return settlement.id == hex.settlement_id; });
+    if (found == kingdom.settlements.end() || found->name.empty())
+        return;
+    const auto center = pkkm::greenbelt_hex_center(calibration, hex.q, hex.r);
+    const float x = left + static_cast<float>(center.x * image_scale);
+    const float y = top + static_cast<float>(center.y * image_scale)
+        - static_cast<float>(calibration.hex_height * image_scale) * 0.28F;
+    const float width = static_cast<float>(calibration.hex_width * image_scale) * 0.72F;
+    const float height = std::max(10.0F, static_cast<float>(calibration.hex_height * image_scale) * 0.12F);
+    const float font_size = std::max(5.0F, std::min(10.0F, height * 0.72F));
+    Gdiplus::Font font(L"Segoe UI", font_size, Gdiplus::FontStyleBold);
+    Gdiplus::StringFormat format;
+    format.SetAlignment(Gdiplus::StringAlignmentCenter);
+    format.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+    format.SetTrimming(Gdiplus::StringTrimmingEllipsisCharacter);
+    Gdiplus::SolidBrush shadow(Gdiplus::Color(220, 255, 255, 255));
+    Gdiplus::SolidBrush text(Gdiplus::Color(255, 20, 45, 110));
+    const Gdiplus::RectF bounds(x - width * 0.5F, y - height * 0.5F, width, height);
+    graphics.DrawString(widen(found->name).c_str(), -1, &font,
+        Gdiplus::RectF(bounds.X + 1.0F, bounds.Y + 1.0F, bounds.Width, bounds.Height),
+        &format, &shadow);
+    graphics.DrawString(widen(found->name).c_str(), -1, &font, bounds, &format, &text);
+}
+
+void draw_greenbelt_improvements(Gdiplus::Graphics& graphics,
+    const pkkm::GreenbeltCalibration& calibration, const pkkm::GreenbeltHex& hex,
+    float left, float top, double image_scale) {
+    const auto center = pkkm::greenbelt_hex_center(calibration, hex.q, hex.r);
+    const Gdiplus::PointF point(left + static_cast<float>(center.x * image_scale),
+        top + static_cast<float>(center.y * image_scale));
+    if (hex.improvements.empty())
+        return;
+    const auto vertices = pkkm::greenbelt_hex_vertices(calibration, hex.q, hex.r);
+    Gdiplus::GraphicsPath clip_path;
+    Gdiplus::PointF polygon[6]{};
+    for (size_t index = 0; index < vertices.size(); ++index) {
+        polygon[index] = Gdiplus::PointF(
+            left + static_cast<float>(vertices[index].x * image_scale),
+            top + static_cast<float>(vertices[index].y * image_scale));
+    }
+    clip_path.AddPolygon(polygon, 6);
+    const auto saved_state = graphics.Save();
+    graphics.SetClip(&clip_path, Gdiplus::CombineModeIntersect);
+
+    const float cell_width = static_cast<float>(calibration.hex_width * image_scale);
+    const float cell_height = static_cast<float>(calibration.hex_height * image_scale);
+    const int columns = cell_width >= 105.0F ? 2 : 1;
+    const int rows = static_cast<int>((hex.improvements.size() + columns - 1) / columns);
+    const float font_size = std::max(5.0F, std::min(9.0F,
+        std::min(cell_width / static_cast<float>(columns * 10),
+            cell_height / static_cast<float>(std::max(1, rows) * 2.0F))));
+    Gdiplus::Font font(L"Segoe UI", font_size, Gdiplus::FontStyleBold);
+    Gdiplus::StringFormat centered;
+    centered.SetAlignment(Gdiplus::StringAlignmentNear);
+    centered.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+    const float row_height = std::max(8.0F, font_size + 3.0F);
+    const float label_width = std::max(18.0F, cell_width * 0.43F);
+    const float total_height = row_height * static_cast<float>(rows);
+    const float start_y = point.Y - total_height * 0.5F;
+    for (size_t index = 0; index < hex.improvements.size(); ++index) {
+        const std::string& id = hex.improvements[index];
+        const Gdiplus::Color color = greenbelt_improvement_color(id);
+        Gdiplus::SolidBrush brush(color);
+        const int column = static_cast<int>(index % static_cast<size_t>(columns));
+        const int row = static_cast<int>(index / static_cast<size_t>(columns));
+        const float x = point.X + (column == 0 ? -label_width : 0.0F) + 2.0F;
+        const float y = start_y + static_cast<float>(row) * row_height;
+        Gdiplus::Pen symbol_pen(color, std::max(1.0F, font_size * 0.22F));
+        draw_greenbelt_improvement_marker(graphics, symbol_pen, id,
+            x + font_size * 0.55F, y + row_height * 0.5F, font_size * 0.8F);
+        graphics.DrawString(greenbelt_improvement_display_label(id).c_str(), -1, &font,
+            Gdiplus::RectF(x + font_size * 1.2F, y, label_width - font_size * 1.3F,
+                row_height), &centered, &brush);
+    }
+    graphics.Restore(saved_state);
+}
+
 void paint_greenbelt_map(HWND window) {
     PAINTSTRUCT paint{};
     HDC device = BeginPaint(window, &paint);
     Gdiplus::Graphics graphics(device);
-    const Gdiplus::RectF viewport(20.0F, 104.0F - static_cast<float>(greenbelt_scroll_y), 330.0F, 240.0F);
+    const Gdiplus::RectF viewport(20.0F, 104.0F - static_cast<float>(greenbelt_scroll_y), 700.0F, 500.0F);
     Gdiplus::SolidBrush background(Gdiplus::Color(245, 245, 245));
     graphics.FillRectangle(&background, viewport);
     try {
-        std::filesystem::path image_path = std::filesystem::u8path(greenbelt_draft.asset_path);
-        if (image_path.empty() || !image_path.is_absolute())
-            image_path = std::filesystem::u8path(bundled_greenbelt_path());
+        const std::filesystem::path image_path = greenbelt_image_path();
         Gdiplus::Image image(image_path.wstring().c_str());
         if (image.GetLastStatus() == Gdiplus::Ok && image.GetWidth() > 0 && image.GetHeight() > 0) {
             const double image_scale = std::min(
@@ -2204,19 +2532,55 @@ void paint_greenbelt_map(HWND window) {
                 return Gdiplus::PointF(left + static_cast<float>(point.x * image_scale),
                     top + static_cast<float>(point.y * image_scale));
             };
-            Gdiplus::Pen claimed_pen(Gdiplus::Color(190, 30, 80), 2.0F);
+            Gdiplus::Pen claimed_pen(Gdiplus::Color(150, 90, 100, 150), 1.0F);
+            Gdiplus::Pen settlement_pen(Gdiplus::Color(220, 70, 180, 230), 2.0F);
             Gdiplus::Pen selected_pen(Gdiplus::Color(255, 220, 20), 3.0F);
             Gdiplus::Pen perimeter_pen(Gdiplus::Color(20, 90, 220), 4.0F);
+            Gdiplus::Pen grid_pen(Gdiplus::Color(255, 255, 255, 150), 1.0F);
+            if (greenbelt_draft.calibration.hex_width > 0.0
+                && greenbelt_draft.calibration.hex_height > 0.0) {
+                for (int r = -20; r <= 30; ++r) {
+                    for (int q = -20; q <= 40; ++q) {
+                        if (!pkkm::greenbelt_hex_inside_image(greenbelt_draft.calibration,
+                                q, r, static_cast<int>(image.GetWidth()), static_cast<int>(image.GetHeight())))
+                            continue;
+                        const auto grid_vertices = pkkm::greenbelt_hex_vertices(
+                            greenbelt_draft.calibration, q, r);
+                        Gdiplus::PointF grid_polygon[6]{};
+                        for (size_t vertex = 0; vertex < grid_vertices.size(); ++vertex)
+                            grid_polygon[vertex] = to_view(grid_vertices[vertex]);
+                        graphics.DrawPolygon(&grid_pen, grid_polygon, 6);
+                    }
+                }
+                const auto anchor = to_view(pkkm::greenbelt_hex_center(
+                    greenbelt_draft.calibration, 0, 0));
+                Gdiplus::Font anchor_font(L"Segoe UI", 11.0F, Gdiplus::FontStyleBold);
+                Gdiplus::SolidBrush anchor_brush(Gdiplus::Color(255, 255, 0));
+                graphics.DrawString(L"(0, 0)", -1, &anchor_font,
+                    Gdiplus::PointF(anchor.X + 5.0F, anchor.Y + 5.0F), &anchor_brush);
+            }
             for (size_t index = 0; index < greenbelt_draft.hexes.size(); ++index) {
                 const auto& hex = greenbelt_draft.hexes[index];
+                if (!pkkm::greenbelt_hex_inside_image(greenbelt_draft.calibration, hex.q, hex.r,
+                        static_cast<int>(image.GetWidth()), static_cast<int>(image.GetHeight())))
+                    continue;
                 const auto vertices = pkkm::greenbelt_hex_vertices(
                     greenbelt_draft.calibration, hex.q, hex.r);
                 Gdiplus::PointF polygon[6]{};
                 for (size_t vertex = 0; vertex < vertices.size(); ++vertex)
                     polygon[vertex] = to_view(vertices[vertex]);
-                if (hex.claimed) graphics.DrawPolygon(
-                    index == static_cast<size_t>(greenbelt_active_index) ? &selected_pen : &claimed_pen,
-                    polygon, 6);
+                Gdiplus::Pen* hex_pen = nullptr;
+                if (index == static_cast<size_t>(greenbelt_active_index))
+                    hex_pen = &selected_pen;
+                else if (!hex.settlement_id.empty())
+                    hex_pen = &settlement_pen;
+                else if (hex.claimed)
+                    hex_pen = &claimed_pen;
+                if (hex_pen) graphics.DrawPolygon(hex_pen, polygon, 6);
+                draw_greenbelt_settlement_label(graphics, greenbelt_draft.calibration, hex,
+                    left, top, image_scale);
+                draw_greenbelt_improvements(graphics, greenbelt_draft.calibration, hex,
+                    left, top, image_scale);
             }
             for (const auto& edge : pkkm::greenbelt_claimed_perimeter(greenbelt_draft.hexes)) {
                 const auto vertices = pkkm::greenbelt_hex_vertices(
@@ -2241,93 +2605,104 @@ void paint_greenbelt_map(HWND window) {
 }
 
 void create_greenbelt_controls(HWND window) {
+    seed_greenbelt_calibration_if_empty();
     CreateWindowExW(0, L"STATIC",
         L"Greenbelt Map. Claims and improvements are recorded as manual state; Apply never spends BP or changes kingdom totals.",
         WS_CHILD | WS_VISIBLE | SS_LEFT, 18, 10, 1100, 28, window, nullptr, app_instance, nullptr);
     CreateWindowExW(0, L"STATIC", L"Map asset", WS_CHILD | WS_VISIBLE | SS_LEFT,
         20, 45, 100, 22, window, nullptr, app_instance, nullptr);
     CreateWindowExW(0, L"STATIC", widen(greenbelt_draft.asset_path).c_str(),
-        WS_CHILD | WS_VISIBLE | SS_LEFT, 125, 45, 440, 22, window, nullptr, app_instance, nullptr);
+        WS_CHILD | WS_VISIBLE | SS_LEFT, 125, 45, 650, 22, window, nullptr, app_instance, nullptr);
     CreateWindowExW(0, L"STATIC", L"Hexes", WS_CHILD | WS_VISIBLE | SS_LEFT,
         20, 78, 280, 22, window, nullptr, app_instance, nullptr);
     CreateWindowExW(0, L"BUTTON", L"Add Hex", WS_CHILD | WS_VISIBLE,
         260, 74, 90, 26, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltAddHex)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Open Large Map", WS_CHILD | WS_VISIBLE,
+        360, 74, 125, 26, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltOpenMap)), app_instance, nullptr);
     CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"",
-        WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY, 20, 365, 330, 145, window,
+        WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY, 20, 620, 700, 145, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltHexList)), app_instance, nullptr);
-    manager_label(window, L"Q", 380, 82); manager_edit(window, kGreenbeltQ, L"0", 510, 82);
-    manager_label(window, L"R", 380, 114); manager_edit(window, kGreenbeltR, L"0", 510, 114);
-    manager_label(window, L"Terrain", 380, 146); manager_edit(window, kGreenbeltTerrain, L"unresolved", 510, 146, 220);
+    manager_label(window, L"Q", 780, 82); manager_edit(window, kGreenbeltQ, L"0", 910, 82);
+    manager_label(window, L"R", 780, 114); manager_edit(window, kGreenbeltR, L"0", 910, 114);
+    manager_label(window, L"Terrain", 780, 146); manager_edit(window, kGreenbeltTerrain, L"unresolved", 910, 146, 300);
+    CreateWindowExW(0, L"STATIC",
+        L"Auto-detection unavailable until a map hex is selected; output is advisory and editable.",
+        WS_CHILD | WS_VISIBLE | SS_LEFT, 780, 178, 600, 36, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltAutodetected)), app_instance, nullptr);
     CreateWindowExW(0, L"BUTTON", L"Claimed", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        380, 182, 130, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltClaimed)), app_instance, nullptr);
-    manager_label(window, L"Claim turn", 380, 214); manager_edit(window, kGreenbeltClaimTurn, L"0", 510, 214);
-    manager_label(window, L"Settlement link", 380, 246, 125);
+        780, 220, 130, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltClaimed)), app_instance, nullptr);
+    manager_label(window, L"Claim turn", 780, 252); manager_edit(window, kGreenbeltClaimTurn, L"0", 910, 252);
+    manager_label(window, L"Settlement link", 780, 284, 125);
     CreateWindowExW(0, L"COMBOBOX", L"",
-        WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL, 510, 246, 250, 180, window,
+        WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL, 910, 284, 300, 180, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltSettlement)), app_instance, nullptr);
-    manager_label(window, L"Improvement", 380, 282, 125);
+    manager_label(window, L"Improvement", 780, 320, 125);
     CreateWindowExW(0, L"COMBOBOX", L"",
-        WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL, 510, 282, 300, 220, window,
+        WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL, 910, 320, 360, 220, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltImprovement)), app_instance, nullptr);
     CreateWindowExW(0, L"BUTTON", L"Add Improvement", WS_CHILD | WS_VISIBLE,
-        820, 282, 125, 26, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltAddImprovement)), app_instance, nullptr);
+        1280, 320, 125, 26, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltAddImprovement)), app_instance, nullptr);
     CreateWindowExW(0, L"STATIC", L"Rule preview", WS_CHILD | WS_VISIBLE | SS_LEFT,
-        380, 330, 140, 22, window, nullptr, app_instance, nullptr);
+        780, 570, 140, 22, window, nullptr, app_instance, nullptr);
     CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"Select an improvement.",
         WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_READONLY,
-        380, 356, 565, 100, window,
+        780, 596, 625, 100, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltPreview)), app_instance, nullptr);
     CreateWindowExW(0, L"STATIC", L"Calibration", WS_CHILD | WS_VISIBLE | SS_LEFT,
-        20, 520, 200, 22, window, nullptr, app_instance, nullptr);
-    manager_label(window, L"Origin X", 20, 550); manager_edit(window, kGreenbeltOriginX, L"0", 150, 550);
-    manager_label(window, L"Origin Y", 20, 582); manager_edit(window, kGreenbeltOriginY, L"0", 150, 582);
-    manager_label(window, L"Hex width", 20, 614); manager_edit(window, kGreenbeltHexWidth, L"0", 150, 614);
-    manager_label(window, L"Hex height", 20, 646); manager_edit(window, kGreenbeltHexHeight, L"0", 150, 646);
-    manager_label(window, L"Scale", 20, 678); manager_edit(window, kGreenbeltScale, L"1", 150, 678);
+        20, 790, 200, 22, window, nullptr, app_instance, nullptr);
+    manager_label(window, L"Origin X", 20, 820); manager_edit(window, kGreenbeltOriginX, L"0", 150, 820);
+    manager_label(window, L"Origin Y", 20, 852); manager_edit(window, kGreenbeltOriginY, L"0", 150, 852);
+    manager_label(window, L"Hex width", 20, 884); manager_edit(window, kGreenbeltHexWidth, L"0", 150, 884);
+    manager_label(window, L"Hex height", 20, 916); manager_edit(window, kGreenbeltHexHeight, L"0", 150, 916);
+    manager_label(window, L"Scale", 20, 948); manager_edit(window, kGreenbeltScale, L"1", 150, 948);
     CreateWindowExW(0, L"STATIC",
-        L"The image is bundled beside the executable. Calibration is persisted; exact map geometry remains user-editable.",
-        WS_CHILD | WS_VISIBLE | SS_LEFT, 380, 480, 565, 42, window, nullptr, app_instance, nullptr);
+        L"The image is bundled beside the executable. Calibration is persisted; these initial values are approximate and remain user-editable.",
+        WS_CHILD | WS_VISIBLE | SS_LEFT, 780, 710, 625, 42, window, nullptr, app_instance, nullptr);
     CreateWindowExW(0, L"STATIC", L"Special terrain records", WS_CHILD | WS_VISIBLE | SS_LEFT,
-        20, 730, 380, 22, window, nullptr, app_instance, nullptr);
+        20, 1030, 380, 22, window, nullptr, app_instance, nullptr);
     CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"", WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY,
-        20, 755, 360, 105, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltSpecialList)), app_instance, nullptr);
-    manager_label(window, L"Q", 400, 755); manager_edit(window, kGreenbeltSpecialQ, L"0", 455, 755);
-    manager_label(window, L"R", 400, 785); manager_edit(window, kGreenbeltSpecialR, L"0", 455, 785);
-    manager_label(window, L"Type", 520, 755); manager_edit(window, kGreenbeltSpecialType, L"river", 575, 755, 120);
-    manager_label(window, L"Name", 710, 755); manager_edit(window, kGreenbeltSpecialName, L"", 770, 755, 160);
-    manager_label(window, L"Notes", 400, 820); manager_edit(window, kGreenbeltSpecialNotes, L"", 455, 820, 475);
+        20, 1055, 360, 105, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltSpecialList)), app_instance, nullptr);
+    manager_label(window, L"Q", 400, 1055); manager_edit(window, kGreenbeltSpecialQ, L"0", 455, 1055);
+    manager_label(window, L"R", 400, 1085); manager_edit(window, kGreenbeltSpecialR, L"0", 455, 1085);
+    manager_label(window, L"Type", 520, 1055); manager_edit(window, kGreenbeltSpecialType, L"river", 575, 1055, 120);
+    manager_label(window, L"Name", 710, 1055); manager_edit(window, kGreenbeltSpecialName, L"", 770, 1055, 160);
+    manager_label(window, L"Notes", 400, 1120); manager_edit(window, kGreenbeltSpecialNotes, L"", 455, 1120, 475);
     CreateWindowExW(0, L"BUTTON", L"Add/Update", WS_CHILD | WS_VISIBLE,
-        945, 755, 100, 26, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltSpecialSave)), app_instance, nullptr);
+        945, 1055, 100, 26, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltSpecialSave)), app_instance, nullptr);
     CreateWindowExW(0, L"BUTTON", L"Remove", WS_CHILD | WS_VISIBLE,
-        1050, 755, 80, 26, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltSpecialRemove)), app_instance, nullptr);
+        1050, 1055, 80, 26, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltSpecialRemove)), app_instance, nullptr);
     CreateWindowExW(0, L"STATIC", L"Custom improvements", WS_CHILD | WS_VISIBLE | SS_LEFT,
-        20, 870, 380, 22, window, nullptr, app_instance, nullptr);
+        20, 1170, 380, 22, window, nullptr, app_instance, nullptr);
     CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"", WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY,
-        20, 895, 360, 65, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltCustomList)), app_instance, nullptr);
-    manager_label(window, L"ID", 400, 895); manager_edit(window, kGreenbeltCustomId, L"", 455, 895, 180);
-    manager_label(window, L"Name", 650, 895); manager_edit(window, kGreenbeltCustomName, L"", 710, 895, 180);
+        20, 1195, 360, 65, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltCustomList)), app_instance, nullptr);
+    manager_label(window, L"ID", 400, 1195); manager_edit(window, kGreenbeltCustomId, L"", 455, 1195, 180);
+    manager_label(window, L"Name", 650, 1195); manager_edit(window, kGreenbeltCustomName, L"", 710, 1195, 180);
     CreateWindowExW(0, L"BUTTON", L"Manual only", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        905, 895, 110, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltCustomManual)), app_instance, nullptr);
+        905, 1195, 110, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltCustomManual)), app_instance, nullptr);
     CreateWindowExW(0, L"BUTTON", L"Add/Update", WS_CHILD | WS_VISIBLE,
-        1025, 895, 100, 26, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltCustomSave)), app_instance, nullptr);
+        1025, 1195, 100, 26, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltCustomSave)), app_instance, nullptr);
     CreateWindowExW(0, L"BUTTON", L"Remove", WS_CHILD | WS_VISIBLE,
-        1130, 895, 80, 26, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltCustomRemove)), app_instance, nullptr);
-    manager_label(window, L"Effect", 400, 930); manager_edit(window, kGreenbeltCustomEffect, L"", 455, 930, 330);
-    manager_label(window, L"Cost", 800, 930); manager_edit(window, kGreenbeltCustomCost, L"", 850, 930, 260);
+        1130, 1195, 80, 26, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltCustomRemove)), app_instance, nullptr);
+    manager_label(window, L"Effect", 400, 1230); manager_edit(window, kGreenbeltCustomEffect, L"", 455, 1230, 330);
+    manager_label(window, L"Cost", 800, 1230); manager_edit(window, kGreenbeltCustomCost, L"", 850, 1230, 260);
     CreateWindowExW(0, L"BUTTON", L"Apply", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
-        700, 965, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltApply)), app_instance, nullptr);
+        700, 1365, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltApply)), app_instance, nullptr);
     CreateWindowExW(0, L"BUTTON", L"Cancel", WS_CHILD | WS_VISIBLE,
-        798, 965, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltCancel)), app_instance, nullptr);
+        798, 1365, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltCancel)), app_instance, nullptr);
     CreateWindowExW(0, L"BUTTON", L"Close", WS_CHILD | WS_VISIBLE,
-        896, 965, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltClose)), app_instance, nullptr);
-    for (const auto& settlement : kingdom.settlements) {
+        896, 1365, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltClose)), app_instance, nullptr);
+    const HWND settlement_combo = GetDlgItem(window, kGreenbeltSettlement);
+    const int none_index = static_cast<int>(SendMessageW(settlement_combo, CB_ADDSTRING, 0,
+        reinterpret_cast<LPARAM>(L"(none)")));
+    SendMessageW(settlement_combo, CB_SETITEMDATA, none_index, 0);
+    for (size_t index = 0; index < kingdom.settlements.size(); ++index) {
+        const auto& settlement = kingdom.settlements[index];
         const auto label = widen(settlement.name) + L" [" + widen(settlement.id) + L"]";
-        SendMessageW(GetDlgItem(window, kGreenbeltSettlement), CB_ADDSTRING, 0,
-            reinterpret_cast<LPARAM>(label.c_str()));
+        const int item_index = static_cast<int>(SendMessageW(settlement_combo, CB_ADDSTRING, 0,
+            reinterpret_cast<LPARAM>(label.c_str())));
+        SendMessageW(settlement_combo, CB_SETITEMDATA, item_index, static_cast<LPARAM>(index + 1));
     }
-    SendMessageW(GetDlgItem(window, kGreenbeltSettlement), CB_INSERTSTRING, 0,
-        reinterpret_cast<LPARAM>(L"(none)"));
-    SendMessageW(GetDlgItem(window, kGreenbeltSettlement), CB_SETCURSEL, 0, 0);
+    SendMessageW(settlement_combo, CB_SETCURSEL, none_index, 0);
     SendMessageW(GetDlgItem(window, kGreenbeltImprovement), CB_ADDSTRING, 0,
         reinterpret_cast<LPARAM>(L"(choose an improvement)"));
     for (const auto& item : greenbelt_catalog) {
@@ -2376,9 +2751,368 @@ void cancel_greenbelt(HWND window) {
     refresh_greenbelt_custom_list(window);
 }
 
+void handle_greenbelt_map_click(HWND window, LPARAM lparam, bool toggle) {
+    const double view_x = static_cast<double>(static_cast<short>(LOWORD(lparam)));
+    const double view_y = static_cast<double>(static_cast<short>(HIWORD(lparam)) + greenbelt_scroll_y);
+    const double viewport_x = 20.0;
+    const double viewport_y = 104.0;
+    const double viewport_width = 700.0;
+    const double viewport_height = 500.0;
+    if (view_x < viewport_x || view_x > viewport_x + viewport_width
+        || view_y < viewport_y || view_y > viewport_y + viewport_height)
+        return;
+    const auto calibration = greenbelt_draft.calibration;
+    if (calibration.hex_width <= 0.0 || calibration.hex_height <= 0.0 || calibration.scale <= 0.0) {
+        MessageBoxW(window,
+            L"Set Origin X, Origin Y, Hex width, Hex height, and Scale before selecting the map.",
+            L"Greenbelt Map Calibration", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    Gdiplus::Image image(greenbelt_image_path().wstring().c_str());
+    if (image.GetLastStatus() != Gdiplus::Ok || image.GetWidth() == 0 || image.GetHeight() == 0)
+        return;
+    const double image_scale = std::min(
+        viewport_width / static_cast<double>(image.GetWidth()),
+        viewport_height / static_cast<double>(image.GetHeight()));
+    const double image_width = image.GetWidth() * image_scale;
+    const double image_height = image.GetHeight() * image_scale;
+    const double left = viewport_x + (viewport_width - image_width) * 0.5;
+    const double top = viewport_y + (viewport_height - image_height) * 0.5;
+    if (view_x < left || view_x > left + image_width || view_y < top || view_y > top + image_height)
+        return;
+    const double image_x = (view_x - left) / image_scale;
+    const double image_y = (view_y - top) / image_scale;
+    const auto coordinate = pkkm::greenbelt_hex_at_point(calibration, image_x, image_y);
+    if (!pkkm::greenbelt_hex_inside_image(calibration, coordinate.q, coordinate.r,
+            static_cast<int>(image.GetWidth()), static_cast<int>(image.GetHeight())))
+        return;
+    if (toggle) toggle_greenbelt_hex_at(window, coordinate.q, coordinate.r, image_x, image_y);
+    else select_greenbelt_hex_at(window, coordinate.q, coordinate.r);
+}
+
+void paint_greenbelt_popout(HWND window) {
+    PAINTSTRUCT paint{};
+    HDC device = BeginPaint(window, &paint);
+    Gdiplus::Graphics graphics(device);
+    RECT client{};
+    GetClientRect(window, &client);
+    const Gdiplus::RectF viewport(10.0F, 112.0F,
+        static_cast<float>(std::max(1L, client.right - 20L)),
+        static_cast<float>(std::max(1L, client.bottom - 122L)));
+    Gdiplus::SolidBrush background(Gdiplus::Color(245, 245, 245));
+    graphics.FillRectangle(&background, viewport);
+    try {
+        Gdiplus::Image image(greenbelt_image_path().wstring().c_str());
+        if (image.GetLastStatus() != Gdiplus::Ok || image.GetWidth() == 0 || image.GetHeight() == 0) {
+            EndPaint(window, &paint);
+            return;
+        }
+        const double fit_scale = std::min(
+            static_cast<double>(viewport.Width) / image.GetWidth(),
+            static_cast<double>(viewport.Height) / image.GetHeight());
+        const double image_scale = fit_scale * greenbelt_popout_zoom;
+        const float width = static_cast<float>(image.GetWidth() * image_scale);
+        const float height = static_cast<float>(image.GetHeight() * image_scale);
+        const float left = viewport.X + (viewport.Width - width) * 0.5F
+            + static_cast<float>(greenbelt_popout_pan_x);
+        const float top = viewport.Y + (viewport.Height - height) * 0.5F
+            + static_cast<float>(greenbelt_popout_pan_y);
+        graphics.DrawImage(&image, Gdiplus::RectF(left, top, width, height));
+        const auto to_view = [&](const pkkm::GreenbeltPoint& point) {
+            return Gdiplus::PointF(left + static_cast<float>(point.x * image_scale),
+                top + static_cast<float>(point.y * image_scale));
+        };
+        Gdiplus::Pen grid_pen(Gdiplus::Color(255, 255, 255, 150), 1.0F);
+        Gdiplus::Pen claimed_pen(Gdiplus::Color(150, 90, 100, 150), 1.0F);
+        Gdiplus::Pen settlement_pen(Gdiplus::Color(220, 70, 180, 230), 2.0F);
+        Gdiplus::Pen selected_pen(Gdiplus::Color(255, 220, 20), 3.0F);
+        Gdiplus::Pen perimeter_pen(Gdiplus::Color(20, 90, 220), 4.0F);
+        if (greenbelt_draft.calibration.hex_width > 0.0
+            && greenbelt_draft.calibration.hex_height > 0.0) {
+            for (int r = -20; r <= 30; ++r) {
+            for (int q = -20; q <= 40; ++q) {
+                if (!pkkm::greenbelt_hex_inside_image(greenbelt_draft.calibration,
+                        q, r, static_cast<int>(image.GetWidth()), static_cast<int>(image.GetHeight())))
+                    continue;
+                const auto vertices = pkkm::greenbelt_hex_vertices(
+                        greenbelt_draft.calibration, q, r);
+                    Gdiplus::PointF polygon[6]{};
+                    for (size_t vertex = 0; vertex < vertices.size(); ++vertex)
+                        polygon[vertex] = to_view(vertices[vertex]);
+                    graphics.DrawPolygon(&grid_pen, polygon, 6);
+                }
+            }
+            const auto anchor = to_view(pkkm::greenbelt_hex_center(
+                greenbelt_draft.calibration, 0, 0));
+            Gdiplus::Font font(L"Segoe UI", 12.0F, Gdiplus::FontStyleBold);
+            Gdiplus::SolidBrush brush(Gdiplus::Color(255, 255, 0));
+            graphics.DrawString(L"(0, 0)", -1, &font,
+                Gdiplus::PointF(anchor.X + 5.0F, anchor.Y + 5.0F), &brush);
+        }
+        for (size_t index = 0; index < greenbelt_draft.hexes.size(); ++index) {
+            const auto& hex = greenbelt_draft.hexes[index];
+            if (!pkkm::greenbelt_hex_inside_image(greenbelt_draft.calibration, hex.q, hex.r,
+                    static_cast<int>(image.GetWidth()), static_cast<int>(image.GetHeight())))
+                continue;
+            const auto vertices = pkkm::greenbelt_hex_vertices(
+                greenbelt_draft.calibration, hex.q, hex.r);
+            Gdiplus::PointF polygon[6]{};
+            for (size_t vertex = 0; vertex < vertices.size(); ++vertex)
+                polygon[vertex] = to_view(vertices[vertex]);
+            Gdiplus::Pen* hex_pen = nullptr;
+            if (index == static_cast<size_t>(greenbelt_active_index))
+                hex_pen = &selected_pen;
+            else if (!hex.settlement_id.empty())
+                hex_pen = &settlement_pen;
+            else if (hex.claimed)
+                hex_pen = &claimed_pen;
+            if (hex_pen) graphics.DrawPolygon(hex_pen, polygon, 6);
+            draw_greenbelt_settlement_label(graphics, greenbelt_draft.calibration, hex,
+                left, top, image_scale);
+            draw_greenbelt_improvements(graphics, greenbelt_draft.calibration, hex,
+                left, top, image_scale);
+        }
+        for (const auto& edge : pkkm::greenbelt_claimed_perimeter(greenbelt_draft.hexes)) {
+            const auto vertices = pkkm::greenbelt_hex_vertices(
+                greenbelt_draft.calibration, edge.q, edge.r);
+            const auto first = to_view(vertices[static_cast<size_t>(edge.side)]);
+            const auto second = to_view(vertices[static_cast<size_t>((edge.side + 1) % 6)]);
+            graphics.DrawLine(&perimeter_pen, first, second);
+        }
+    } catch (...) {
+        Gdiplus::Font font(L"Segoe UI", 11.0F);
+        Gdiplus::SolidBrush brush(Gdiplus::Color(40, 40, 40));
+        graphics.DrawString(L"Greenbelt image could not be loaded.", -1, &font,
+            Gdiplus::PointF(viewport.X + 8.0F, viewport.Y + 8.0F), &brush);
+    }
+    EndPaint(window, &paint);
+}
+
+void handle_greenbelt_popout_click(HWND window, LPARAM lparam, bool toggle) {
+    RECT client{};
+    GetClientRect(window, &client);
+    const double view_x = static_cast<double>(static_cast<short>(LOWORD(lparam)));
+    const double view_y = static_cast<double>(static_cast<short>(HIWORD(lparam)));
+    const double viewport_x = 10.0;
+    const double viewport_y = 112.0;
+    const double viewport_width = std::max(1L, client.right - 20L);
+    const double viewport_height = std::max(1L, client.bottom - 122L);
+    if (view_x < viewport_x || view_y < viewport_y
+        || view_x > viewport_x + viewport_width || view_y > viewport_y + viewport_height)
+        return;
+    const auto calibration = greenbelt_draft.calibration;
+    if (calibration.hex_width <= 0.0 || calibration.hex_height <= 0.0 || calibration.scale <= 0.0)
+        return;
+    Gdiplus::Image image(greenbelt_image_path().wstring().c_str());
+    if (image.GetLastStatus() != Gdiplus::Ok || image.GetWidth() == 0 || image.GetHeight() == 0)
+        return;
+    const double fit_scale = std::min(viewport_width / image.GetWidth(), viewport_height / image.GetHeight());
+    const double image_scale = fit_scale * greenbelt_popout_zoom;
+    const double image_width = image.GetWidth() * image_scale;
+    const double image_height = image.GetHeight() * image_scale;
+    const double left = viewport_x + (viewport_width - image_width) * 0.5 + greenbelt_popout_pan_x;
+    const double top = viewport_y + (viewport_height - image_height) * 0.5 + greenbelt_popout_pan_y;
+    if (view_x < left || view_y < top || view_x > left + image_width || view_y > top + image_height)
+        return;
+    const double image_x = (view_x - left) / image_scale;
+    const double image_y = (view_y - top) / image_scale;
+    const auto coordinate = pkkm::greenbelt_hex_at_point(calibration, image_x, image_y);
+    if (!pkkm::greenbelt_hex_inside_image(calibration, coordinate.q, coordinate.r,
+            static_cast<int>(image.GetWidth()), static_cast<int>(image.GetHeight())))
+        return;
+    if (toggle) toggle_greenbelt_hex_at(greenbelt_window, coordinate.q, coordinate.r, image_x, image_y);
+    else select_greenbelt_hex_at(greenbelt_window, coordinate.q, coordinate.r);
+    InvalidateRect(window, nullptr, FALSE);
+}
+
+void open_greenbelt_popout(HWND owner) {
+    if (greenbelt_popout_window && IsWindow(greenbelt_popout_window)) {
+        SetForegroundWindow(greenbelt_popout_window);
+        return;
+    }
+    greenbelt_popout_zoom = 1.0;
+    greenbelt_popout_pan_x = 0.0;
+    greenbelt_popout_pan_y = 0.0;
+    greenbelt_popout_window = CreateWindowExW(WS_EX_DLGMODALFRAME, L"PKKMGreenbeltMapPopout",
+        L"Greenbelt Map — Large View", WS_CAPTION | WS_SYSMENU | WS_POPUP | WS_THICKFRAME
+        | WS_MINIMIZEBOX | WS_MAXIMIZEBOX,
+        CW_USEDEFAULT, CW_USEDEFAULT, 1250, 850, owner, nullptr, app_instance, nullptr);
+    if (!greenbelt_popout_window)
+        throw std::runtime_error("Could not open the large Greenbelt Map view");
+    ShowWindow(greenbelt_popout_window, SW_SHOW);
+    UpdateWindow(greenbelt_popout_window);
+}
+
+void update_greenbelt_alignment_status(HWND window) {
+    const auto& calibration = greenbelt_draft.calibration;
+    const std::wstring text = L"Alignment: origin (" + std::to_wstring(calibration.origin_x)
+        + L", " + std::to_wstring(calibration.origin_y) + L") | size ("
+        + std::to_wstring(calibration.hex_width) + L" x "
+        + std::to_wstring(calibration.hex_height) + L") | scale "
+        + std::to_wstring(calibration.scale)
+        + L" | Partial cells: out of bounds";
+    set_manager_text(window, kGreenbeltAlignmentStatus, text);
+}
+
+void adjust_greenbelt_alignment(HWND window, int dx, int dy, double dw, double dh) {
+    if (!greenbelt_alignment_mode) return;
+    auto& calibration = greenbelt_draft.calibration;
+    calibration.origin_x += dx;
+    calibration.origin_y += dy;
+    calibration.hex_width = std::max(1.0, calibration.hex_width + dw);
+    calibration.hex_height = std::max(1.0, calibration.hex_height + dh);
+    update_greenbelt_alignment_status(window);
+    InvalidateRect(window, nullptr, FALSE);
+    if (greenbelt_window && IsWindow(greenbelt_window)) {
+        set_manager_text(greenbelt_window, kGreenbeltOriginX, std::to_wstring(calibration.origin_x));
+        set_manager_text(greenbelt_window, kGreenbeltOriginY, std::to_wstring(calibration.origin_y));
+        set_manager_text(greenbelt_window, kGreenbeltHexWidth, std::to_wstring(calibration.hex_width));
+        set_manager_text(greenbelt_window, kGreenbeltHexHeight, std::to_wstring(calibration.hex_height));
+        InvalidateRect(greenbelt_window, nullptr, FALSE);
+    }
+}
+
+LRESULT CALLBACK greenbelt_popout_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
+    if (message == WM_GETMINMAXINFO) {
+        set_minimum_track_size(lparam, 700, 500);
+        return 0;
+    }
+    switch (message) {
+        case WM_CREATE:
+            CreateWindowExW(0, L"BUTTON", L"Zoom In", WS_CHILD | WS_VISIBLE,
+                10, 10, 90, 28, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltZoomIn)), app_instance, nullptr);
+            CreateWindowExW(0, L"BUTTON", L"Zoom Out", WS_CHILD | WS_VISIBLE,
+                110, 10, 90, 28, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltZoomOut)), app_instance, nullptr);
+            CreateWindowExW(0, L"BUTTON", L"Fit", WS_CHILD | WS_VISIBLE,
+                210, 10, 70, 28, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltZoomFit)), app_instance, nullptr);
+            CreateWindowExW(0, L"BUTTON", L"Alignment Mode", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+                300, 10, 125, 28, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltAlignMode)), app_instance, nullptr);
+            CreateWindowExW(0, L"BUTTON", L"Left", WS_CHILD | WS_VISIBLE,
+                10, 44, 55, 26, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltPanLeft)), app_instance, nullptr);
+            CreateWindowExW(0, L"BUTTON", L"Right", WS_CHILD | WS_VISIBLE,
+                70, 44, 55, 26, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltPanRight)), app_instance, nullptr);
+            CreateWindowExW(0, L"BUTTON", L"Up", WS_CHILD | WS_VISIBLE,
+                130, 44, 45, 26, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltPanUp)), app_instance, nullptr);
+            CreateWindowExW(0, L"BUTTON", L"Down", WS_CHILD | WS_VISIBLE,
+                180, 44, 55, 26, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltPanDown)), app_instance, nullptr);
+            CreateWindowExW(0, L"BUTTON", L"Grow W", WS_CHILD | WS_VISIBLE,
+                245, 44, 65, 26, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltGrowWidth)), app_instance, nullptr);
+            CreateWindowExW(0, L"BUTTON", L"Shrink W", WS_CHILD | WS_VISIBLE,
+                315, 44, 70, 26, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltShrinkWidth)), app_instance, nullptr);
+            CreateWindowExW(0, L"BUTTON", L"Grow H", WS_CHILD | WS_VISIBLE,
+                390, 44, 65, 26, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltGrowHeight)), app_instance, nullptr);
+            CreateWindowExW(0, L"BUTTON", L"Shrink H", WS_CHILD | WS_VISIBLE,
+                460, 44, 70, 26, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltShrinkHeight)), app_instance, nullptr);
+            CreateWindowExW(0, L"BUTTON", L"Reset Pan", WS_CHILD | WS_VISIBLE,
+                535, 44, 80, 26, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltResetPan)), app_instance, nullptr);
+            CreateWindowExW(0, L"STATIC", L"Click a map hex to select or create it. Drag the map while zoomed to pan.",
+                WS_CHILD | WS_VISIBLE | SS_LEFT, 435, 14, 560, 22, window, nullptr, app_instance, nullptr);
+            CreateWindowExW(0, L"BUTTON", L"Close", WS_CHILD | WS_VISIBLE,
+                1030, 10, 90, 28, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltPopoutClose)), app_instance, nullptr);
+            CreateWindowExW(0, L"STATIC", L"", WS_CHILD | WS_VISIBLE | SS_LEFT,
+                10, 78, 1110, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltAlignmentStatus)), app_instance, nullptr);
+            update_greenbelt_alignment_status(window);
+            return 0;
+        case WM_PAINT:
+            paint_greenbelt_popout(window);
+            return 0;
+        case WM_SIZE:
+            InvalidateRect(window, nullptr, FALSE);
+            return 0;
+        case WM_LBUTTONDOWN:
+            greenbelt_popout_dragging = true;
+            greenbelt_popout_drag_start = {static_cast<LONG>(static_cast<short>(LOWORD(lparam))),
+                static_cast<LONG>(static_cast<short>(HIWORD(lparam)))};
+            greenbelt_popout_drag_origin_x = greenbelt_popout_pan_x;
+            greenbelt_popout_drag_origin_y = greenbelt_popout_pan_y;
+            SetCapture(window);
+            return 0;
+        case WM_MOUSEMOVE:
+            if (greenbelt_popout_dragging && (wparam & MK_LBUTTON)) {
+                const LONG x = static_cast<LONG>(static_cast<short>(LOWORD(lparam)));
+                const LONG y = static_cast<LONG>(static_cast<short>(HIWORD(lparam)));
+                greenbelt_popout_pan_x = greenbelt_popout_drag_origin_x
+                    + static_cast<double>(x - greenbelt_popout_drag_start.x);
+                greenbelt_popout_pan_y = greenbelt_popout_drag_origin_y
+                    + static_cast<double>(y - greenbelt_popout_drag_start.y);
+                InvalidateRect(window, nullptr, FALSE);
+            }
+            return 0;
+        case WM_LBUTTONUP:
+            if (greenbelt_popout_dragging) {
+                const LONG x = static_cast<LONG>(static_cast<short>(LOWORD(lparam)));
+                const LONG y = static_cast<LONG>(static_cast<short>(HIWORD(lparam)));
+                const bool click = std::abs(x - greenbelt_popout_drag_start.x) <= 3
+                    && std::abs(y - greenbelt_popout_drag_start.y) <= 3;
+                greenbelt_popout_dragging = false;
+                ReleaseCapture();
+                if (click) {
+                    try {
+                        handle_greenbelt_popout_click(window, lparam, false);
+                    } catch (const std::exception& error) {
+                        MessageBoxW(window, widen(error.what()).c_str(), L"Greenbelt Map", MB_OK | MB_ICONWARNING);
+                    }
+                }
+            }
+            return 0;
+        case WM_LBUTTONDBLCLK:
+            try {
+                handle_greenbelt_popout_click(window, lparam, true);
+            } catch (const std::exception& error) {
+                MessageBoxW(window, widen(error.what()).c_str(), L"Greenbelt Map", MB_OK | MB_ICONWARNING);
+            }
+            return 0;
+        case WM_COMMAND:
+            if (LOWORD(wparam) == kGreenbeltZoomIn) {
+                greenbelt_popout_zoom = std::min(4.0, greenbelt_popout_zoom * 1.25);
+                InvalidateRect(window, nullptr, FALSE);
+            } else if (LOWORD(wparam) == kGreenbeltZoomOut) {
+                greenbelt_popout_zoom = std::max(0.35, greenbelt_popout_zoom / 1.25);
+                InvalidateRect(window, nullptr, FALSE);
+            } else if (LOWORD(wparam) == kGreenbeltZoomFit) {
+                greenbelt_popout_zoom = 1.0;
+                greenbelt_popout_pan_x = 0.0;
+                greenbelt_popout_pan_y = 0.0;
+                InvalidateRect(window, nullptr, FALSE);
+            } else if (LOWORD(wparam) == kGreenbeltAlignMode) {
+                greenbelt_alignment_mode = IsDlgButtonChecked(window, kGreenbeltAlignMode) == BST_CHECKED;
+            } else if (LOWORD(wparam) == kGreenbeltPanLeft) {
+                adjust_greenbelt_alignment(window, -1, 0, 0.0, 0.0);
+            } else if (LOWORD(wparam) == kGreenbeltPanRight) {
+                adjust_greenbelt_alignment(window, 1, 0, 0.0, 0.0);
+            } else if (LOWORD(wparam) == kGreenbeltPanUp) {
+                adjust_greenbelt_alignment(window, 0, -1, 0.0, 0.0);
+            } else if (LOWORD(wparam) == kGreenbeltPanDown) {
+                adjust_greenbelt_alignment(window, 0, 1, 0.0, 0.0);
+            } else if (LOWORD(wparam) == kGreenbeltGrowWidth) {
+                adjust_greenbelt_alignment(window, 0, 0, 1.0, 0.0);
+            } else if (LOWORD(wparam) == kGreenbeltShrinkWidth) {
+                adjust_greenbelt_alignment(window, 0, 0, -1.0, 0.0);
+            } else if (LOWORD(wparam) == kGreenbeltGrowHeight) {
+                adjust_greenbelt_alignment(window, 0, 0, 0.0, 1.0);
+            } else if (LOWORD(wparam) == kGreenbeltShrinkHeight) {
+                adjust_greenbelt_alignment(window, 0, 0, 0.0, -1.0);
+            } else if (LOWORD(wparam) == kGreenbeltResetPan) {
+                greenbelt_popout_pan_x = 0.0;
+                greenbelt_popout_pan_y = 0.0;
+                InvalidateRect(window, nullptr, FALSE);
+            } else if (LOWORD(wparam) == kGreenbeltPopoutClose) {
+                DestroyWindow(window);
+            }
+            return 0;
+        case WM_CLOSE:
+            DestroyWindow(window);
+            return 0;
+        case WM_DESTROY:
+            greenbelt_popout_window = nullptr;
+            return 0;
+    }
+    return DefWindowProcW(window, message, wparam, lparam);
+}
+
 LRESULT CALLBACK greenbelt_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
     if (message == WM_GETMINMAXINFO) {
-        set_minimum_track_size(lparam, 900, 620);
+        set_minimum_track_size(lparam, 1400, 850);
         return 0;
     }
     switch (message) {
@@ -2415,6 +3149,20 @@ LRESULT CALLBACK greenbelt_proc(HWND window, UINT message, WPARAM wparam, LPARAM
                 - (wheel_delta / WHEEL_DELTA) * 80);
             return 0;
         }
+        case WM_LBUTTONDOWN:
+            try {
+                handle_greenbelt_map_click(window, lparam, false);
+            } catch (const std::exception& error) {
+                MessageBoxW(window, widen(error.what()).c_str(), L"Greenbelt Map", MB_OK | MB_ICONWARNING);
+            }
+            return 0;
+        case WM_LBUTTONDBLCLK:
+            try {
+                handle_greenbelt_map_click(window, lparam, true);
+            } catch (const std::exception& error) {
+                MessageBoxW(window, widen(error.what()).c_str(), L"Greenbelt Map", MB_OK | MB_ICONWARNING);
+            }
+            return 0;
         case WM_COMMAND: {
             const int id = LOWORD(wparam);
             try {
@@ -2425,6 +3173,8 @@ LRESULT CALLBACK greenbelt_proc(HWND window, UINT message, WPARAM wparam, LPARAM
                     load_greenbelt_form(window);
                 } else if (id == kGreenbeltAddHex) {
                     add_greenbelt_hex(window);
+                } else if (id == kGreenbeltOpenMap) {
+                    open_greenbelt_popout(window);
                 } else if (id == kGreenbeltSpecialList && HIWORD(wparam) == LBN_SELCHANGE) {
                     greenbelt_special_active_index = static_cast<int>(SendMessageW(
                         GetDlgItem(window, kGreenbeltSpecialList), LB_GETCURSEL, 0, 0));
@@ -2456,6 +3206,10 @@ LRESULT CALLBACK greenbelt_proc(HWND window, UINT message, WPARAM wparam, LPARAM
                 } else if (id == kGreenbeltImprovement && HIWORD(wparam) == CBN_SELCHANGE) {
                     save_greenbelt_form(window);
                     refresh_greenbelt_preview(window);
+                } else if (id == kGreenbeltSettlement && HIWORD(wparam) == CBN_SELCHANGE) {
+                    save_greenbelt_form(window);
+                    refresh_greenbelt_preview(window);
+                    InvalidateRect(window, nullptr, FALSE);
                 } else if (id == kGreenbeltApply) {
                     apply_greenbelt(window);
                 } else if (id == kGreenbeltCancel) {
@@ -2472,6 +3226,8 @@ LRESULT CALLBACK greenbelt_proc(HWND window, UINT message, WPARAM wparam, LPARAM
             DestroyWindow(window);
             return 0;
         case WM_DESTROY: {
+            if (greenbelt_popout_window && IsWindow(greenbelt_popout_window))
+                DestroyWindow(greenbelt_popout_window);
             greenbelt_window = nullptr;
             greenbelt_scroll_y = 0;
             greenbelt_draft = {};
@@ -2849,12 +3605,25 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     }
 
     WNDCLASSW greenbelt_class{};
+    greenbelt_class.style = CS_DBLCLKS;
     greenbelt_class.lpfnWndProc = greenbelt_proc;
     greenbelt_class.hInstance = instance;
     greenbelt_class.lpszClassName = L"PKKMGreenbeltMap";
     greenbelt_class.hCursor = LoadCursor(nullptr, IDC_ARROW);
     greenbelt_class.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&greenbelt_class)) {
+        Gdiplus::GdiplusShutdown(gdiplus_token);
+        return 1;
+    }
+
+    WNDCLASSW greenbelt_popout_class{};
+    greenbelt_popout_class.style = CS_DBLCLKS;
+    greenbelt_popout_class.lpfnWndProc = greenbelt_popout_proc;
+    greenbelt_popout_class.hInstance = instance;
+    greenbelt_popout_class.lpszClassName = L"PKKMGreenbeltMapPopout";
+    greenbelt_popout_class.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    greenbelt_popout_class.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+    if (!RegisterClassW(&greenbelt_popout_class)) {
         Gdiplus::GdiplusShutdown(gdiplus_token);
         return 1;
     }

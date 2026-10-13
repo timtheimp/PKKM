@@ -188,6 +188,6 @@ ctest --test-dir build -C Release --output-on-failure
 python -m pip install openpyxl
 python -m unittest discover -s tests -p 'test_*.py'
 cpack --config build/asset-copy-verify/CPackConfig.cmake -G ZIP -B build/deliverables
-python tests/test_cpack_package.py build/deliverables/PKKM-0.1.6-Windows.zip
+python tests/test_cpack_package.py build/deliverables/PKKM-0.1.7-Windows.zip
 python tools/package_release.py --build-dir build/asset-copy-verify/Release --output build/deliverables/PKKM-current-schema10.zip
 ```
