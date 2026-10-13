@@ -141,6 +141,21 @@ int main(int argc, char** argv) {
       "Terrain preview clears resolved Highway upgrade prerequisites");
  must(road_upgrade.summary.find("Route length 3")!=std::string::npos,
       "Terrain preview reports supplied route length without applying route effects");
+ pkkm::GreenbeltImprovementPreviewFacts fort_upgrade_facts;
+ fort_upgrade_facts.terrain="plains";
+ fort_upgrade_facts.claimed=true;
+ fort_upgrade_facts.requested_upgrade="fort";
+ const auto missing_watchtower_upgrade=pkkm::preview_greenbelt_improvement(
+     greenbelt_catalog,"fort",fort_upgrade_facts,false);
+ must(std::any_of(missing_watchtower_upgrade.warnings.begin(), missing_watchtower_upgrade.warnings.end(),
+      [](const auto& warning){ return warning.find("existing Watchtower")!=std::string::npos; }),
+      "Terrain preview requires an existing Watchtower for a Fort upgrade");
+ fort_upgrade_facts.existing_improvements.push_back("watchtower");
+ const auto watchtower_upgrade=pkkm::preview_greenbelt_improvement(
+     greenbelt_catalog,"fort",fort_upgrade_facts,false);
+ must(!std::any_of(watchtower_upgrade.warnings.begin(), watchtower_upgrade.warnings.end(),
+      [](const auto& warning){ return warning.find("existing Watchtower")!=std::string::npos; }),
+      "Terrain preview clears resolved Fort upgrade prerequisites");
  pkkm::GreenbeltImprovementPreviewFacts duplicate_facts;
  duplicate_facts.terrain="plains";
  duplicate_facts.claimed=true;

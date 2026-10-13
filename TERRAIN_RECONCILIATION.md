@@ -92,6 +92,8 @@ with a Fort or another Watchtower. Aqueduct previews additionally accept
 explicit water-source and settlement-endpoint facts and warn when either is
 absent. Bridge previews require an explicit river-crossing fact, while Road
 previews report supplied river crossings without applying their cost effects.
+Fort upgrade previews require an explicit existing Watchtower fact; ordinary
+Fort placement remains distinct from that upgrade path.
 
 ## Safest next implementation slice
 
