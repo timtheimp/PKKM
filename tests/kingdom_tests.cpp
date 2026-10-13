@@ -125,6 +125,8 @@ int main(int argc, char** argv) {
       [](const auto& warning){ return warning.find("existing Road")!=std::string::npos
           || warning.find("Size 26")!=std::string::npos; }),
       "Terrain preview clears resolved Highway upgrade prerequisites");
+ must(road_upgrade.summary.find("Route length 3")!=std::string::npos,
+      "Terrain preview reports supplied route length without applying route effects");
  const auto center=pkkm::greenbelt_hex_center({100.0,50.0,20.0,10.0,1.0},2,4);
  must(center.x==180.0 && center.y==90.0,"Greenbelt calibration projects axial coordinates");
  const auto single_perimeter=pkkm::greenbelt_claimed_perimeter({{0,0,"plains",true,1,"",{}}});

@@ -169,6 +169,9 @@ GreenbeltImprovementPreview preview_greenbelt_improvement(
     preview.known = true;
     preview.summary = item->name + ": " + item->effect
         + " Preview only; BP and kingdom totals are unchanged.";
+    if (facts.route_length > 0)
+        preview.summary += " Route length " + std::to_string(facts.route_length)
+            + " supplied; route effects remain manual.";
     if (!facts.claimed && !manual_override)
         preview.warnings.push_back("The hex is not claimed; manual override is required to preview placement.");
 
