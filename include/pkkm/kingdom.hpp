@@ -163,6 +163,14 @@ struct StabilityCheckOutcome {
  int treasury_delta = 0;
  int unrest_delta = 0;
 };
+struct StabilityCheckPreview {
+ bool success = false;
+ StabilityFailureOutcome failure_outcome = StabilityFailureOutcome::FailByLessThanFour;
+ StabilityCheckOutcome outcome;
+ bool manual_resolution_required = false;
+};
+StabilityCheckPreview preview_stability_check(RuleProfile profile, bool success,
+ int current_unrest, int failure_by = 0, int rolled_unrest = 0);
 StabilityCheckOutcome resolve_stability_check(bool success, int current_unrest,
  int failure_by = 0, int rolled_unrest = 0);
 StabilityCheckOutcome resolve_stability_check(RuleProfile profile, bool success,

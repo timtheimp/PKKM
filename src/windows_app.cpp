@@ -1848,13 +1848,17 @@ void apply_stability_dialog(HWND window) {
     const bool success = SendMessageW(GetDlgItem(window, kStabilitySuccess), BM_GETCHECK, 0, 0) == BST_CHECKED;
     const int failure_by = parse_integer(manager_text(window, kStabilityFailureBy));
     const int rolled_unrest = parse_integer(manager_text(window, kStabilityRoll));
+    const auto preview = pkkm::preview_stability_check(
+        kingdom.rule_profile, success, kingdom.unrest, failure_by, rolled_unrest);
     pkkm::apply_stability_check(kingdom, success, failure_by, rolled_unrest);
     dirty = true;
     refresh(GetDlgItem(GetParent(window), kDisplay));
     const auto& record = kingdom.stability_checks.back();
     const std::wstring status = L"Stability Check applied on Turn " + std::to_wstring(record.turn)
         + L" | BP " + std::to_wstring(record.treasury_delta)
-        + L" | Unrest " + std::to_wstring(record.unrest_delta);
+        + L" | Unrest " + std::to_wstring(record.unrest_delta)
+        + L" | Branch " + (preview.success ? L"success" : L"explicit failure")
+        + L" | Exact-four remains manual";
     SetWindowTextW(GetDlgItem(window, kStabilityStatus), status.c_str());
     refresh_stability_history(window);
     SetWindowTextW(window, L"Turn Actions - Stability Applied");

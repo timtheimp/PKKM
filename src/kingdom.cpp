@@ -436,6 +436,20 @@ StabilityFailureOutcome classify_stability_failure(int failure_by) {
     return StabilityFailureOutcome::FailByAtLeastFive;
 }
 
+StabilityCheckPreview preview_stability_check(RuleProfile profile, bool success,
+    int current_unrest, int failure_by, int rolled_unrest) {
+    if (current_unrest < 0) throw std::invalid_argument("Current unrest cannot be negative");
+    if (success)
+        return {true, StabilityFailureOutcome::FailByLessThanFour,
+            current_unrest == 0 ? StabilityCheckOutcome{1, 0} : StabilityCheckOutcome{0, -1}, false};
+    if (failure_by < 0) throw std::invalid_argument("Stability failure margin cannot be negative");
+    const auto failure_outcome = classify_stability_failure(failure_by);
+    if (failure_outcome == StabilityFailureOutcome::UnresolvedExactlyFour)
+        return {false, failure_outcome, {}, true};
+    return {false, failure_outcome,
+        resolve_stability_check(profile, false, current_unrest, failure_by, rolled_unrest), false};
+}
+
 StabilityCheckOutcome resolve_stability_check(bool success, int current_unrest,
     int failure_by, int rolled_unrest) {
     return resolve_stability_check(RuleProfile::Workbook, success, current_unrest,
