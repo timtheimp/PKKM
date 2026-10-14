@@ -135,7 +135,7 @@ void refresh_map() {
     for (const auto& placement : map_draft.placements) {
         const std::wstring label = L"Building: " + widen(placement.building_name) + L" @ (" +
             std::to_wstring(placement.row) + L"," + std::to_wstring(placement.column) +
-            L")  " + std::to_wstring(placement.width) + L"×" +
+            L")  " + std::to_wstring(placement.width) + L"x" +
             std::to_wstring(placement.height);
         SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label.c_str()));
     }
@@ -149,7 +149,7 @@ void refresh_map() {
         }
         const std::wstring item = L"Label: " + widen(map_label.text) + L" @ (" +
             std::to_wstring(map_label.row) + L"," + std::to_wstring(map_label.column) +
-            L")  " + std::to_wstring(map_label.width) + L"×" +
+            L")  " + std::to_wstring(map_label.width) + L"x" +
             std::to_wstring(map_label.height);
         SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(item.c_str()));
     }
@@ -427,7 +427,7 @@ bool open_map_editor(HWND owner, HINSTANCE instance, const SettlementMap& initia
         map_draft.columns = 8;
     }
     if (map_draft.rows < 1 || map_draft.columns < 1 || map_draft.rows > kMaxGrid || map_draft.columns > kMaxGrid) {
-        MessageBoxW(owner, L"The visual editor supports maps from 1×1 through 20×20. The saved map was not changed.",
+        MessageBoxW(owner, L"The visual editor supports maps from 1x1 through 20x20. The saved map was not changed.",
             L"Map editor", MB_OK | MB_ICONWARNING);
         return false;
     }

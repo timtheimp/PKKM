@@ -261,6 +261,11 @@ void validate(const Kingdom& k) {
         if (std::find(custom_improvement_ids.begin(), custom_improvement_ids.end(), improvement.id)
             != custom_improvement_ids.end())
             throw std::invalid_argument("Greenbelt custom improvement IDs must be unique");
+        if (std::any_of(improvement.effects.begin(), improvement.effects.end(),
+                [](const auto& effect) { return effect.empty(); })
+            || std::any_of(improvement.costs.begin(), improvement.costs.end(),
+                [](const auto& cost) { return cost.empty(); }))
+            throw std::invalid_argument("Greenbelt custom improvement effect and cost entries must not be empty");
         custom_improvement_ids.push_back(improvement.id);
     }
     std::vector<int> seen_turns;
@@ -1139,14 +1144,15 @@ void save(const Kingdom& k, const std::string& path) {
     for (const auto& hex : k.greenbelt_map.hexes)
         output["greenbelt_map"]["hexes"].push_back({{"q", hex.q}, {"r", hex.r}, {"terrain", hex.terrain},
             {"claimed", hex.claimed}, {"claim_turn", hex.claim_turn}, {"settlement_id", hex.settlement_id},
-            {"improvements", hex.improvements}});
+            {"improvements", hex.improvements}, {"terrain_notes", hex.terrain_notes}});
     for (const auto& terrain : k.greenbelt_map.special_terrain)
         output["greenbelt_map"]["special_terrain"].push_back({{"q", terrain.q}, {"r", terrain.r},
             {"type", terrain.type}, {"name", terrain.name}, {"notes", terrain.notes}});
     for (const auto& improvement : k.greenbelt_map.custom_improvements)
         output["greenbelt_map"]["custom_improvements"].push_back({{"id", improvement.id},
             {"name", improvement.name}, {"effect_preview", improvement.effect_preview},
-            {"cost_description", improvement.cost_description}, {"manual_only", improvement.manual_only}});
+            {"cost_description", improvement.cost_description}, {"manual_only", improvement.manual_only},
+            {"effects", improvement.effects}, {"costs", improvement.costs}});
     {
         std::ofstream file(temp, std::ios::binary | std::ios::trunc);
         if (!file) throw std::runtime_error("Cannot create temporary save file");
@@ -1410,6 +1416,8 @@ Kingdom load(const std::string& path) {
             hex.claimed = required_bool(item, "claimed");
             hex.claim_turn = required_int(item, "claim_turn");
             hex.settlement_id = required_string(item, "settlement_id");
+            hex.terrain_notes = item.contains("terrain_notes")
+                ? required_string(item, "terrain_notes") : std::string{};
             for (const auto& improvement : item.at("improvements")) {
                 if (!improvement.is_string()) throw std::runtime_error("Greenbelt improvement ID must be a string");
                 hex.improvements.push_back(improvement.get<std::string>());
@@ -1428,9 +1436,29 @@ Kingdom load(const std::string& path) {
             if (!greenbelt.at("custom_improvements").is_array()) throw std::runtime_error("greenbelt_map custom_improvements must be an array");
             for (const auto& item : greenbelt.at("custom_improvements")) {
                 if (!item.is_object()) throw std::runtime_error("Invalid Greenbelt custom improvement");
-                k.greenbelt_map.custom_improvements.push_back({required_string(item, "id"),
-                    required_string(item, "name"), required_string(item, "effect_preview"),
-                    required_string(item, "cost_description"), required_bool(item, "manual_only")});
+                GreenbeltCustomImprovement improvement{
+                    required_string(item, "id"), required_string(item, "name"),
+                    required_string(item, "effect_preview"), required_string(item, "cost_description"),
+                    required_bool(item, "manual_only")};
+                if (item.contains("effects")) {
+                    if (!item.at("effects").is_array()) throw std::runtime_error("Greenbelt custom improvement effects must be an array");
+                    for (const auto& effect : item.at("effects")) {
+                        if (!effect.is_string()) throw std::runtime_error("Greenbelt custom improvement effect must be a string");
+                        improvement.effects.push_back(effect.get<std::string>());
+                    }
+                } else if (!improvement.effect_preview.empty()) {
+                    improvement.effects.push_back(improvement.effect_preview);
+                }
+                if (item.contains("costs")) {
+                    if (!item.at("costs").is_array()) throw std::runtime_error("Greenbelt custom improvement costs must be an array");
+                    for (const auto& cost : item.at("costs")) {
+                        if (!cost.is_string()) throw std::runtime_error("Greenbelt custom improvement cost must be a string");
+                        improvement.costs.push_back(cost.get<std::string>());
+                    }
+                } else if (!improvement.cost_description.empty()) {
+                    improvement.costs.push_back(improvement.cost_description);
+                }
+                k.greenbelt_map.custom_improvements.push_back(std::move(improvement));
             }
         }
     }
