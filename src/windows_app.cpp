@@ -1431,7 +1431,7 @@ void create_turn_action_controls(HWND window) {
     CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"0", WS_CHILD | WS_VISIBLE | ES_NUMBER,
         270, 1111, 65, 24, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kStabilityFailureBy)), app_instance, nullptr);
-    CreateWindowExW(0, L"STATIC", L"d4 unrest", WS_CHILD | WS_VISIBLE | SS_LEFT,
+    CreateWindowExW(0, L"STATIC", L"Ignored roll input", WS_CHILD | WS_VISIBLE | SS_LEFT,
         350, 1114, 75, 22, window, nullptr, app_instance, nullptr);
     CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"0", WS_CHILD | WS_VISIBLE | ES_NUMBER,
         425, 1111, 65, 24, window,
@@ -1998,8 +1998,9 @@ LRESULT CALLBACK turn_actions_proc(HWND window, UINT message, WPARAM wparam, LPA
                 else if (LOWORD(wparam) == kLoyaltyApply) apply_loyalty_dialog(window);
                 else if (LOWORD(wparam) == kStabilityApply) apply_stability_dialog(window);
                 else if (LOWORD(wparam) == kOptionalMineRule && HIWORD(wparam) == BN_CLICKED) {
-                    kingdom.use_optional_mine_rule = SendMessageW(
-                        GetDlgItem(window, kOptionalMineRule), BM_GETCHECK, 0, 0) == BST_CHECKED;
+                    kingdom.use_optional_mine_rule = !kingdom.use_optional_mine_rule;
+                    SendMessageW(GetDlgItem(window, kOptionalMineRule), BM_SETCHECK,
+                        kingdom.use_optional_mine_rule ? BST_CHECKED : BST_UNCHECKED, 0);
                     dirty = true;
                     SetWindowTextW(window, kingdom.use_optional_mine_rule
                         ? L"Turn Actions - Optional mine rule enabled"
