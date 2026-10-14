@@ -165,7 +165,7 @@ void validate(const Kingdom& k) {
     if (k.schema_version != 10) throw std::invalid_argument("Unsupported schema version");
     if (k.name.empty()) throw std::invalid_argument("Kingdom name must not be empty");
     if (k.turn < 1) throw std::invalid_argument("Turn must be at least 1");
-    if (k.treasury_bp < 0) throw std::invalid_argument("Treasury cannot be negative");
+
     for (const auto& s : k.settlements) {
         if (s.name.empty() || s.population < 0 || s.districts < 0)
             throw std::invalid_argument("Settlement must have a name and nonnegative population/districts");
@@ -336,8 +336,8 @@ void validate(const Kingdom& k) {
     }
     for (const auto& record : k.consumption_actions) {
         if (record.turn < 1 || record.consumption_bp < 1
-            || (record.paid && (record.treasury_delta != -record.consumption_bp || record.unrest_delta != 0))
-            || (!record.paid && (record.treasury_delta != 0 || record.unrest_delta != 2)))
+            || record.treasury_delta != -record.consumption_bp
+            || record.unrest_delta != (record.paid ? 0 : 2))
             throw std::invalid_argument("Consumption record has inconsistent values");
     }
     for (const auto& record : k.unrest_modifications) {
@@ -611,10 +611,12 @@ void apply_consumption_action(Kingdom& kingdom, int consumption_bp) {
     validate(kingdom);
     if (consumption_bp < 1) throw std::invalid_argument("Consumption must be at least 1 BP");
     const bool paid = kingdom.treasury_bp >= consumption_bp;
-    const int treasury_delta = paid ? -consumption_bp : 0;
+    const int treasury_delta = -consumption_bp;
     const int unrest_delta = paid ? 0 : 2;
-    if (paid) kingdom.treasury_bp += treasury_delta;
-    else kingdom.unrest += unrest_delta;
+    if (kingdom.treasury_bp < std::numeric_limits<int>::min() - treasury_delta)
+        throw std::overflow_error("Consumption would overflow negative treasury");
+    kingdom.treasury_bp += treasury_delta;
+    kingdom.unrest += unrest_delta;
     kingdom.consumption_actions.push_back({kingdom.turn, consumption_bp, paid,
         treasury_delta, unrest_delta});
     validate(kingdom);

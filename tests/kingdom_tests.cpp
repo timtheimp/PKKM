@@ -689,14 +689,17 @@ int main(int argc, char** argv) {
       && consumption_k.consumption_actions[0].paid,
       "consumption is paid when treasury covers the caller-supplied amount");
  pkkm::apply_consumption_action(consumption_k, 2);
- must(consumption_k.treasury_bp==1 && consumption_k.unrest==2
+ must(consumption_k.treasury_bp==-1 && consumption_k.unrest==2
       && !consumption_k.consumption_actions[1].paid,
-      "insufficient consumption payment adds the source-defined two unrest");
+      "insufficient consumption payment deducts into negative treasury and adds two unrest");
  const std::string consumption_path="pkkm_test_consumption.json";
  pkkm::save(consumption_k, consumption_path);
  const auto consumption_r=pkkm::load(consumption_path);
- must(consumption_r.consumption_actions.size()==2 && !consumption_r.consumption_actions[1].paid,
-      "consumption records roundtrip through JSON persistence");
+ must(consumption_r.treasury_bp==-1 && consumption_r.unrest==2
+      && consumption_r.consumption_actions.size()==2
+      && consumption_r.consumption_actions[1].treasury_delta==-2
+      && !consumption_r.consumption_actions[1].paid,
+      "negative treasury and consumption records roundtrip through JSON persistence");
  std::remove(consumption_path.c_str());
  pkkm::Kingdom unrest_k=k;
  unrest_k.unrest=2;
