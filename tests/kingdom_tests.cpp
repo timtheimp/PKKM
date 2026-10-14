@@ -641,6 +641,21 @@ int main(int argc, char** argv) {
       && surplus_food.effective_consumption==-4 && surplus_food.surplus_bp==4
       && pkkm::preview_quarry_income(3)==3,
       "food reductions convert consumption below zero to BP and quarries yield one BP each");
+ const auto upkeep=pkkm::preview_upkeep(k, false, 5, true, 5);
+ must(upkeep.starting_treasury==120 && upkeep.starting_unrest==2
+      && !upkeep.skipped_for_no_hexes && upkeep.stability_unrest_delta==2
+      && upkeep.consumption_paid && upkeep.projected_treasury==115
+      && upkeep.royal_assassin_unrest_delta==-1 && upkeep.projected_unrest==3
+      && !upkeep.loses_hex && !upkeep.anarchy
+      && k.treasury_bp==120 && k.unrest==2,
+      "upkeep preview composes stability, consumption, and Royal Assassin without mutation");
+ auto empty_kingdom=k;
+ empty_kingdom.greenbelt_map.hexes.clear();
+ const auto skipped_upkeep=pkkm::preview_upkeep(empty_kingdom, false, 5, true, 5);
+ must(skipped_upkeep.skipped_for_no_hexes && skipped_upkeep.projected_treasury==120
+      && skipped_upkeep.projected_unrest==2,
+      "upkeep preview skips a kingdom with no controlled hexes");
+ must_reject([&]{ (void)pkkm::preview_upkeep(k, true, 0, false); });
  pkkm::Kingdom item_outcome_k=k;
  pkkm::apply_magic_item_outcome(item_outcome_k, pkkm::MagicItemCategory::Minor, true);
  pkkm::apply_magic_item_outcome(item_outcome_k, pkkm::MagicItemCategory::Medium, false);
