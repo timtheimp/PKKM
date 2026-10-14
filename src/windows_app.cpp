@@ -60,6 +60,8 @@ constexpr int kMapSummary = 5120;
 constexpr int kChecklistApply = 6201;
 constexpr int kChecklistCancel = 6202;
 constexpr int kChecklistClose = 6203;
+constexpr int kChecklistEventLastTurn = 6204;
+constexpr int kChecklistTransitionStatus = 6205;
 constexpr int kChecklistControlBase = 6300;
 constexpr int kActionChoice = 6400;
 constexpr int kActionCount = 6401;
@@ -1212,12 +1214,28 @@ void create_turn_checklist_controls(HWND window) {
         checklist_controls.push_back(control);
         checklist_step_ids.push_back(step.id);
     }
+    CreateWindowExW(0, L"BUTTON", L"Event occurred last turn", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        24, 535, 220, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistEventLastTurn)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        250, 535, 420, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistTransitionStatus)), app_instance, nullptr);
     CreateWindowExW(0, L"BUTTON", L"Apply", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
         692, 535, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistApply)), app_instance, nullptr);
     CreateWindowExW(0, L"BUTTON", L"Cancel", WS_CHILD | WS_VISIBLE,
         790, 535, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistCancel)), app_instance, nullptr);
     CreateWindowExW(0, L"BUTTON", L"Close", WS_CHILD | WS_VISIBLE,
         888, 535, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistClose)), app_instance, nullptr);
+}
+
+void refresh_turn_transition_preview(HWND window) {
+    const bool event_occurred_last_turn = SendMessageW(
+        GetDlgItem(window, kChecklistEventLastTurn), BM_GETCHECK, 0, 0) == BST_CHECKED;
+    const auto preview = pkkm::preview_turn_transition(kingdom, event_occurred_last_turn);
+    const auto status = L"Next turn: " + std::to_wstring(preview.next_turn)
+        + L" | Event chance: " + std::to_wstring(preview.event_trigger_percent)
+        + L"% | Event resolution: manual";
+    SetWindowTextW(GetDlgItem(window, kChecklistTransitionStatus), status.c_str());
 }
 
 void refresh_turn_checklist_controls() {
@@ -3834,11 +3852,18 @@ LRESULT CALLBACK turn_checklist_proc(HWND window, UINT message, WPARAM wparam, L
     switch (message) {
         case WM_CREATE:
             create_turn_checklist_controls(window);
+            refresh_turn_transition_preview(window);
             SetWindowTextW(window, (L"Turn Checklist - Turn " + std::to_wstring(kingdom.turn)).c_str());
             return 0;
         case WM_COMMAND:
-            if (LOWORD(wparam) == kChecklistApply) apply_turn_checklist(window);
-            else if (LOWORD(wparam) == kChecklistCancel) refresh_turn_checklist_controls();
+            if (LOWORD(wparam) == kChecklistEventLastTurn && HIWORD(wparam) == BN_CLICKED)
+                refresh_turn_transition_preview(window);
+            else if (LOWORD(wparam) == kChecklistApply) apply_turn_checklist(window);
+            else if (LOWORD(wparam) == kChecklistCancel) {
+                refresh_turn_checklist_controls();
+                CheckDlgButton(window, kChecklistEventLastTurn, BST_UNCHECKED);
+                refresh_turn_transition_preview(window);
+            }
             else if (LOWORD(wparam) == kChecklistClose) DestroyWindow(window);
             return 0;
         case WM_CLOSE:
