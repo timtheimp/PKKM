@@ -597,6 +597,16 @@ void apply_consumption_action(Kingdom& kingdom, int consumption_bp) {
     validate(kingdom);
 }
 
+UnrestModificationPreview preview_unrest_modification(const Kingdom& kingdom, int negative_stat_count) {
+    validate(kingdom);
+    if (negative_stat_count < 0) throw std::invalid_argument("Negative stat count cannot be negative");
+    if (negative_stat_count > std::numeric_limits<int>::max() - kingdom.unrest)
+        throw std::overflow_error("Unrest modification would overflow unrest");
+    const int projected_unrest = kingdom.unrest + negative_stat_count;
+    return {kingdom.unrest, negative_stat_count, projected_unrest,
+        projected_unrest >= 11, projected_unrest >= 20};
+}
+
 void apply_unrest_modification(Kingdom& kingdom, int negative_stat_count) {
     validate(kingdom);
     if (negative_stat_count < 0) throw std::invalid_argument("Negative stat count cannot be negative");

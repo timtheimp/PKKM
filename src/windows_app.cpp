@@ -1877,13 +1877,17 @@ void apply_consumption_dialog(HWND window) {
 
 void apply_unrest_dialog(HWND window) {
     const int negative_stat_count = parse_integer(manager_text(window, kUnrestNegativeStats));
+    const auto preview = pkkm::preview_unrest_modification(kingdom, negative_stat_count);
     pkkm::apply_unrest_modification(kingdom, negative_stat_count);
     dirty = true;
     refresh(GetDlgItem(GetParent(window), kDisplay));
     const auto& record = kingdom.unrest_modifications.back();
     const std::wstring status = L"Unrest modification applied on Turn " + std::to_wstring(record.turn)
         + L" | Unrest +" + std::to_wstring(record.unrest_delta)
-        + L" | Threshold outcomes remain manual";
+        + L" | Projected unrest " + std::to_wstring(preview.projected_unrest)
+        + L" | Lose hex: " + (preview.loses_hex ? L"yes" : L"no")
+        + L" | Anarchy: " + (preview.anarchy ? L"yes" : L"no")
+        + L" | Consequences remain manual";
     SetWindowTextW(GetDlgItem(window, kUnrestStatus), status.c_str());
     refresh_unrest_history(window);
     SetWindowTextW(window, L"Turn Actions - Unrest Modified");

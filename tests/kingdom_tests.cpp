@@ -696,6 +696,18 @@ int main(int argc, char** argv) {
  must(unrest_r.unrest_modifications.size()==1
       && unrest_r.unrest_modifications[0].negative_stat_count==3,
       "unrest modification records roundtrip through JSON persistence");
+ pkkm::Kingdom unrest_preview_k=k;
+ const auto unrest_preview_5=pkkm::preview_unrest_modification(unrest_preview_k, 3);
+ unrest_preview_k.unrest=8;
+ const auto unrest_preview_11=pkkm::preview_unrest_modification(unrest_preview_k, 3);
+ unrest_preview_k.unrest=17;
+ const auto unrest_preview_20=pkkm::preview_unrest_modification(unrest_preview_k, 3);
+ must(unrest_preview_5.projected_unrest==5 && !unrest_preview_5.loses_hex && !unrest_preview_5.anarchy
+      && unrest_preview_11.projected_unrest==11 && unrest_preview_11.loses_hex && !unrest_preview_11.anarchy
+      && unrest_preview_20.projected_unrest==20 && unrest_preview_20.loses_hex && unrest_preview_20.anarchy
+      && unrest_preview_k.unrest==17 && unrest_preview_k.unrest_modifications.empty(),
+      "unrest phase preview exposes source thresholds without mutating state");
+ must_reject([&]{ (void)pkkm::preview_unrest_modification(unrest_preview_k, -1); });
  std::remove(unrest_path.c_str());
  const auto magic_items=pkkm::magic_item_workflow();
  must(magic_items.buy_item_moves_to_pc && magic_items.success_recycles_item
