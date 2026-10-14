@@ -65,14 +65,14 @@ class CatalogCliTests(unittest.TestCase):
             capture_output=True,
             text=True,
         )
-        self.assertEqual(result.stdout.strip(), "PKKM 0.1.7")
+        self.assertEqual(result.stdout.strip(), "PKKM 0.1.8")
         alias_result = subprocess.run(
             [str(EXECUTABLE), "version"],
             check=True,
             capture_output=True,
             text=True,
         )
-        self.assertEqual(alias_result.stdout.strip(), "PKKM 0.1.7")
+        self.assertEqual(alias_result.stdout.strip(), "PKKM 0.1.8")
         version_flag = subprocess.run(
             [str(EXECUTABLE), "--version"],
             check=True,
