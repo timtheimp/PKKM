@@ -37,6 +37,7 @@ struct GreenbeltHex {
  int claim_turn = 0;
  std::string settlement_id;
  std::vector<std::string> improvements;
+ std::string terrain_notes;
 };
 struct GreenbeltSpecialTerrain {
  int q = 0; int r = 0;
@@ -50,6 +51,8 @@ struct GreenbeltCustomImprovement {
  std::string effect_preview;
  std::string cost_description;
  bool manual_only = true;
+ std::vector<std::string> effects;
+ std::vector<std::string> costs;
 };
 struct GreenbeltMap {
  std::string asset_path;

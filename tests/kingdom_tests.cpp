@@ -30,9 +30,12 @@ int main(int argc, char** argv) {
  k.greenbelt_map.image_width=7865; k.greenbelt_map.image_height=2610;
  k.greenbelt_map.calibration={120.0, 40.0, 46.0, 40.0, 1.0};
  k.greenbelt_map.hexes.push_back({3, -2, "plains", true, 4, "settlement.oak", {"farm"}});
+ k.greenbelt_map.hexes[0].terrain_notes="Seasonal river crossing; verify after spring thaw.";
  k.greenbelt_map.special_terrain.push_back({4, -1, "river", "North Fork", "Manual waterway record"});
  k.greenbelt_map.custom_improvements.push_back({"custom.greenhouse", "Greenhouse",
-     "Manual effect preview", "Manual cost", true});
+     "Manual effect preview", "Manual cost", true,
+     {"Provides a sheltered growing area.", "Adds a manual seasonal bonus."},
+     {"Reduced by an adjacent Farm.", "Requires a river crossing."}});
  k.buildings.push_back({"Granary", 2});
  const std::string path="pkkm_test_roundtrip.json";
  k.rule_inputs.alignment = "CE";
@@ -63,15 +66,40 @@ int main(int argc, char** argv) {
       && r.greenbelt_map.hexes.size()==1 && r.greenbelt_map.hexes[0].q==3
       && r.greenbelt_map.hexes[0].r==-2 && r.greenbelt_map.hexes[0].claimed
       && r.greenbelt_map.hexes[0].settlement_id=="settlement.oak"
-      && r.greenbelt_map.hexes[0].improvements[0]=="farm",
+      && r.greenbelt_map.hexes[0].improvements[0]=="farm"
+      && r.greenbelt_map.hexes[0].terrain_notes=="Seasonal river crossing; verify after spring thaw.",
       "schema 10 roundtrips Greenbelt calibration and linked hex state");
  must(r.greenbelt_map.special_terrain.size()==1
       && r.greenbelt_map.special_terrain[0].type=="river"
       && r.greenbelt_map.special_terrain[0].name=="North Fork"
       && r.greenbelt_map.custom_improvements.size()==1
       && r.greenbelt_map.custom_improvements[0].id=="custom.greenhouse"
+      && r.greenbelt_map.custom_improvements[0].effects.size()==2
+      && r.greenbelt_map.custom_improvements[0].effects[0]=="Provides a sheltered growing area."
+      && r.greenbelt_map.custom_improvements[0].effects[1]=="Adds a manual seasonal bonus."
+      && r.greenbelt_map.custom_improvements[0].costs.size()==2
+      && r.greenbelt_map.custom_improvements[0].costs[0]=="Reduced by an adjacent Farm."
+      && r.greenbelt_map.custom_improvements[0].costs[1]=="Requires a river crossing."
       && r.greenbelt_map.custom_improvements[0].manual_only,
       "schema 10 roundtrips special terrain and custom Greenbelt improvements");
+ auto legacy_custom_json=nlohmann::json::parse(contents(path));
+ legacy_custom_json["greenbelt_map"]["custom_improvements"][0].erase("effects");
+ legacy_custom_json["greenbelt_map"]["custom_improvements"][0].erase("costs");
+ const std::string legacy_custom_path="pkkm_test_legacy_custom.json";
+ put(legacy_custom_path, legacy_custom_json.dump(2));
+ const auto legacy_custom=pkkm::load(legacy_custom_path);
+ must(legacy_custom.greenbelt_map.custom_improvements[0].effects.size()==1
+      && legacy_custom.greenbelt_map.custom_improvements[0].effects[0]=="Manual effect preview"
+      && legacy_custom.greenbelt_map.custom_improvements[0].costs.size()==1
+      && legacy_custom.greenbelt_map.custom_improvements[0].costs[0]=="Manual cost",
+      "legacy custom improvements migrate preview and cost into single entries");
+ auto malformed_custom_json=legacy_custom_json;
+ malformed_custom_json["greenbelt_map"]["custom_improvements"][0]["effects"]={""};
+ const std::string malformed_custom_path="pkkm_test_malformed_custom.json";
+ put(malformed_custom_path, malformed_custom_json.dump(2));
+ must_reject([&] { pkkm::load(malformed_custom_path); });
+ std::remove(legacy_custom_path.c_str());
+ std::remove(malformed_custom_path.c_str());
  const auto& greenbelt_catalog=pkkm::greenbelt_improvement_catalog();
  const auto* vineyard=pkkm::find_greenbelt_improvement(greenbelt_catalog,"vineyard");
  must(greenbelt_catalog.size()==14 && vineyard!=nullptr && vineyard->third_party
