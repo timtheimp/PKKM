@@ -331,10 +331,7 @@ void validate(const Kingdom& k) {
                 || (record.treasury_delta == 0 && record.unrest_delta == -1)))
             || (!record.success && record.treasury_delta != 0)
             || (!record.success && record.failure_by < 4 && record.unrest_delta != 1)
-            || (!record.success && record.failure_by >= 5 && record.rule_profile == RuleProfile::CityInfo
-                && record.unrest_delta != 2)
-            || (!record.success && record.failure_by >= 5 && record.rule_profile == RuleProfile::Workbook
-                && record.unrest_delta != record.rolled_unrest))
+            || (!record.success && record.failure_by >= 5 && record.unrest_delta != 2))
             throw std::invalid_argument("Stability check record has inconsistent values");
     }
     for (const auto& record : k.consumption_actions) {
@@ -432,7 +429,7 @@ const std::vector<TurnChecklistStep>& turn_checklist_steps() {
 
 StabilityFailureOutcome classify_stability_failure(int failure_by) {
     if (failure_by < 4) return StabilityFailureOutcome::FailByLessThanFour;
-    if (failure_by == 4) return StabilityFailureOutcome::UnresolvedExactlyFour;
+    if (failure_by == 4) throw std::invalid_argument("Stability failure margin of 4 is not used by this rule set");
     return StabilityFailureOutcome::FailByAtLeastFive;
 }
 
@@ -441,13 +438,11 @@ StabilityCheckPreview preview_stability_check(RuleProfile profile, bool success,
     if (current_unrest < 0) throw std::invalid_argument("Current unrest cannot be negative");
     if (success)
         return {true, StabilityFailureOutcome::FailByLessThanFour,
-            current_unrest == 0 ? StabilityCheckOutcome{1, 0} : StabilityCheckOutcome{0, -1}, false};
+            current_unrest == 0 ? StabilityCheckOutcome{1, 0} : StabilityCheckOutcome{0, -1}};
     if (failure_by < 0) throw std::invalid_argument("Stability failure margin cannot be negative");
     const auto failure_outcome = classify_stability_failure(failure_by);
-    if (failure_outcome == StabilityFailureOutcome::UnresolvedExactlyFour)
-        return {false, failure_outcome, {}, true};
     return {false, failure_outcome,
-        resolve_stability_check(profile, false, current_unrest, failure_by, rolled_unrest), false};
+        resolve_stability_check(profile, false, current_unrest, failure_by, rolled_unrest)};
 }
 
 StabilityCheckOutcome resolve_stability_check(bool success, int current_unrest,
@@ -459,19 +454,33 @@ StabilityCheckOutcome resolve_stability_check(bool success, int current_unrest,
 StabilityCheckOutcome resolve_stability_check(RuleProfile profile, bool success,
     int current_unrest, int failure_by, int rolled_unrest) {
     if (current_unrest < 0) throw std::invalid_argument("Current unrest cannot be negative");
+    (void)profile;
+    (void)rolled_unrest;
     if (success) return current_unrest == 0 ? StabilityCheckOutcome{1, 0} : StabilityCheckOutcome{0, -1};
     if (failure_by < 0) throw std::invalid_argument("Stability failure margin cannot be negative");
     switch (classify_stability_failure(failure_by)) {
         case StabilityFailureOutcome::FailByLessThanFour: return {0, 1};
-        case StabilityFailureOutcome::UnresolvedExactlyFour:
-            throw std::invalid_argument("Stability failure by exactly 4 requires manual resolution");
         case StabilityFailureOutcome::FailByAtLeastFive:
-            if (profile == RuleProfile::CityInfo) return {0, 2};
-            if (rolled_unrest < 1 || rolled_unrest > 4)
-                throw std::invalid_argument("Stability failure by 5 or more requires a caller-supplied 1d4 unrest result");
-            return {0, rolled_unrest};
+            return {0, 2};
     }
     throw std::logic_error("Unknown Stability failure outcome");
+}
+
+FoodResourcePreview preview_food_resource(int starting_consumption, int farm_count, int extra_reduction) {
+    if (starting_consumption < 0 || farm_count < 0 || extra_reduction < 0)
+        throw std::invalid_argument("Food resource inputs cannot be negative");
+    const long long farm_reduction = static_cast<long long>(farm_count) * 2;
+    const long long effective = static_cast<long long>(starting_consumption) - farm_reduction - extra_reduction;
+    if (farm_reduction > std::numeric_limits<int>::max()
+        || effective < std::numeric_limits<int>::min() || effective > std::numeric_limits<int>::max())
+        throw std::overflow_error("Food resource preview would overflow");
+    return {starting_consumption, static_cast<int>(farm_reduction), extra_reduction,
+        static_cast<int>(effective), effective < 0 ? static_cast<int>(-effective) : 0};
+}
+
+int preview_quarry_income(int quarry_count) {
+    if (quarry_count < 0) throw std::invalid_argument("Quarry count cannot be negative");
+    return quarry_count;
 }
 
 TurnActionOutcome resolve_turn_action(TurnAction action) {
@@ -1086,6 +1095,7 @@ void save(const Kingdom& k, const std::string& path) {
     const Json document = {
         {"schema_version", k.schema_version}, {"name", k.name}, {"turn", k.turn},
         {"treasury_bp", k.treasury_bp}, {"unrest", k.unrest}, {"rule_profile", rule_profile_name(k.rule_profile)},
+        {"use_optional_mine_rule", k.use_optional_mine_rule},
         {"settlements", Json::array()}, {"buildings", Json::array()},
         {"turn_progress", Json::array()}, {"turn_actions", Json::array()}, {"tax_actions", Json::array()},
                 {"stability_checks", Json::array()}, {"consumption_actions", Json::array()}, {"unrest_modifications", Json::array()}, {"gold_withdrawals", Json::array()}, {"gold_deposits", Json::array()}, {"item_deposits", Json::array()}, {"loyalty_checks", Json::array()}, {"commissions", Json::array()}, {"magic_item_outcomes", Json::array()}, {"calendar_notes", Json::array()},
@@ -1234,6 +1244,7 @@ Kingdom load(const std::string& path) {
     k.treasury_bp = required_int(root, "treasury_bp");
     k.unrest = required_int(root, "unrest");
     if (root.contains("rule_profile")) k.rule_profile = rule_profile_from_name(required_string(root, "rule_profile"));
+    if (root.contains("use_optional_mine_rule")) k.use_optional_mine_rule = required_bool(root, "use_optional_mine_rule");
     if (root.contains("rules")) k.rule_inputs = read_rule_inputs(root.at("rules"));
     for (const auto& item : root.at("settlements")) {
         if (!item.is_object() || !item.contains("name") || !item.contains("population")) throw std::runtime_error("Invalid settlement entry");

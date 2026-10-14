@@ -121,6 +121,7 @@ constexpr int kConsumptionBp = 6431;
 constexpr int kConsumptionApply = 6432;
 constexpr int kConsumptionStatus = 6433;
 constexpr int kConsumptionHistory = 6434;
+constexpr int kOptionalMineRule = 6439;
 constexpr int kUnrestNegativeStats = 6435;
 constexpr int kUnrestApply = 6436;
 constexpr int kUnrestStatus = 6437;
@@ -1420,7 +1421,7 @@ void create_turn_action_controls(HWND window) {
     CreateWindowExW(0, L"STATIC", L"No Loyalty Check applied.", WS_CHILD | WS_VISIBLE | SS_LEFT,
         380, 1060, 200, 22, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kLoyaltyStatus)), app_instance, nullptr);
-    CreateWindowExW(0, L"STATIC", L"Stability Check (profile resolves failure branch; exactly 4 remains manual)",
+    CreateWindowExW(0, L"STATIC", L"Stability Check (failure by 4 is not used by this rule set)",
         WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 1085, 560, 22, window, nullptr, app_instance, nullptr);
     CreateWindowExW(0, L"BUTTON", L"Check succeeded", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
         20, 1112, 160, 24, window,
@@ -1447,6 +1448,11 @@ void create_turn_action_controls(HWND window) {
         WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOINTEGRALHEIGHT,
         20, 1235, 575, 75, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kStabilityHistory)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Use optional GM mine rule", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        20, 1310, 220, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kOptionalMineRule)), app_instance, nullptr);
+    SendMessageW(GetDlgItem(window, kOptionalMineRule), BM_SETCHECK,
+        kingdom.use_optional_mine_rule ? BST_CHECKED : BST_UNCHECKED, 0);
     CreateWindowExW(0, L"STATIC", L"Pay Consumption (amount is caller-supplied)",
         WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 1325, 400, 22, window, nullptr, app_instance, nullptr);
     CreateWindowExW(0, L"STATIC", L"Consumption BP", WS_CHILD | WS_VISIBLE | SS_LEFT,
@@ -1857,8 +1863,7 @@ void apply_stability_dialog(HWND window) {
     const std::wstring status = L"Stability Check applied on Turn " + std::to_wstring(record.turn)
         + L" | BP " + std::to_wstring(record.treasury_delta)
         + L" | Unrest " + std::to_wstring(record.unrest_delta)
-        + L" | Branch " + (preview.success ? L"success" : L"explicit failure")
-        + L" | Exact-four remains manual";
+        + L" | Branch " + (preview.success ? L"success" : L"explicit failure");
     SetWindowTextW(GetDlgItem(window, kStabilityStatus), status.c_str());
     refresh_stability_history(window);
     SetWindowTextW(window, L"Turn Actions - Stability Applied");
@@ -1992,6 +1997,14 @@ LRESULT CALLBACK turn_actions_proc(HWND window, UINT message, WPARAM wparam, LPA
                 else if (LOWORD(wparam) == kDepositItemApply) apply_item_deposit_dialog(window);
                 else if (LOWORD(wparam) == kLoyaltyApply) apply_loyalty_dialog(window);
                 else if (LOWORD(wparam) == kStabilityApply) apply_stability_dialog(window);
+                else if (LOWORD(wparam) == kOptionalMineRule && HIWORD(wparam) == BN_CLICKED) {
+                    kingdom.use_optional_mine_rule = SendMessageW(
+                        GetDlgItem(window, kOptionalMineRule), BM_GETCHECK, 0, 0) == BST_CHECKED;
+                    dirty = true;
+                    SetWindowTextW(window, kingdom.use_optional_mine_rule
+                        ? L"Turn Actions - Optional mine rule enabled"
+                        : L"Turn Actions - Optional mine rule disabled");
+                }
                 else if (LOWORD(wparam) == kConsumptionApply) apply_consumption_dialog(window);
                 else if (LOWORD(wparam) == kUnrestApply) apply_unrest_dialog(window);
                 else if (LOWORD(wparam) == kCommissionApply) apply_commission_dialog(window);

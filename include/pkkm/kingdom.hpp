@@ -156,7 +156,7 @@ struct TurnProgress {
 };
 const std::vector<TurnChecklistStep>& turn_checklist_steps();
 enum class RuleProfile { Workbook, CityInfo };
-enum class StabilityFailureOutcome { FailByLessThanFour, UnresolvedExactlyFour, FailByAtLeastFive };
+enum class StabilityFailureOutcome { FailByLessThanFour, FailByAtLeastFive };
 StabilityFailureOutcome classify_stability_failure(int failure_by);
 enum class StabilityCheckBranch { Success, FailByLessThanFour, FailByAtLeastFive };
 struct StabilityCheckOutcome {
@@ -167,7 +167,6 @@ struct StabilityCheckPreview {
  bool success = false;
  StabilityFailureOutcome failure_outcome = StabilityFailureOutcome::FailByLessThanFour;
  StabilityCheckOutcome outcome;
- bool manual_resolution_required = false;
 };
 StabilityCheckPreview preview_stability_check(RuleProfile profile, bool success,
  int current_unrest, int failure_by = 0, int rolled_unrest = 0);
@@ -231,7 +230,17 @@ struct ConsumptionRecord {
  int treasury_delta = 0;
  int unrest_delta = 0;
 };
+struct FoodResourcePreview {
+ int starting_consumption = 0;
+ int farm_reduction = 0;
+ int extra_reduction = 0;
+ int effective_consumption = 0;
+ int surplus_bp = 0;
+};
+FoodResourcePreview preview_food_resource(int starting_consumption, int farm_count,
+ int extra_reduction);
 void apply_consumption_action(Kingdom& kingdom, int consumption_bp);
+int preview_quarry_income(int quarry_count);
 struct UnrestModificationRecord {
  int turn = 1;
  int negative_stat_count = 0;
@@ -350,6 +359,7 @@ struct Kingdom {
  int treasury_bp = 0;
  int unrest = 0;
  RuleProfile rule_profile = RuleProfile::Workbook;
+ bool use_optional_mine_rule = false;
  KingdomRuleInputs rule_inputs;
  std::vector<Settlement> settlements;
  std::vector<Building> buildings;
