@@ -122,6 +122,9 @@ constexpr int kConsumptionApply = 6432;
 constexpr int kConsumptionStatus = 6433;
 constexpr int kConsumptionHistory = 6434;
 constexpr int kOptionalMineRule = 6439;
+constexpr int kRoyalAssassinEmployed = 6440;
+constexpr int kUpkeepPreview = 6441;
+constexpr int kUpkeepStatus = 6442;
 constexpr int kUnrestNegativeStats = 6435;
 constexpr int kUnrestApply = 6436;
 constexpr int kUnrestStatus = 6437;
@@ -1544,6 +1547,17 @@ void create_turn_action_controls(HWND window) {
         WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOINTEGRALHEIGHT,
         20, 2107, 575, 85, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kMagicItemHistory)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Upkeep preview (non-mutating)",
+        WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 2215, 300, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Royal Assassin employed", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        20, 2245, 180, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kRoyalAssassinEmployed)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Preview Upkeep", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+        230, 2240, 135, 30, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kUpkeepPreview)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"No Upkeep preview generated this session.", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 2275, 575, 22, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kUpkeepStatus)), app_instance, nullptr);
 }
 
 const wchar_t* turn_action_label(pkkm::TurnAction action) {
@@ -1884,6 +1898,32 @@ void apply_consumption_dialog(HWND window) {
     SetWindowTextW(window, L"Turn Actions - Consumption Applied");
 }
 
+void preview_upkeep_dialog(HWND window) {
+    const bool stability_success = SendMessageW(
+        GetDlgItem(window, kStabilitySuccess), BM_GETCHECK, 0, 0) == BST_CHECKED;
+    const int failure_by = parse_integer(manager_text(window, kStabilityFailureBy));
+    const int rolled_unrest = parse_integer(manager_text(window, kStabilityRoll));
+    const int consumption_bp = parse_integer(manager_text(window, kConsumptionBp));
+    const bool royal_assassin_employed = SendMessageW(
+        GetDlgItem(window, kRoyalAssassinEmployed), BM_GETCHECK, 0, 0) == BST_CHECKED;
+    const auto preview = pkkm::preview_upkeep(kingdom, stability_success, consumption_bp,
+        royal_assassin_employed, failure_by, rolled_unrest);
+    std::wstring status;
+    if (preview.skipped_for_no_hexes) {
+        status = L"Upkeep skipped: kingdom controls no hexes";
+    } else {
+        status = L"Upkeep preview | Treasury " + std::to_wstring(preview.projected_treasury)
+            + L" | Unrest " + std::to_wstring(preview.projected_unrest)
+            + L" | Consumption " + (preview.consumption_paid ? L"paid" : L"insufficient")
+            + L" | Royal Assassin "
+            + (preview.royal_assassin_unrest_delta ? L"-1 Unrest" : L"inactive")
+            + L" | Lose hex: " + (preview.loses_hex ? L"yes" : L"no")
+            + L" | Anarchy: " + (preview.anarchy ? L"yes" : L"no");
+    }
+    SetWindowTextW(GetDlgItem(window, kUpkeepStatus), status.c_str());
+    SetWindowTextW(window, L"Turn Actions - Upkeep Preview");
+}
+
 void apply_unrest_dialog(HWND window) {
     const int negative_stat_count = parse_integer(manager_text(window, kUnrestNegativeStats));
     const auto preview = pkkm::preview_unrest_modification(kingdom, negative_stat_count);
@@ -2007,6 +2047,7 @@ LRESULT CALLBACK turn_actions_proc(HWND window, UINT message, WPARAM wparam, LPA
                         : L"Turn Actions - Optional mine rule disabled");
                 }
                 else if (LOWORD(wparam) == kConsumptionApply) apply_consumption_dialog(window);
+                else if (LOWORD(wparam) == kUpkeepPreview) preview_upkeep_dialog(window);
                 else if (LOWORD(wparam) == kUnrestApply) apply_unrest_dialog(window);
                 else if (LOWORD(wparam) == kCommissionApply) apply_commission_dialog(window);
                 else if (LOWORD(wparam) == kMagicItemApply) apply_magic_item_dialog(window);
