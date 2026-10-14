@@ -387,20 +387,16 @@ int main(int argc, char** argv) {
  must(std::count_if(turn_steps.begin(),turn_steps.end(),[](const auto& step){return step.optional;})==4,
       "manual checklist preserves all four source optional tasks");
  must(pkkm::classify_stability_failure(3)==pkkm::StabilityFailureOutcome::FailByLessThanFour
-      && pkkm::classify_stability_failure(4)==pkkm::StabilityFailureOutcome::UnresolvedExactlyFour
       && pkkm::classify_stability_failure(5)==pkkm::StabilityFailureOutcome::FailByAtLeastFive,
-      "stability failure boundary remains explicit instead of inventing the missing exact-four outcome");
+      "stability failure uses only the supported branches");
  const auto stability_success=pkkm::preview_stability_check(pkkm::RuleProfile::Workbook, true, 0);
  const auto stability_fail=pkkm::preview_stability_check(pkkm::RuleProfile::Workbook, false, 2, 3);
- const auto stability_exact_four=pkkm::preview_stability_check(pkkm::RuleProfile::Workbook, false, 2, 4);
+
  const auto stability_city_info=pkkm::preview_stability_check(pkkm::RuleProfile::CityInfo, false, 2, 5);
  must(stability_success.outcome.treasury_delta==1 && stability_success.outcome.unrest_delta==0
-      && !stability_success.manual_resolution_required
       && stability_fail.outcome.unrest_delta==1
-      && stability_exact_four.manual_resolution_required
-      && stability_exact_four.outcome.treasury_delta==0 && stability_exact_four.outcome.unrest_delta==0
       && stability_city_info.outcome.unrest_delta==2,
-      "stability preview exposes explicit branches and keeps exact-four manual");
+      "stability preview exposes the supported failure branches");
  const auto claim_hex=pkkm::resolve_turn_action(pkkm::TurnAction::ClaimHex);
  const auto abandon_hex=pkkm::resolve_turn_action(pkkm::TurnAction::AbandonHex);
  const auto abandon_city=pkkm::resolve_turn_action(pkkm::TurnAction::AbandonCity);
@@ -631,13 +627,20 @@ int main(int argc, char** argv) {
  must(pkkm::resolve_stability_check(true, 3).unrest_delta==-1,
       "successful stability check reduces positive unrest");
  must(pkkm::resolve_stability_check(false, 0, 3).unrest_delta==1,
-      "stability failure by less than four yields one unrest");
- must(pkkm::resolve_stability_check(false, 0, 5, 4).unrest_delta==4,
-      "stability failure by five or more preserves caller-supplied d4 unrest");
+      "stability failure by less than five yields one unrest");
+ must(pkkm::resolve_stability_check(false, 0, 5, 4).unrest_delta==2,
+      "stability failure by five or more applies two unrest");
  must(pkkm::resolve_stability_check(pkkm::RuleProfile::CityInfo, false, 0, 5, 4).unrest_delta==2,
       "City Info stability failure by five or more applies two unrest");
  must_reject([&]{ (void)pkkm::resolve_stability_check(false, 0, 4, 0); });
- must_reject([&]{ (void)pkkm::resolve_stability_check(false, 0, 5, 5); });
+ must(pkkm::resolve_stability_check(false, 0, 5, 5).unrest_delta==2,
+      "stability failure ignores the obsolete roll input");
+ const auto food=pkkm::preview_food_resource(6, 2, 2);
+ const auto surplus_food=pkkm::preview_food_resource(2, 2, 2);
+ must(food.effective_consumption==0 && food.surplus_bp==0
+      && surplus_food.effective_consumption==-4 && surplus_food.surplus_bp==4
+      && pkkm::preview_quarry_income(3)==3,
+      "food reductions convert consumption below zero to BP and quarries yield one BP each");
  pkkm::Kingdom item_outcome_k=k;
  pkkm::apply_magic_item_outcome(item_outcome_k, pkkm::MagicItemCategory::Minor, true);
  pkkm::apply_magic_item_outcome(item_outcome_k, pkkm::MagicItemCategory::Medium, false);
