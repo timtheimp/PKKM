@@ -241,6 +241,24 @@ FoodResourcePreview preview_food_resource(int starting_consumption, int farm_cou
  int extra_reduction);
 void apply_consumption_action(Kingdom& kingdom, int consumption_bp);
 int preview_quarry_income(int quarry_count);
+struct UpkeepPreview {
+ int starting_treasury = 0;
+ int starting_unrest = 0;
+ bool skipped_for_no_hexes = false;
+ int stability_treasury_delta = 0;
+ int stability_unrest_delta = 0;
+ int consumption_treasury_delta = 0;
+ int consumption_unrest_delta = 0;
+ bool consumption_paid = false;
+ int royal_assassin_unrest_delta = 0;
+ int projected_treasury = 0;
+ int projected_unrest = 0;
+ bool loses_hex = false;
+ bool anarchy = false;
+};
+UpkeepPreview preview_upkeep(const Kingdom& kingdom, bool stability_success,
+    int consumption_bp, bool royal_assassin_employed, int failure_by = 0,
+    int rolled_unrest = 0);
 struct UnrestModificationRecord {
  int turn = 1;
  int negative_stat_count = 0;

@@ -483,6 +483,52 @@ int preview_quarry_income(int quarry_count) {
     return quarry_count;
 }
 
+UpkeepPreview preview_upkeep(const Kingdom& kingdom, bool stability_success,
+    int consumption_bp, bool royal_assassin_employed, int failure_by, int rolled_unrest) {
+    validate(kingdom);
+    UpkeepPreview preview;
+    preview.starting_treasury = kingdom.treasury_bp;
+    preview.starting_unrest = kingdom.unrest;
+    preview.projected_treasury = kingdom.treasury_bp;
+    preview.projected_unrest = kingdom.unrest;
+    const bool controls_hex = std::any_of(kingdom.greenbelt_map.hexes.begin(),
+        kingdom.greenbelt_map.hexes.end(), [](const auto& hex) { return hex.claimed; });
+    if (!controls_hex) {
+        preview.skipped_for_no_hexes = true;
+        return preview;
+    }
+    if (consumption_bp < 1) throw std::invalid_argument("Consumption must be at least 1 BP");
+    const auto stability = preview_stability_check(kingdom.rule_profile, stability_success,
+        kingdom.unrest, failure_by, rolled_unrest);
+    preview.stability_treasury_delta = stability.outcome.treasury_delta;
+    preview.stability_unrest_delta = stability.outcome.unrest_delta;
+    const long long treasury_after_stability = static_cast<long long>(kingdom.treasury_bp)
+        + preview.stability_treasury_delta;
+    if (treasury_after_stability < std::numeric_limits<int>::min()
+        || treasury_after_stability > std::numeric_limits<int>::max())
+        throw std::overflow_error("Upkeep stability result would overflow treasury");
+    preview.consumption_paid = treasury_after_stability >= consumption_bp;
+    preview.consumption_treasury_delta = -consumption_bp;
+    preview.consumption_unrest_delta = preview.consumption_paid ? 0 : 2;
+    const long long projected_treasury = treasury_after_stability + preview.consumption_treasury_delta;
+    if (projected_treasury < std::numeric_limits<int>::min()
+        || projected_treasury > std::numeric_limits<int>::max())
+        throw std::overflow_error("Upkeep consumption result would overflow treasury");
+    preview.projected_treasury = static_cast<int>(projected_treasury);
+    const long long unrest_before_assassin = static_cast<long long>(kingdom.unrest)
+        + preview.stability_unrest_delta + preview.consumption_unrest_delta;
+    if (unrest_before_assassin < 0 || unrest_before_assassin > std::numeric_limits<int>::max())
+        throw std::overflow_error("Upkeep result would overflow unrest");
+    if (royal_assassin_employed && unrest_before_assassin > 0) {
+        preview.royal_assassin_unrest_delta = -1;
+    }
+    preview.projected_unrest = static_cast<int>(unrest_before_assassin
+        + preview.royal_assassin_unrest_delta);
+    preview.loses_hex = preview.projected_unrest >= 11;
+    preview.anarchy = preview.projected_unrest >= 20;
+    return preview;
+}
+
 TurnActionOutcome resolve_turn_action(TurnAction action) {
     switch (action) {
         case TurnAction::ClaimHex: return {-1, 1, 0};
