@@ -405,6 +405,15 @@ int main(int argc, char** argv) {
       && advanced.turn_progress[0].turn==4
       && advanced.turn_progress[0].completed_step_ids[0]=="upkeep.stability",
       "advancing a turn preserves prior checklist history without inventing outcomes");
+ const auto no_event_transition=pkkm::preview_turn_transition(advanced, false);
+ const auto prior_event_transition=pkkm::preview_turn_transition(advanced, true);
+ must(no_event_transition.current_turn==5 && no_event_transition.next_turn==6
+      && no_event_transition.event_trigger_percent==75
+      && no_event_transition.event_resolution_manual
+      && prior_event_transition.event_trigger_percent==25,
+      "turn transition preview exposes the next turn and source event cadence without mutation");
+ must(advanced.turn==5 && advanced.turn_progress.size()==1,
+      "turn transition preview does not mutate turn state or checklist history");
  pkkm::Kingdom action_k=k;
  pkkm::apply_turn_action(action_k, pkkm::TurnAction::ClaimHex, 2);
  must(action_k.treasury_bp==118 && action_k.rule_inputs.kingdom_size==26

@@ -753,6 +753,16 @@ EventCadence event_cadence() {
     return {75, 25};
 }
 
+TurnTransitionPreview preview_turn_transition(const Kingdom& kingdom, bool event_occurred_last_turn) {
+    validate(kingdom);
+    if (kingdom.turn == std::numeric_limits<int>::max())
+        throw std::overflow_error("Cannot preview beyond the maximum supported turn");
+    const auto cadence = event_cadence();
+    return {kingdom.turn, kingdom.turn + 1,
+        event_occurred_last_turn ? cadence.event_last_month_percent : cadence.no_event_last_month_percent,
+        true};
+}
+
 EventResolution classify_event_resolution(bool event_triggered) {
     return event_triggered ? EventResolution::ManualResolutionRequired : EventResolution::NoEvent;
 }
