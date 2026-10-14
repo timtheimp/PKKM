@@ -221,6 +221,7 @@ HWND calendar_window = nullptr;
 HWND greenbelt_window = nullptr;
 HWND greenbelt_popout_window = nullptr;
 HWND greenbelt_custom_popup_window = nullptr;
+int greenbelt_custom_popup_edit_index = -1;
 double greenbelt_popout_zoom = 1.0;
 double greenbelt_popout_pan_x = 0.0;
 double greenbelt_popout_pan_y = 0.0;
@@ -3007,6 +3008,29 @@ std::wstring greenbelt_custom_popup_selected_value(HWND window, int list_id) {
     return text;
 }
 
+void load_greenbelt_custom_popup_item(HWND window, int index) {
+    if (index < 0 || index >= static_cast<int>(greenbelt_draft.custom_improvements.size())) return;
+    const auto& item = greenbelt_draft.custom_improvements[static_cast<size_t>(index)];
+    set_manager_text(window, kGreenbeltCustomPopupId, widen(item.id));
+    set_manager_text(window, kGreenbeltCustomPopupName, widen(item.name));
+    SendMessageW(GetDlgItem(window, kGreenbeltCustomPopupEffectList), LB_RESETCONTENT, 0, 0);
+    SendMessageW(GetDlgItem(window, kGreenbeltCustomPopupCostList), LB_RESETCONTENT, 0, 0);
+    const auto effects = item.effects.empty() && !item.effect_preview.empty()
+        ? std::vector<std::string>{item.effect_preview} : item.effects;
+    const auto costs = item.costs.empty() && !item.cost_description.empty()
+        ? std::vector<std::string>{item.cost_description} : item.costs;
+    for (const auto& value : effects)
+        SendMessageW(GetDlgItem(window, kGreenbeltCustomPopupEffectList), LB_ADDSTRING, 0,
+            reinterpret_cast<LPARAM>(widen(value).c_str()));
+    for (const auto& value : costs)
+        SendMessageW(GetDlgItem(window, kGreenbeltCustomPopupCostList), LB_ADDSTRING, 0,
+            reinterpret_cast<LPARAM>(widen(value).c_str()));
+    SendMessageW(GetDlgItem(window, kGreenbeltCustomPopupManual), BM_SETCHECK,
+        item.manual_only ? BST_CHECKED : BST_UNCHECKED, 0);
+    SetWindowTextW(window, L"Edit Custom Improvement");
+    SetWindowTextW(GetDlgItem(window, kGreenbeltCustomPopupAdd), L"Save/Close");
+}
+
 void update_greenbelt_custom_popup_id(HWND window) {
     const std::string name = narrow(manager_text(window, kGreenbeltCustomPopupName));
     set_manager_text(window, kGreenbeltCustomPopupId,
@@ -3045,23 +3069,31 @@ void commit_greenbelt_custom_popup(HWND window) {
         throw std::invalid_argument("Select a Greenbelt hex first.");
     pkkm::GreenbeltCustomImprovement item;
     item.name = narrow(manager_text(window, kGreenbeltCustomPopupName));
-    item.id = greenbelt_custom_id_for_name(item.name);
+    const bool editing = greenbelt_custom_popup_edit_index >= 0
+        && greenbelt_custom_popup_edit_index < static_cast<int>(greenbelt_draft.custom_improvements.size());
+    item.id = editing
+        ? greenbelt_draft.custom_improvements[static_cast<size_t>(greenbelt_custom_popup_edit_index)].id
+        : greenbelt_custom_id_for_name(item.name);
     item.effects = greenbelt_custom_popup_values(window, kGreenbeltCustomPopupEffectList);
     item.costs = greenbelt_custom_popup_values(window, kGreenbeltCustomPopupCostList);
     item.effect_preview = item.effects.empty() ? std::string{} : item.effects.front();
     item.cost_description = item.costs.empty() ? std::string{} : item.costs.front();
     item.manual_only = SendMessageW(GetDlgItem(window, kGreenbeltCustomPopupManual), BM_GETCHECK, 0, 0) == BST_CHECKED;
     if (item.name.empty()) throw std::invalid_argument("Custom improvements need a name.");
-    const auto existing = std::find_if(greenbelt_draft.custom_improvements.begin(),
-        greenbelt_draft.custom_improvements.end(),
-        [&item](const auto& candidate) { return candidate.id == item.id; });
-    if (existing == greenbelt_draft.custom_improvements.end()) {
-        greenbelt_draft.custom_improvements.push_back(item);
+    if (editing) {
+        greenbelt_draft.custom_improvements[static_cast<size_t>(greenbelt_custom_popup_edit_index)] = item;
     } else {
-        *existing = item;
+        const auto existing = std::find_if(greenbelt_draft.custom_improvements.begin(),
+            greenbelt_draft.custom_improvements.end(),
+            [&item](const auto& candidate) { return candidate.id == item.id; });
+        if (existing == greenbelt_draft.custom_improvements.end()) {
+            greenbelt_draft.custom_improvements.push_back(item);
+        } else {
+            *existing = item;
+        }
     }
     auto& improvements = greenbelt_draft.hexes[static_cast<size_t>(greenbelt_active_index)].improvements;
-    if (std::find(improvements.begin(), improvements.end(), item.id) == improvements.end())
+    if (!editing && std::find(improvements.begin(), improvements.end(), item.id) == improvements.end())
         improvements.push_back(item.id);
     if (greenbelt_window && IsWindow(greenbelt_window))
         refresh_greenbelt_hex_list(greenbelt_window);
@@ -3091,7 +3123,7 @@ void commit_greenbelt_custom_popup(HWND window) {
     DestroyWindow(window);
 }
 
-void open_greenbelt_custom_popup(HWND owner) {
+void open_greenbelt_custom_popup(HWND owner, int edit_index = -1) {
     if (greenbelt_custom_popup_window && IsWindow(greenbelt_custom_popup_window)) {
         SetForegroundWindow(greenbelt_custom_popup_window);
         return;
@@ -3106,6 +3138,7 @@ void open_greenbelt_custom_popup(HWND owner) {
         if (!RegisterClassW(&popup_class) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS)
             throw std::runtime_error("Could not register the custom improvement dialog class");
     }
+    greenbelt_custom_popup_edit_index = edit_index;
     greenbelt_custom_popup_window = CreateWindowExW(WS_EX_DLGMODALFRAME,
         L"PKKMGreenbeltCustomImprovement", L"Custom Improvement",
         WS_CAPTION | WS_SYSMENU | WS_POPUP | WS_THICKFRAME,
@@ -3171,10 +3204,12 @@ LRESULT CALLBACK greenbelt_custom_popup_proc(HWND window, UINT message, WPARAM w
                 505, 420, 90, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltCustomPopupCancel)), app_instance, nullptr);
             populate_greenbelt_custom_popup_combo(window, kGreenbeltCustomPopupEffectCombo, true);
             populate_greenbelt_custom_popup_combo(window, kGreenbeltCustomPopupCostCombo, false);
+            load_greenbelt_custom_popup_item(window, greenbelt_custom_popup_edit_index);
             return 0;
         case WM_COMMAND:
             if (LOWORD(wparam) == kGreenbeltCustomPopupName && HIWORD(wparam) == EN_CHANGE) {
-                update_greenbelt_custom_popup_id(window);
+                if (greenbelt_custom_popup_edit_index < 0)
+                    update_greenbelt_custom_popup_id(window);
                 return 0;
             }
             if (LOWORD(wparam) == kGreenbeltCustomPopupEffectList && HIWORD(wparam) == LBN_SELCHANGE) {
@@ -3229,6 +3264,7 @@ LRESULT CALLBACK greenbelt_custom_popup_proc(HWND window, UINT message, WPARAM w
             return 0;
         case WM_DESTROY:
             greenbelt_custom_popup_window = nullptr;
+            greenbelt_custom_popup_edit_index = -1;
             return 0;
     }
     return DefWindowProcW(window, message, wparam, lparam);
@@ -3453,8 +3489,14 @@ LRESULT CALLBACK greenbelt_popout_proc(HWND window, UINT message, WPARAM wparam,
                 try {
                     const int selected = static_cast<int>(SendMessageW(
                         GetDlgItem(window, kGreenbeltImprovement), CB_GETCURSEL, 0, 0));
-                    if (selected == static_cast<int>(greenbelt_catalog.size())
-                        + static_cast<int>(greenbelt_draft.custom_improvements.size()) + 1) {
+                    const int custom_start = static_cast<int>(greenbelt_catalog.size()) + 1;
+                    const int custom_end = custom_start
+                        + static_cast<int>(greenbelt_draft.custom_improvements.size());
+                    if (selected >= custom_start && selected < custom_end) {
+                        save_greenbelt_form(window);
+                        SendMessageW(GetDlgItem(window, kGreenbeltImprovement), CB_SETCURSEL, 0, 0);
+                        open_greenbelt_custom_popup(window, selected - custom_start);
+                    } else if (selected == custom_end) {
                         save_greenbelt_form(window);
                         SendMessageW(GetDlgItem(window, kGreenbeltImprovement), CB_SETCURSEL, 0, 0);
                         open_greenbelt_custom_popup(window);
