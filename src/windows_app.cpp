@@ -1182,7 +1182,7 @@ void create_turn_checklist_controls(HWND window) {
     const std::vector<std::string> completed = record == kingdom.turn_progress.end()
         ? std::vector<std::string>{} : record->completed_step_ids;
     CreateWindowExW(0, L"STATIC",
-        L"Manual checklist only; PKKM does not resolve checks or turn outcomes.\r\nApply updates this file in memory; use File > Save to persist. Stability failure by exactly 4 is unspecified in the source.",
+        L"Manual checklist only; PKKM does not resolve checks or turn outcomes.\r\nApply updates this file in memory; use File > Save to persist. Stability failure by exactly 4 is not used by this rule set.",
         WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 12, 950, 40, window, nullptr, app_instance, nullptr);
     const auto& steps = pkkm::turn_checklist_steps();
     std::vector<std::string> phase_names;
@@ -1651,7 +1651,7 @@ void refresh_stability_history(HWND window) {
     for (const auto& record : kingdom.stability_checks) {
         const std::wstring branch = record.success ? L"Success" : L"Failure by " + std::to_wstring(record.failure_by);
         const std::wstring line = L"Turn " + std::to_wstring(record.turn)
-            + L" | " + branch + L" | d4 " + std::to_wstring(record.rolled_unrest)
+            + L" | " + branch
             + L" | BP " + std::to_wstring(record.treasury_delta)
             + L" | Unrest " + std::to_wstring(record.unrest_delta);
         SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(line.c_str()));
