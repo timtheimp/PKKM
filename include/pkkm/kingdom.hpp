@@ -229,6 +229,14 @@ struct UnrestModificationRecord {
  int negative_stat_count = 0;
  int unrest_delta = 0;
 };
+struct UnrestModificationPreview {
+ int current_unrest = 0;
+ int unrest_delta = 0;
+ int projected_unrest = 0;
+ bool loses_hex = false;
+ bool anarchy = false;
+};
+UnrestModificationPreview preview_unrest_modification(const Kingdom& kingdom, int negative_stat_count);
 void apply_unrest_modification(Kingdom& kingdom, int negative_stat_count);
 struct GoldWithdrawalRecord {
  int turn = 1;
