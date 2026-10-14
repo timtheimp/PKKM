@@ -302,6 +302,13 @@ struct EventCadence {
  int event_last_month_percent = 25;
 };
 EventCadence event_cadence();
+struct TurnTransitionPreview {
+ int current_turn = 1;
+ int next_turn = 2;
+ int event_trigger_percent = 75;
+ bool event_resolution_manual = true;
+};
+TurnTransitionPreview preview_turn_transition(const Kingdom& kingdom, bool event_occurred_last_turn);
 enum class EventResolution { NoEvent, ManualResolutionRequired };
 EventResolution classify_event_resolution(bool event_triggered);
 struct CalendarTemplateEntry {
