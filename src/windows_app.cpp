@@ -214,7 +214,7 @@ constexpr int kGreenbeltViewportY = 104;
 constexpr int kGreenbeltViewportWidth = 700;
 constexpr int kGreenbeltViewportHeight = 250;
 constexpr int kGreenbeltContentHeight = 1310;
-constexpr int kTurnActionsContentHeight = 2205;
+constexpr int kTurnActionsContentHeight = 2310;
 
 pkkm::Kingdom kingdom;
 pkkm::Kingdom edit_draft;
