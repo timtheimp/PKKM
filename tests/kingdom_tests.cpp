@@ -390,6 +390,17 @@ int main(int argc, char** argv) {
       && pkkm::classify_stability_failure(4)==pkkm::StabilityFailureOutcome::UnresolvedExactlyFour
       && pkkm::classify_stability_failure(5)==pkkm::StabilityFailureOutcome::FailByAtLeastFive,
       "stability failure boundary remains explicit instead of inventing the missing exact-four outcome");
+ const auto stability_success=pkkm::preview_stability_check(pkkm::RuleProfile::Workbook, true, 0);
+ const auto stability_fail=pkkm::preview_stability_check(pkkm::RuleProfile::Workbook, false, 2, 3);
+ const auto stability_exact_four=pkkm::preview_stability_check(pkkm::RuleProfile::Workbook, false, 2, 4);
+ const auto stability_city_info=pkkm::preview_stability_check(pkkm::RuleProfile::CityInfo, false, 2, 5);
+ must(stability_success.outcome.treasury_delta==1 && stability_success.outcome.unrest_delta==0
+      && !stability_success.manual_resolution_required
+      && stability_fail.outcome.unrest_delta==1
+      && stability_exact_four.manual_resolution_required
+      && stability_exact_four.outcome.treasury_delta==0 && stability_exact_four.outcome.unrest_delta==0
+      && stability_city_info.outcome.unrest_delta==2,
+      "stability preview exposes explicit branches and keeps exact-four manual");
  const auto claim_hex=pkkm::resolve_turn_action(pkkm::TurnAction::ClaimHex);
  const auto abandon_hex=pkkm::resolve_turn_action(pkkm::TurnAction::AbandonHex);
  const auto abandon_city=pkkm::resolve_turn_action(pkkm::TurnAction::AbandonCity);
