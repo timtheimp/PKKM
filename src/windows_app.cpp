@@ -1707,7 +1707,7 @@ void create_turn_action_controls(HWND window) {
     CreateWindowExW(0, L"STATIC", L"Event history", WS_CHILD | WS_VISIBLE | SS_LEFT,
         20, 2770, 200, 22, window, nullptr, app_instance, nullptr);
     CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"",
-        WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOINTEGRALHEIGHT,
+        WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT,
         20, 2795, 560, 100, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kEventHistory)), app_instance, nullptr);
     CreateWindowExW(0, L"STATIC", L"Select an event to inspect its consequence details.",
