@@ -391,6 +391,48 @@ void validate(const Kingdom& k) {
             || (event.resolved && event.continuous_active))
             throw std::invalid_argument("Kingdom event record has inconsistent values");
     }
+    for (std::size_t index = 0; index < k.construction_transactions.size(); ++index) {
+        const auto& record = k.construction_transactions[index];
+        if (record.turn < 1 || record.settlement_id.empty() || record.lines.empty()
+            || (!record.reversal && record.bp_cost < 0)
+            || (!record.successful && !record.reversal && record.failures.empty())
+            || (!record.reversal && record.reverses_index != -1)
+            || (record.reversal && (!record.successful || record.bp_cost > 0
+                || record.reverses_index < 0 || static_cast<std::size_t>(record.reverses_index) >= index)))
+            throw std::invalid_argument("Construction record has inconsistent values");
+        if (record.reversal) {
+            const auto& original = k.construction_transactions[static_cast<std::size_t>(record.reverses_index)];
+            if (!original.successful || original.reversal
+                || record.settlement_id != original.settlement_id
+                || record.bp_cost != -original.bp_cost
+                || record.lines.size() != original.lines.size())
+                throw std::invalid_argument("Construction reversal does not reference a forward success");
+            for (std::size_t line_index = 0; line_index < original.lines.size(); ++line_index) {
+                const auto& reversed_line = record.lines[line_index];
+                const auto& original_line = original.lines[line_index];
+                if (reversed_line.building_name != original_line.building_name
+                    || reversed_line.count != original_line.count
+                    || reversed_line.upgrade_from != original_line.upgrade_from
+                    || reversed_line.row != original_line.row
+                    || reversed_line.column != original_line.column
+                    || reversed_line.width != original_line.width
+                    || reversed_line.height != original_line.height
+                    || reversed_line.source_width != original_line.source_width
+                    || reversed_line.source_height != original_line.source_height)
+                    throw std::invalid_argument("Construction reversal lines do not match the forward success");
+            }
+            for (std::size_t prior = 0; prior < index; ++prior)
+                if (prior != static_cast<std::size_t>(record.reverses_index)
+                    && k.construction_transactions[prior].reversal
+                    && k.construction_transactions[prior].reverses_index == record.reverses_index)
+                    throw std::invalid_argument("Construction has duplicate reversal records");
+        }
+        for (const auto& line : record.lines) {
+            if (line.building_name.empty() || line.count < 1 || line.row < 0 || line.column < 0
+                || line.width < 1 || line.height < 1)
+                throw std::invalid_argument("Construction record contains an invalid line");
+        }
+    }
     std::vector<std::string> seen_calendar_entries;
     for (const auto& note : k.calendar_notes) {
         const auto& entries = calendar_template_entries();
@@ -650,6 +692,353 @@ void reverse_turn_action(Kingdom& kingdom, std::size_t index) {
     kingdom.turn_actions.push_back({kingdom.turn, original.action, original.count, inverse, true,
         static_cast<std::ptrdiff_t>(index)});
     validate(kingdom);
+}
+
+namespace {
+const BuildingCatalogEntry& construction_catalog_entry(
+    const std::vector<BuildingCatalogEntry>& catalog, const std::string& name) {
+    const auto found = std::find_if(catalog.begin(), catalog.end(), [&name](const auto& entry) {
+        return entry.kind == CatalogRowKind::Improvement && entry.name == name;
+    });
+    if (found == catalog.end())
+        throw std::invalid_argument("Building is not present in the improvement catalog: " + name);
+    return *found;
+}
+
+int construction_inventory_count(const Settlement& settlement, const std::string& name) {
+    const auto found = std::find_if(settlement.building_inventory.begin(), settlement.building_inventory.end(),
+        [&name](const auto& building) { return building.name == name; });
+    return found == settlement.building_inventory.end() ? 0 : found->count;
+}
+
+void adjust_construction_inventory(Settlement& settlement, const std::string& name, int delta) {
+    auto found = std::find_if(settlement.building_inventory.begin(), settlement.building_inventory.end(),
+        [&name](const auto& building) { return building.name == name; });
+    if (found == settlement.building_inventory.end()) {
+        if (delta < 0) throw std::invalid_argument("Construction inventory cannot remove an absent building");
+        settlement.building_inventory.push_back({name, delta});
+        return;
+    }
+    const long long next = static_cast<long long>(found->count) + delta;
+    if (next < 0 || next > std::numeric_limits<int>::max())
+        throw std::invalid_argument("Construction inventory count is invalid");
+    found->count = static_cast<int>(next);
+}
+
+bool construction_discount_matches(const std::string& discounts, const std::string& target) {
+    std::size_t start = 0;
+    while (start <= discounts.size()) {
+        const std::size_t comma = discounts.find(',', start);
+        std::string token = discounts.substr(start,
+            comma == std::string::npos ? std::string::npos : comma - start);
+        const auto first = token.find_first_not_of(" \t");
+        const auto last = token.find_last_not_of(" \t");
+        token = first == std::string::npos ? std::string{} : token.substr(first, last - first + 1);
+        if (token == target) return true;
+        if (comma == std::string::npos) break;
+        start = comma + 1;
+    }
+    return false;
+}
+
+std::vector<std::pair<std::string, int>> construction_discount_sources(
+    const Kingdom& kingdom, const Settlement& settlement,
+    const std::vector<BuildingCatalogEntry>& catalog) {
+    std::vector<std::pair<std::string, int>> sources;
+    for (const auto& building : settlement.building_inventory) {
+        if (building.count <= 0) continue;
+        construction_catalog_entry(catalog, building.name);
+        sources.push_back({building.name, building.count});
+    }
+    for (std::size_t index = 0; index < kingdom.construction_transactions.size(); ++index) {
+        const auto& transaction = kingdom.construction_transactions[index];
+        if (!transaction.successful || transaction.reversal || transaction.settlement_id != settlement.id)
+            continue;
+        bool reversed = false;
+        for (const auto& later : kingdom.construction_transactions)
+            if (later.reversal && later.reverses_index == static_cast<std::ptrdiff_t>(index)) {
+                reversed = true;
+                break;
+            }
+        if (reversed) continue;
+        for (const auto& source_name : transaction.discount_sources) {
+            const auto source = std::find_if(sources.begin(), sources.end(),
+                [&source_name](const auto& value) { return value.first == source_name; });
+            if (source != sources.end() && source->second > 0) --source->second;
+        }
+    }
+    return sources;
+}
+
+bool construction_placement_overlaps(const MapPlacement& left, const MapPlacement& right) {
+    const long long left_right = static_cast<long long>(left.column) + left.width;
+    const long long right_right = static_cast<long long>(right.column) + right.width;
+    const long long left_bottom = static_cast<long long>(left.row) + left.height;
+    const long long right_bottom = static_cast<long long>(right.row) + right.height;
+    return left.column < right_right && right.column < left_right
+        && left.row < right_bottom && right.row < left_bottom;
+}
+}
+
+ConstructionPreview apply_construction(Kingdom& kingdom,
+    const ConstructionRequest& request, const std::vector<BuildingCatalogEntry>& catalog) {
+    validate(kingdom);
+    if (request.settlement_id.empty() || request.lines.empty())
+        throw std::invalid_argument("Construction requires a settlement and at least one building line");
+    auto settlement_it = std::find_if(kingdom.settlements.begin(), kingdom.settlements.end(),
+        [&request](const auto& settlement) { return settlement.id == request.settlement_id; });
+    if (settlement_it == kingdom.settlements.end())
+        throw std::invalid_argument("Construction settlement does not exist: " + request.settlement_id);
+
+    ConstructionPreview preview;
+    int discount_slots = 0;
+    long long full_cost = 0;
+    long long discounted_cost = 0;
+    long long construction_count = 0;
+    bool non_overridable_failure = false;
+    std::vector<MapPlacement> proposed_placements;
+    for (const auto& line : request.lines) {
+        if (line.building_name.empty() || line.count < 1 || line.row < 0 || line.column < 0
+            || line.width < 1 || line.height < 1)
+            throw std::invalid_argument("Construction lines require positive counts and footprints");
+        if (line.count > 1)
+            throw std::invalid_argument("Each constructed building requires its own district-grid placement line");
+        const auto& target = construction_catalog_entry(catalog, line.building_name);
+        if (target.cost < 0 || target.lots < 0)
+            throw std::invalid_argument("Building cost and lots cannot be negative: " + line.building_name);
+        const long long footprint_area = static_cast<long long>(line.width) * line.height;
+        if (footprint_area < target.lots) {
+            preview.failures.push_back("Construction footprint is smaller than the building lot requirement");
+            non_overridable_failure = true;
+        }
+        const bool is_upgrade = !line.upgrade_from.empty();
+        const BuildingCatalogEntry* source = nullptr;
+        if (is_upgrade) {
+            source = &construction_catalog_entry(catalog, line.upgrade_from);
+            if (target.upgrade_from != line.upgrade_from) {
+                preview.failures.push_back("Upgrade source does not match the catalog Upgrade From value");
+                non_overridable_failure = true;
+            }
+            if (source->upgrade_to != line.building_name) {
+                preview.failures.push_back("Upgrade target does not match the catalog Upgrade To value");
+                non_overridable_failure = true;
+            }
+            if (construction_inventory_count(*settlement_it, line.upgrade_from) < line.count) {
+                preview.failures.push_back("Upgrade source inventory is insufficient");
+                non_overridable_failure = true;
+            }
+            const auto source_placements = std::count_if(settlement_it->map.placements.begin(),
+                settlement_it->map.placements.end(), [&line](const auto& placement) {
+                    return placement.building_name == line.upgrade_from
+                        && placement.row == line.row && placement.column == line.column;
+                });
+            if (source_placements != 1) {
+                preview.failures.push_back("Upgrade source placement is missing or ambiguous");
+                non_overridable_failure = true;
+            }
+            if (target.cost < source->cost) {
+                preview.failures.push_back("Upgrade target cost is lower than its source cost");
+                non_overridable_failure = true;
+            }
+        }
+        const long long unit_cost = is_upgrade
+            ? static_cast<long long>(target.cost) - source->cost : target.cost;
+        full_cost += unit_cost * line.count;
+        construction_count += line.count;
+        if (full_cost > std::numeric_limits<int>::max() || construction_count > std::numeric_limits<int>::max())
+            throw std::overflow_error("Construction total exceeds supported range");
+        for (int count = 0; count < line.count; ++count)
+            proposed_placements.push_back({line.building_name, line.row, line.column, line.width, line.height});
+    }
+    auto recorded_lines = request.lines;
+    for (std::size_t index = 0; index < request.lines.size(); ++index) {
+        const auto& line = request.lines[index];
+        if (line.upgrade_from.empty()) continue;
+        const auto source_it = std::find_if(settlement_it->map.placements.begin(), settlement_it->map.placements.end(),
+            [&line](const auto& placement) {
+                return placement.building_name == line.upgrade_from
+                    && placement.row == line.row && placement.column == line.column;
+            });
+        if (source_it != settlement_it->map.placements.end()) {
+            recorded_lines[index].source_width = source_it->width;
+            recorded_lines[index].source_height = source_it->height;
+        }
+    }
+    auto available_discount_sources = construction_discount_sources(kingdom, *settlement_it, catalog);
+    std::vector<std::vector<std::string>> discount_sources_by_line(request.lines.size());
+    for (const auto& line : request.lines) {
+        const std::size_t line_index = static_cast<std::size_t>(&line - request.lines.data());
+        const auto& target = construction_catalog_entry(catalog, line.building_name);
+        const bool is_upgrade = !line.upgrade_from.empty();
+        const auto& source = is_upgrade ? construction_catalog_entry(catalog, line.upgrade_from) : target;
+        const long long unit_cost = is_upgrade
+            ? static_cast<long long>(target.cost) - source.cost : target.cost;
+        const long long discounted_unit = unit_cost / 2;
+        long long discounted_count = 0;
+        for (int count = 0; count < line.count; ++count) {
+            const auto source_it = std::find_if(available_discount_sources.begin(), available_discount_sources.end(),
+                [&line, &catalog](const auto& value) {
+                    const auto& source_entry = construction_catalog_entry(catalog, value.first);
+                    return value.second > 0 && construction_discount_matches(source_entry.discounts, line.building_name);
+                });
+            if (source_it == available_discount_sources.end()) break;
+            --source_it->second;
+            ++discounted_count;
+            discount_sources_by_line[line_index].push_back(source_it->first);
+        }
+        discounted_cost += discounted_unit * discounted_count
+            + unit_cost * (line.count - discounted_count);
+        discount_slots += static_cast<int>(discounted_count);
+    }
+    if (discounted_cost > std::numeric_limits<int>::max())
+        throw std::overflow_error("Construction cost exceeds supported range");
+    preview.full_cost = static_cast<int>(full_cost);
+    preview.discounted_cost = static_cast<int>(discounted_cost);
+    preview.discounted_buildings = discount_slots;
+    preview.construction_count = static_cast<int>(construction_count);
+    std::vector<std::string> applied_discount_sources;
+    for (const auto& line_sources : discount_sources_by_line)
+        applied_discount_sources.insert(applied_discount_sources.end(), line_sources.begin(), line_sources.end());
+
+    const auto limits = kingdom_size_limits(kingdom.rule_inputs.kingdom_size);
+    long long prior_construction_count = 0;
+    std::vector<bool> reversed_transactions(kingdom.construction_transactions.size(), false);
+    for (const auto& transaction : kingdom.construction_transactions) {
+        if (!transaction.reversal || transaction.reverses_index < 0
+            || static_cast<std::size_t>(transaction.reverses_index) >= reversed_transactions.size())
+            continue;
+        reversed_transactions[static_cast<std::size_t>(transaction.reverses_index)] = true;
+    }
+    for (std::size_t index = 0; index < kingdom.construction_transactions.size(); ++index) {
+        const auto& transaction = kingdom.construction_transactions[index];
+        if (transaction.turn == kingdom.turn && transaction.successful && !transaction.reversal
+            && !reversed_transactions[index])
+            for (const auto& line : transaction.lines) prior_construction_count += line.count;
+    }
+    if (!limits.unlimited_new_buildings && prior_construction_count + construction_count > limits.new_buildings
+        && !request.override_building_limit)
+        preview.failures.push_back("Construction exceeds the kingdom-size building limit for this turn");
+    if (kingdom.treasury_bp < preview.discounted_cost && !request.override_failed_checks)
+        preview.failures.push_back("Treasury cannot pay the finalized construction cost");
+    for (const auto& placement : proposed_placements) {
+        if (settlement_it->map.rows > 0 && settlement_it->map.columns > 0
+            && (static_cast<long long>(placement.row) + placement.height > settlement_it->map.rows
+                || static_cast<long long>(placement.column) + placement.width > settlement_it->map.columns)) {
+            preview.failures.push_back("Construction footprint does not fit in the district grid");
+            non_overridable_failure = true;
+        }
+        for (const auto& existing : settlement_it->map.placements) {
+            bool replacing_source = false;
+            for (const auto& line : request.lines) {
+                if (line.building_name == placement.building_name && !line.upgrade_from.empty()
+                    && line.upgrade_from == existing.building_name
+                    && line.row == existing.row && line.column == existing.column) {
+                    replacing_source = true;
+                    break;
+                }
+            }
+            if (!replacing_source && construction_placement_overlaps(existing, placement)) {
+                preview.failures.push_back("Construction footprint overlaps an existing building");
+                non_overridable_failure = true;
+            }
+        }
+        for (const auto& proposed : proposed_placements) {
+            if (&proposed != &placement && construction_placement_overlaps(proposed, placement)) {
+                preview.failures.push_back("Construction footprints overlap each other");
+                non_overridable_failure = true;
+            }
+        }
+    }
+    if (non_overridable_failure)
+        throw std::invalid_argument("Construction request contains a structurally invalid line or placement");
+    const bool has_building_limit_failure = std::find(preview.failures.begin(), preview.failures.end(),
+    "Construction exceeds the kingdom-size building limit for this turn") != preview.failures.end();
+    if ((!has_building_limit_failure || request.override_building_limit)
+    && (preview.failures.empty() || request.override_failed_checks)) {
+        Kingdom candidate = kingdom;
+        auto candidate_settlement = std::find_if(candidate.settlements.begin(), candidate.settlements.end(),
+            [&request](const auto& settlement) { return settlement.id == request.settlement_id; });
+        for (const auto& line : request.lines) {
+            if (!line.upgrade_from.empty()) {
+                adjust_construction_inventory(*candidate_settlement, line.upgrade_from, -line.count);
+                candidate_settlement->map.placements.erase(
+                    std::remove_if(candidate_settlement->map.placements.begin(), candidate_settlement->map.placements.end(),
+                        [&line](const auto& placement) {
+                            return placement.building_name == line.upgrade_from
+                                && placement.row == line.row && placement.column == line.column;
+                        }), candidate_settlement->map.placements.end());
+            }
+            adjust_construction_inventory(*candidate_settlement, line.building_name, line.count);
+            candidate_settlement->map.placements.push_back(
+                {line.building_name, line.row, line.column, line.width, line.height});
+        }
+        if (candidate.treasury_bp < std::numeric_limits<int>::min() + preview.discounted_cost)
+            throw std::overflow_error("Construction would overflow negative treasury");
+        candidate.treasury_bp -= preview.discounted_cost;
+        candidate.construction_transactions.push_back({candidate.turn, request.settlement_id, recorded_lines,
+            preview.discounted_cost, true, request.override_building_limit, request.override_failed_checks, false, -1,
+            preview.failures, request.terrain_facts, applied_discount_sources});
+        validate(candidate);
+        kingdom = std::move(candidate);
+        preview.finalized = true;
+        preview.successful = true;
+        return preview;
+    }
+    kingdom.construction_transactions.push_back({kingdom.turn, request.settlement_id, recorded_lines,
+        preview.discounted_cost, false, request.override_building_limit, request.override_failed_checks, false, -1,
+        preview.failures, request.terrain_facts});
+    validate(kingdom);
+    return preview;
+}
+
+void reverse_construction(Kingdom& kingdom, std::size_t index,
+    const std::vector<BuildingCatalogEntry>& catalog, bool override_reversal) {
+    (void)catalog;
+    validate(kingdom);
+    if (!override_reversal)
+        throw std::invalid_argument("Construction reversal requires the explicit override");
+    if (index >= kingdom.construction_transactions.size())
+        throw std::out_of_range("Construction record index is out of range");
+    const auto& original = kingdom.construction_transactions[index];
+    if (!original.successful || original.reversal)
+        throw std::invalid_argument("Only a successful non-reversal construction may be reversed");
+    for (const auto& record : kingdom.construction_transactions)
+        if (record.reversal && record.reverses_index == static_cast<std::ptrdiff_t>(index))
+            throw std::invalid_argument("Construction has already been reversed");
+    for (std::size_t later_index = index + 1; later_index < kingdom.construction_transactions.size(); ++later_index) {
+        const auto& later = kingdom.construction_transactions[later_index];
+        if (later.settlement_id == original.settlement_id && (later.successful || later.reversal))
+            throw std::invalid_argument("Construction cannot be reversed while a later transaction depends on its settlement state");
+    }
+    auto candidate = kingdom;
+    auto settlement = std::find_if(candidate.settlements.begin(), candidate.settlements.end(),
+        [&original](const auto& value) { return value.id == original.settlement_id; });
+    if (settlement == candidate.settlements.end())
+        throw std::invalid_argument("Construction reversal settlement does not exist");
+    for (auto line_it = original.lines.rbegin(); line_it != original.lines.rend(); ++line_it) {
+        const auto& line = *line_it;
+        adjust_construction_inventory(*settlement, line.building_name, -line.count);
+        settlement->map.placements.erase(
+            std::remove_if(settlement->map.placements.begin(), settlement->map.placements.end(),
+                [&line](const auto& placement) {
+                    return placement.building_name == line.building_name
+                        && placement.row == line.row && placement.column == line.column;
+                }), settlement->map.placements.end());
+        if (!line.upgrade_from.empty()) {
+            adjust_construction_inventory(*settlement, line.upgrade_from, line.count);
+            settlement->map.placements.push_back(
+                {line.upgrade_from, line.row, line.column,
+                    line.source_width > 0 ? line.source_width : line.width,
+                    line.source_height > 0 ? line.source_height : line.height});
+        }
+    }
+    if (candidate.treasury_bp > std::numeric_limits<int>::max() - original.bp_cost)
+        throw std::overflow_error("Construction reversal would overflow treasury");
+    candidate.treasury_bp += original.bp_cost;
+    candidate.construction_transactions.push_back({candidate.turn, original.settlement_id, original.lines,
+        -original.bp_cost, true, false, true, true, static_cast<std::ptrdiff_t>(index), {}, original.terrain_facts});
+    validate(candidate);
+    kingdom = std::move(candidate);
 }
 
 KingdomSizeLimits kingdom_size_limits(int kingdom_size) {
@@ -1238,7 +1627,7 @@ void save(const Kingdom& k, const std::string& path) {
         {"settlements", Json::array()}, {"buildings", Json::array()},
         {"turn_progress", Json::array()}, {"turn_actions", Json::array()}, {"tax_actions", Json::array()},
                 {"stability_checks", Json::array()}, {"consumption_actions", Json::array()}, {"unrest_modifications", Json::array()}, {"gold_withdrawals", Json::array()}, {"gold_deposits", Json::array()}, {"item_deposits", Json::array()}, {"loyalty_checks", Json::array()}, {"commissions", Json::array()}, {"magic_item_outcomes", Json::array()}, {"calendar_notes", Json::array()},
-        {"kingdom_events", Json::array()},
+        {"kingdom_events", Json::array()}, {"construction_transactions", Json::array()},
         {"greenbelt_map", {{"asset_path", k.greenbelt_map.asset_path},
             {"image_width", k.greenbelt_map.image_width}, {"image_height", k.greenbelt_map.image_height},
             {"calibration", {{"origin_x", k.greenbelt_map.calibration.origin_x},
@@ -1333,6 +1722,22 @@ void save(const Kingdom& k, const std::string& path) {
             {"hex_loss_confirmed", event.hex_loss_confirmed},
             {"anarchy_confirmed", event.anarchy_confirmed},
             {"consequences_applied", event.consequences_applied}});
+    for (const auto& transaction : k.construction_transactions) {
+        Json item = {{"turn", transaction.turn}, {"settlement_id", transaction.settlement_id},
+            {"lines", Json::array()}, {"bp_cost", transaction.bp_cost},
+            {"successful", transaction.successful},
+            {"override_building_limit", transaction.override_building_limit},
+            {"override_failed_checks", transaction.override_failed_checks},
+            {"reversal", transaction.reversal}, {"reverses_index", transaction.reverses_index},
+            {"failures", transaction.failures}, {"terrain_facts", transaction.terrain_facts},
+            {"discount_sources", transaction.discount_sources}};
+        for (const auto& line : transaction.lines)
+            item["lines"].push_back({{"building_name", line.building_name}, {"count", line.count},
+                {"upgrade_from", line.upgrade_from}, {"row", line.row}, {"column", line.column},
+                {"width", line.width}, {"height", line.height},
+                {"source_width", line.source_width}, {"source_height", line.source_height}});
+        output["construction_transactions"].push_back(std::move(item));
+    }
     for (const auto& note : k.calendar_notes)
         output["calendar_notes"].push_back({{"entry_id", note.entry_id}, {"holiday", note.holiday},
             {"kingdom_upgrades", note.kingdom_upgrades}, {"events", note.events}, {"other", note.other}});
@@ -1598,6 +2003,54 @@ Kingdom load(const std::string& path) {
                 item.value("unrest_delta", 0), item.value("kingdom_size_delta", 0),
                 item.value("hex_loss_confirmed", false), item.value("anarchy_confirmed", false)});
             k.kingdom_events.back().consequences_applied = item.value("consequences_applied", false);
+        }
+    }
+    if (root.contains("construction_transactions")) {
+        if (!root.at("construction_transactions").is_array())
+            throw std::runtime_error("construction_transactions must be an array");
+        for (const auto& item : root.at("construction_transactions")) {
+            if (!item.is_object() || !item.contains("lines") || !item.at("lines").is_array())
+                throw std::runtime_error("Invalid construction transaction");
+            ConstructionRecord record;
+            record.turn = required_int(item, "turn");
+            record.settlement_id = required_string(item, "settlement_id");
+            record.bp_cost = required_int(item, "bp_cost");
+            record.successful = required_bool(item, "successful");
+            record.override_building_limit = required_bool(item, "override_building_limit");
+            record.override_failed_checks = required_bool(item, "override_failed_checks");
+            record.reversal = required_bool(item, "reversal");
+            record.reverses_index = item.contains("reverses_index")
+                ? item.at("reverses_index").get<std::ptrdiff_t>() : -1;
+            if (item.contains("failures")) {
+                if (!item.at("failures").is_array()) throw std::runtime_error("Construction failures must be an array");
+                for (const auto& failure : item.at("failures")) {
+                    if (!failure.is_string()) throw std::runtime_error("Construction failure must be a string");
+                    record.failures.push_back(failure.get<std::string>());
+                }
+            }
+            if (item.contains("terrain_facts")) {
+                if (!item.at("terrain_facts").is_array()) throw std::runtime_error("Construction terrain_facts must be an array");
+                for (const auto& fact : item.at("terrain_facts")) {
+                    if (!fact.is_string()) throw std::runtime_error("Construction terrain fact must be a string");
+                    record.terrain_facts.push_back(fact.get<std::string>());
+                }
+            }
+            if (item.contains("discount_sources")) {
+                if (!item.at("discount_sources").is_array()) throw std::runtime_error("Construction discount_sources must be an array");
+                for (const auto& source : item.at("discount_sources")) {
+                    if (!source.is_string()) throw std::runtime_error("Construction discount source must be a string");
+                    record.discount_sources.push_back(source.get<std::string>());
+                }
+            }
+            for (const auto& line : item.at("lines")) {
+                if (!line.is_object()) throw std::runtime_error("Invalid construction line");
+                record.lines.push_back({required_string(line, "building_name"), required_int(line, "count"),
+                    line.value("upgrade_from", std::string{}), required_int(line, "row"),
+                    required_int(line, "column"), required_int(line, "width"), required_int(line, "height"),
+                    line.value("source_width", 0), line.value("source_height", 0)});
+                record.lines.back().upgrade_from = line.value("upgrade_from", std::string{});
+            }
+            k.construction_transactions.push_back(std::move(record));
         }
     }
     if (document_version >= 9) {

@@ -54,6 +54,7 @@ int main(int argc, char** argv) {
  must(r.settlements[0].districts==2 && r.settlements[0].economy==3 && r.settlements[0].loyalty==-1
       && r.settlements[0].stability==4 && r.settlements[0].defense==7,
       "roundtrip settlement workbook totals");
+
  must(r.schema_version==10 && r.settlements[0].id=="settlement.oak"
       && r.settlements[0].apply_catalog_stat_effects
       && r.settlements[0].building_inventory.size()==1
@@ -100,6 +101,7 @@ int main(int argc, char** argv) {
  must_reject([&] { pkkm::load(malformed_custom_path); });
  std::remove(legacy_custom_path.c_str());
  std::remove(malformed_custom_path.c_str());
+
  const auto& greenbelt_catalog=pkkm::greenbelt_improvement_catalog();
  const auto* vineyard=pkkm::find_greenbelt_improvement(greenbelt_catalog,"vineyard");
  must(greenbelt_catalog.size()==14 && vineyard!=nullptr && vineyard->third_party
@@ -1085,7 +1087,191 @@ int main(int argc, char** argv) {
      && market_reference.sell_limit==market_reference.base_value+5000
      && market_reference.spellcasting_level==4,
      "settlement market reference follows workbook population tiers and catalog base value");
- const auto market_boundary=pkkm::calculate_settlement_market_reference(
+
+ std::vector<pkkm::BuildingCatalogEntry> construction_catalog;
+ pkkm::BuildingCatalogEntry academy_building; academy_building.source_row=1; academy_building.kind=pkkm::CatalogRowKind::Improvement;
+ academy_building.name="Academy"; academy_building.cost=5; academy_building.lots=1; academy_building.economy=1; academy_building.discounts="Library, Shrine";
+ construction_catalog.push_back(academy_building);
+ pkkm::BuildingCatalogEntry library_building; library_building.source_row=2; library_building.kind=pkkm::CatalogRowKind::Improvement;
+ library_building.name="Library"; library_building.cost=7; library_building.lots=1; library_building.loyalty=2;
+ construction_catalog.push_back(library_building);
+ pkkm::BuildingCatalogEntry shrine_building; shrine_building.source_row=3; shrine_building.kind=pkkm::CatalogRowKind::Improvement;
+ shrine_building.name="Shrine"; shrine_building.cost=4; shrine_building.lots=1; shrine_building.stability=1; shrine_building.upgrade_to="Temple";
+ construction_catalog.push_back(shrine_building);
+ pkkm::BuildingCatalogEntry temple_building; temple_building.source_row=4; temple_building.kind=pkkm::CatalogRowKind::Improvement;
+ temple_building.name="Temple"; temple_building.cost=10; temple_building.lots=2; temple_building.stability=3; temple_building.upgrade_from="Shrine";
+ construction_catalog.push_back(temple_building);
+
+  pkkm::Kingdom multi_target_discount;
+  multi_target_discount.turn=1;
+  multi_target_discount.treasury_bp=20;
+  multi_target_discount.rule_inputs.kingdom_size=26;
+  multi_target_discount.settlements.push_back({"Discount Town",0,1,0,0,0,0,{{"Academy",1}},false,{2,8,{{"Academy",0,0,1,1}}},"settlement.discount"});
+  const auto multi_target_result=pkkm::apply_construction(multi_target_discount,
+      {"settlement.discount", {{"Library",1,"",1,0,1,1},{"Shrine",1,"",1,1,1,1}}, false, false}, construction_catalog);
+  must(multi_target_result.successful && multi_target_result.discounted_buildings==1
+       && multi_target_result.discounted_cost==7,
+       "one discount source cannot be reused across target types in one transaction");
+
+  pkkm::Kingdom construction_kingdom;
+  construction_kingdom.name="Construction";
+  construction_kingdom.turn=2;
+  construction_kingdom.treasury_bp=100;
+  construction_kingdom.rule_inputs.kingdom_size=26;
+  construction_kingdom.settlements.push_back({"Buildtown",0,1,0,0,0,0,{{"Academy",1}},true,{2,8,{{"Academy",0,0,1,1}}},"settlement.buildtown"});
+  const pkkm::ConstructionRequest library_request{
+      "settlement.buildtown", {{"Library",1,"",0,1,1,1},{"Library",1,"",0,2,1,1}}, false, false};
+
+  const auto library_result=pkkm::apply_construction(construction_kingdom,library_request,construction_catalog);
+
+  must(library_result.finalized && library_result.successful && library_result.full_cost==14
+       && library_result.discounted_cost==10 && library_result.discounted_buildings==1
+       && construction_kingdom.treasury_bp==90
+       && construction_kingdom.settlements[0].building_inventory.size()==2
+       && construction_kingdom.settlements[0].building_inventory[1].name=="Library"
+       && construction_kingdom.settlements[0].building_inventory[1].count==2
+       && construction_kingdom.construction_transactions.size()==1,
+       "construction finalization totals multiple buildings, applies one discount, deducts BP, and records history");
+  const auto construction_summary=pkkm::calculate_kingdom_summary(
+      construction_kingdom.unrest, construction_kingdom.rule_inputs,
+      construction_kingdom.settlements, &construction_catalog);
+
+  must(construction_summary.settlement_totals.loyalty==4,
+       "construction stat effects flow into kingdom totals");
+  const auto prior_limit=pkkm::apply_construction(construction_kingdom,
+      {"settlement.buildtown", {{"Library",1,"",1,0,1,1},{"Library",1,"",1,1,1,1},
+          {"Library",1,"",1,2,1,1},{"Library",1,"",1,3,1,1}}, false, false}, construction_catalog);
+  must(!prior_limit.finalized && !prior_limit.successful && !prior_limit.failures.empty()
+       && construction_kingdom.construction_transactions.size()==2,
+       "construction limit includes successful construction transactions already recorded this turn");
+  const auto failed_limit=pkkm::apply_construction(construction_kingdom,
+      {"settlement.buildtown", {{"Library",1,"",1,0,1,1},{"Library",1,"",1,1,1,1},
+          {"Library",1,"",1,2,1,1},{"Library",1,"",1,3,1,1},
+          {"Library",1,"",1,4,1,1},{"Library",1,"",1,5,1,1}}, false, false, {"GM terrain: clear"}}, construction_catalog);
+
+  must(!failed_limit.finalized && !failed_limit.successful && !failed_limit.failures.empty()
+       && construction_kingdom.treasury_bp==90 && construction_kingdom.construction_transactions.size()==3
+       && !construction_kingdom.construction_transactions.back().successful
+       && !construction_kingdom.construction_transactions.back().failures.empty()
+       && construction_kingdom.construction_transactions.back().terrain_facts.size()==1,
+       "construction limit failure is recorded without mutating state");
+  const auto forced_limit=pkkm::apply_construction(construction_kingdom,
+      {"settlement.buildtown", {{"Library",1,"",1,0,1,1},{"Library",1,"",1,1,1,1},
+          {"Library",1,"",1,2,1,1},{"Library",1,"",1,3,1,1},
+          {"Library",1,"",1,4,1,1},{"Library",1,"",1,5,1,1}}, true, true}, construction_catalog);
+
+
+  must(forced_limit.finalized && forced_limit.successful && construction_kingdom.treasury_bp==48,
+       "construction overrides can finalize a failed limit check after totaling BP");
+  must_reject([&] {
+      pkkm::apply_construction(construction_kingdom,
+          {"settlement.buildtown", {{"Library",2,"",1,0,1,1}}, true, true}, construction_catalog);
+  });
+  must_reject([&] {
+      pkkm::apply_construction(construction_kingdom,
+          {"settlement.buildtown", {{"Library",1,"",std::numeric_limits<int>::max(),0,1,1}}, true, true}, construction_catalog);
+  });
+  must_reject([&] {
+      pkkm::apply_construction(construction_kingdom,
+          {"settlement.buildtown", {{"Library",1,"",0,1,1,1}}, true, true}, construction_catalog);
+  });
+  const auto shrine_result=pkkm::apply_construction(construction_kingdom,
+      {"settlement.buildtown", {{"Shrine",1,"",1,6,1,1}}, true, true}, construction_catalog);
+
+  must(shrine_result.successful,
+       "construction accepts a new building line before upgrade testing");
+  auto incomplete_upgrade_catalog=construction_catalog;
+  incomplete_upgrade_catalog[3].upgrade_from.clear();
+  must_reject([&] {
+      pkkm::apply_construction(construction_kingdom,
+          {"settlement.buildtown", {{"Temple",1,"Shrine",1,6,2,1}}, true, true}, incomplete_upgrade_catalog);
+  });
+  auto missing_source_placement=construction_kingdom;
+  missing_source_placement.settlements[0].map.placements.erase(
+      std::remove_if(missing_source_placement.settlements[0].map.placements.begin(),
+          missing_source_placement.settlements[0].map.placements.end(), [](const auto& placement) {
+              return placement.building_name=="Shrine";
+          }), missing_source_placement.settlements[0].map.placements.end());
+  must_reject([&] {
+      pkkm::apply_construction(missing_source_placement,
+          {"settlement.buildtown", {{"Temple",1,"Shrine",1,6,2,1}}, true, true}, construction_catalog);
+  });
+  const auto temple_result=pkkm::apply_construction(construction_kingdom,
+      {"settlement.buildtown", {{"Temple",1,"Shrine",1,6,2,1}}, true, true}, construction_catalog);
+
+  must(temple_result.successful && temple_result.discounted_cost==6,
+       "upgrade charges the BP cost difference and accepts the larger supplied footprint");
+  const auto shrine_count=std::find_if(construction_kingdom.settlements[0].building_inventory.begin(),
+      construction_kingdom.settlements[0].building_inventory.end(), [](const auto& building) {
+          return building.name=="Shrine";
+      });
+  const auto temple_count=std::find_if(construction_kingdom.settlements[0].building_inventory.begin(),
+      construction_kingdom.settlements[0].building_inventory.end(), [](const auto& building) {
+          return building.name=="Temple";
+      });
+  must(shrine_count!=construction_kingdom.settlements[0].building_inventory.end()
+       && shrine_count->count==0
+       && temple_count!=construction_kingdom.settlements[0].building_inventory.end()
+       && temple_count->count==1,
+       "upgrade removes the old building modifier and adds the new building");
+  must_reject([&] { pkkm::reverse_construction(construction_kingdom, 0, construction_catalog, false); });
+  pkkm::reverse_construction(construction_kingdom, construction_kingdom.construction_transactions.size()-1,
+      construction_catalog, true);
+  must(construction_kingdom.treasury_bp==44 && construction_kingdom.construction_transactions.back().reversal,
+       "construction reversal requires explicit invocation and preserves audit history");
+  const auto restored_source=std::find_if(construction_kingdom.settlements[0].map.placements.begin(),
+      construction_kingdom.settlements[0].map.placements.end(), [](const auto& placement) {
+          return placement.building_name=="Shrine";
+      });
+  must(restored_source!=construction_kingdom.settlements[0].map.placements.end()
+       && restored_source->width==1 && restored_source->height==1
+       && construction_kingdom.construction_transactions[5].lines[0].source_width==1,
+       "construction reversal restores the original upgrade footprint");
+  must_reject([&] { pkkm::reverse_construction(construction_kingdom, 0, construction_catalog, true); });
+  pkkm::Kingdom replacement_after_reversal;
+  replacement_after_reversal.turn=1;
+  replacement_after_reversal.treasury_bp=20;
+  replacement_after_reversal.rule_inputs.kingdom_size=1;
+  replacement_after_reversal.settlements.push_back({"Replacement",0,1,0,0,0,0,{},false,{2,2,{}},"settlement.replacement"});
+  const auto first_replacement=pkkm::apply_construction(replacement_after_reversal,
+      {"settlement.replacement", {{"Academy",1,"",0,0,1,1}}, false, false}, construction_catalog);
+  must(first_replacement.successful, "replacement-limit fixture accepts its first construction");
+  pkkm::reverse_construction(replacement_after_reversal, 0, construction_catalog, true);
+  const auto second_replacement=pkkm::apply_construction(replacement_after_reversal,
+      {"settlement.replacement", {{"Academy",1,"",1,0,1,1}}, false, false}, construction_catalog);
+  must(second_replacement.successful, "reversed construction no longer consumes the current-turn building limit");
+  pkkm::Kingdom independent_overrides;
+  independent_overrides.turn=1;
+  independent_overrides.treasury_bp=20;
+  independent_overrides.rule_inputs.kingdom_size=1;
+  independent_overrides.settlements.push_back({"Override Test",0,1,0,0,0,0,{},false,{2,2,{}},"settlement.override"});
+  const auto initial_override_test=pkkm::apply_construction(independent_overrides,
+      {"settlement.override", {{"Academy",1,"",0,0,1,1}}, false, false}, construction_catalog);
+  must(initial_override_test.successful, "independent override fixture accepts its initial construction");
+  const auto failed_limit_override=pkkm::apply_construction(independent_overrides,
+      {"settlement.override", {{"Library",1,"",1,0,1,1}}, false, true}, construction_catalog);
+  must(!failed_limit_override.successful && !failed_limit_override.finalized,
+       "failed-check override cannot bypass the separate building-limit override");
+  const auto construction_path=std::filesystem::temp_directory_path()/"pkkm-construction-transaction.json";
+  pkkm::save(construction_kingdom, construction_path.string());
+  const auto malformed_construction_path=std::filesystem::temp_directory_path()/"pkkm-malformed-construction.json";
+  auto malformed_construction=contents(construction_path.string());
+  const auto reverses_marker=malformed_construction.find("\"reverses_index\": -1");
+  must(reverses_marker!=std::string::npos, "construction reversal index is serialized");
+  malformed_construction.replace(reverses_marker, std::string("\"reverses_index\": -1").size(), "\"reverses_index\": 0");
+  put(malformed_construction_path.string(), malformed_construction);
+  must_reject([&] { pkkm::load(malformed_construction_path.string()); });
+  std::filesystem::remove(malformed_construction_path);
+  const auto reloaded_construction=pkkm::load(construction_path.string());
+  must(reloaded_construction.construction_transactions.size()==construction_kingdom.construction_transactions.size()
+       && reloaded_construction.construction_transactions.back().reversal
+       && reloaded_construction.construction_transactions.back().reverses_index==5
+       && reloaded_construction.construction_transactions[0].discount_sources.size()==1
+       && reloaded_construction.construction_transactions[2].terrain_facts.size()==1
+       && !reloaded_construction.construction_transactions[2].failures.empty(),
+       "construction transactions persist with reversal linkage");
+  std::filesystem::remove(construction_path);
+  const auto market_boundary=pkkm::calculate_settlement_market_reference(
      {"Small Town",250,0,0,0,0,0,{}},catalog);
  must(market_boundary.buy_limit==1000 && market_boundary.sell_limit==2500
      && market_boundary.spellcasting_level==4,

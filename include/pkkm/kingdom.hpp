@@ -394,6 +394,47 @@ struct KingdomEventRecord {
  bool anarchy_confirmed = false;
  bool consequences_applied = false;
 };
+struct ConstructionLine {
+ std::string building_name;
+ int count = 1;
+ std::string upgrade_from;
+ int row = 0;
+ int column = 0;
+ int width = 1;
+ int height = 1;
+ int source_width = 0;
+ int source_height = 0;
+};
+struct ConstructionRequest {
+ std::string settlement_id;
+ std::vector<ConstructionLine> lines;
+ bool override_building_limit = false;
+ bool override_failed_checks = false;
+ std::vector<std::string> terrain_facts;
+};
+struct ConstructionPreview {
+ bool finalized = false;
+ bool successful = false;
+ int full_cost = 0;
+ int discounted_cost = 0;
+ int discounted_buildings = 0;
+ int construction_count = 0;
+ std::vector<std::string> failures;
+};
+struct ConstructionRecord {
+ int turn = 1;
+ std::string settlement_id;
+ std::vector<ConstructionLine> lines;
+ int bp_cost = 0;
+ bool successful = false;
+ bool override_building_limit = false;
+ bool override_failed_checks = false;
+ bool reversal = false;
+ std::ptrdiff_t reverses_index = -1;
+ std::vector<std::string> failures;
+ std::vector<std::string> terrain_facts;
+ std::vector<std::string> discount_sources;
+};
 struct Kingdom;
 void apply_manual_event_consequence(Kingdom& kingdom, std::size_t event_index);
 struct TurnTransitionPreview {
@@ -445,6 +486,7 @@ struct Kingdom {
  std::vector<CommissionRecord> commissions;
  std::vector<MagicItemOutcomeRecord> magic_item_outcomes;
  std::vector<KingdomEventRecord> kingdom_events;
+ std::vector<ConstructionRecord> construction_transactions;
  std::vector<CalendarNote> calendar_notes;
  GreenbeltMap greenbelt_map;
 };
@@ -452,6 +494,11 @@ void advance_turn(Kingdom& kingdom);
 void apply_turn_action(Kingdom& kingdom, TurnAction action, int count = 1);
 void reverse_last_turn_action(Kingdom& kingdom);
 void reverse_turn_action(Kingdom& kingdom, std::size_t index);
+ConstructionPreview apply_construction(Kingdom& kingdom,
+ const ConstructionRequest& request,
+ const std::vector<BuildingCatalogEntry>& catalog);
+void reverse_construction(Kingdom& kingdom, std::size_t index,
+ const std::vector<BuildingCatalogEntry>& catalog, bool override_reversal);
 void validate(const Kingdom& kingdom);
 void save(const Kingdom& kingdom, const std::string& path);
 Kingdom load(const std::string& path);

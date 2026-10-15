@@ -86,7 +86,8 @@ int main(int argc, char** argv) {
                       << " | Loyalty checks " << kingdom.loyalty_checks.size()
                       << " | Commissions " << kingdom.commissions.size()
                       << " | Magic-item outcomes " << kingdom.magic_item_outcomes.size()
-                      << " | Kingdom events " << kingdom.kingdom_events.size() << "\n";
+                      << " | Kingdom events " << kingdom.kingdom_events.size()
+                      << " | Construction transactions " << kingdom.construction_transactions.size() << "\n";
             for (const auto& event : kingdom.kingdom_events) {
                 std::cout << " Event | turn " << event.turn
                           << " | d100 " << event.d100_roll
@@ -104,6 +105,32 @@ int main(int argc, char** argv) {
                           << " | anarchy " << (event.anarchy_confirmed ? "yes" : "no")
                           << " | applied " << (event.consequences_applied ? "yes" : "no")
                           << " | notes " << single_line(event.consequence_notes) << "\n";
+            }
+            for (std::size_t index = 0; index < kingdom.construction_transactions.size(); ++index) {
+                const auto& transaction = kingdom.construction_transactions[index];
+                std::cout << " Construction | index " << index
+                          << " | turn " << transaction.turn
+                          << " | settlement " << single_line(transaction.settlement_id)
+                          << " | bp " << transaction.bp_cost
+                          << " | " << (transaction.successful ? "successful" : "failed")
+                          << " | " << (transaction.reversal ? "reversal" : "forward")
+                          << " | override limit " << (transaction.override_building_limit ? "yes" : "no")
+                          << " | override checks " << (transaction.override_failed_checks ? "yes" : "no")
+                          << " | reverses " << transaction.reverses_index
+                          << " | failures " << transaction.failures.size()
+                          << " | terrain facts " << transaction.terrain_facts.size() << "\n";
+                for (const auto& line : transaction.lines)
+                    std::cout << "  Construction line | " << single_line(line.building_name)
+                              << " x " << line.count
+                              << (line.upgrade_from.empty() ? "" : " | from " + single_line(line.upgrade_from))
+                              << " | placement " << line.row << "," << line.column
+                              << " " << line.width << "x" << line.height << "\n";
+                for (const auto& failure : transaction.failures)
+                    std::cout << "  Construction failure | " << single_line(failure) << "\n";
+                for (const auto& fact : transaction.terrain_facts)
+                    std::cout << "  Construction terrain | " << single_line(fact) << "\n";
+                for (const auto& source : transaction.discount_sources)
+                    std::cout << "  Construction discount source | " << single_line(source) << "\n";
             }
             std::cout << "Control DC " << summary.control_dc << " | population " << summary.population << "\n";
             if (summary.settlement_totals.count > 0) {

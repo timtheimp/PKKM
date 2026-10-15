@@ -30,6 +30,8 @@ constexpr int kLabelText = 7312;
 constexpr int kAddLabel = 7313;
 constexpr int kTemplate = 7314;
 constexpr int kLoadTemplate = 7315;
+constexpr int kWindowOriginX = 80;
+constexpr int kWindowOriginY = 80;
 static_assert(kCellBase > kLoadTemplate &&
     kCellBase + kMaxGrid * kMaxGrid < 0x10000,
     "Settlement map cell IDs must not overlap editor command IDs");
@@ -452,7 +454,7 @@ bool open_map_editor(HWND owner, HINSTANCE instance, const SettlementMap& initia
         class_registered = true;
     }
     HWND window = CreateWindowExW(WS_EX_DLGMODALFRAME, kClassName, L"Settlement Map Editor",
-        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU, CW_USEDEFAULT, CW_USEDEFAULT, 1240, 700,
+        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU, kWindowOriginX, kWindowOriginY, 1240, 700,
         owner, nullptr, instance, nullptr);
     if (!window) {
         editor_owner = nullptr;
