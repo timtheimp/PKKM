@@ -15,6 +15,7 @@
 #include <functional>
 #include <limits>
 #include <random>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -56,6 +57,23 @@ constexpr int kRemoveSettlement = 5116;
 constexpr int kApplySettlements = 5117;
 constexpr int kCancelSettlements = 5118;
 constexpr int kCloseSettlements = 5121;
+constexpr int kConstruction = 5122;
+constexpr int kConstructionTarget = 5200;
+constexpr int kConstructionUpgradeFrom = 5201;
+constexpr int kConstructionRow = 5202;
+constexpr int kConstructionColumn = 5203;
+constexpr int kConstructionWidth = 5204;
+constexpr int kConstructionHeight = 5205;
+constexpr int kConstructionTerrain = 5206;
+constexpr int kConstructionLines = 5207;
+constexpr int kConstructionAddLine = 5208;
+constexpr int kConstructionLimitOverride = 5209;
+constexpr int kConstructionFailureOverride = 5210;
+constexpr int kConstructionPreview = 5211;
+constexpr int kConstructionFinalize = 5212;
+constexpr int kConstructionHistory = 5213;
+constexpr int kConstructionReverse = 5214;
+constexpr int kConstructionStatus = 5215;
 constexpr int kEditMap = 5119;
 constexpr int kMapSummary = 5120;
 constexpr int kChecklistApply = 6201;
@@ -238,6 +256,7 @@ constexpr int kGreenbeltCustomPopupCostAdd = 8164;
 constexpr int kGreenbeltCustomPopupCostRemove = 8165;
 constexpr int kGreenbeltCustomPopupEffectUpdate = 8166;
 constexpr int kGreenbeltCustomPopupCostUpdate = 8167;
+constexpr int kGreenbeltCustomPopupSaveAdd = 8180;
 constexpr int kGreenbeltFactWater = 8168;
 constexpr int kGreenbeltFactRiver = 8169;
 constexpr int kGreenbeltFactCanal = 8170;
@@ -257,12 +276,15 @@ constexpr int kGreenbeltViewportWidth = 700;
 constexpr int kGreenbeltViewportHeight = 250;
 constexpr int kGreenbeltContentHeight = 1310;
 constexpr int kTurnActionsContentHeight = 3250;
+constexpr int kWindowOriginX = 80;
+constexpr int kWindowOriginY = 80;
 
 pkkm::Kingdom kingdom;
 pkkm::Kingdom edit_draft;
 std::wstring current_path;
 HWND editor_window = nullptr;
 HWND settlement_window = nullptr;
+HWND construction_window = nullptr;
 HWND checklist_window = nullptr;
 HWND action_window = nullptr;
 HWND calendar_window = nullptr;
@@ -292,6 +314,8 @@ std::vector<std::string> checklist_step_ids;
 std::vector<pkkm::CalendarNote> calendar_note_draft;
 int calendar_active_index = -1;
 int settlement_active_index = -1;
+std::vector<pkkm::ConstructionLine> construction_lines;
+std::string construction_settlement_id;
 int greenbelt_active_index = -1;
 int greenbelt_special_active_index = -1;
 int greenbelt_custom_active_index = -1;
@@ -831,6 +855,8 @@ void create_settlement_controls(HWND window) {
         WS_CHILD | WS_VISIBLE | SS_LEFT, 250, 322, 280, 36, window, nullptr, app_instance, nullptr);
     CreateWindowExW(0, L"BUTTON", L"Edit Map...", WS_CHILD | WS_VISIBLE | WS_TABSTOP,
         250, 365, 125, 28, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kEditMap)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Construction...", WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+        250, 400, 125, 28, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kConstruction)), app_instance, nullptr);
     CreateWindowExW(0, L"STATIC", L"Map: none", WS_CHILD | WS_VISIBLE | SS_LEFT,
         385, 365, 145, 28, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kMapSummary)), app_instance, nullptr);
 
@@ -893,7 +919,7 @@ void refresh_settlement_form(HWND window) {
     const int field_ids[] = {kSettlementName, kSettlementPopulation, kSettlementDistricts,
         kSettlementEconomy, kSettlementLoyalty, kSettlementStability, kSettlementDefense,
         kSettlementApplyCatalogStats, kInventoryList, kCatalogChoice, kBuildingCount, kAddBuilding,
-        kRemoveBuilding, kEditMap};
+        kRemoveBuilding, kEditMap, kConstruction};
     for (const int id : field_ids) EnableWindow(GetDlgItem(window, id), has_selection);
     if (!has_selection) {
         for (const int id : {kSettlementName, kSettlementPopulation, kSettlementDistricts,
@@ -1009,7 +1035,7 @@ void remove_inventory_building(HWND window) {
     refresh_inventory_list(window);
 }
 
-void apply_settlement_manager(HWND window) {
+bool apply_settlement_manager(HWND window) {
     try {
         save_active_settlement(window);
         ensure_settlement_ids(settlement_draft);
@@ -1021,8 +1047,10 @@ void apply_settlement_manager(HWND window) {
         settlement_draft = kingdom.settlements;
         const HWND owner = GetWindow(window, GW_OWNER);
         if (owner) refresh(GetDlgItem(owner, kDisplay));
+        return true;
     } catch (const std::exception& error) {
         MessageBoxW(window, widen(error.what()).c_str(), L"Invalid settlement data", MB_OK | MB_ICONWARNING);
+        return false;
     }
 }
 
@@ -1033,6 +1061,273 @@ void cancel_settlement_manager(HWND window) {
         : std::min(selection, static_cast<int>(settlement_draft.size()) - 1);
     refresh_settlement_list(window, settlement_active_index);
     refresh_settlement_form(window);
+}
+
+void refresh_construction_lines(HWND window) {
+    const HWND list = GetDlgItem(window, kConstructionLines);
+    SendMessageW(list, LB_RESETCONTENT, 0, 0);
+    for (const auto& line : construction_lines) {
+        std::wstring label = widen(line.building_name) + L" x " + std::to_wstring(line.count)
+            + L" @ " + std::to_wstring(line.row) + L"," + std::to_wstring(line.column)
+            + L" " + std::to_wstring(line.width) + L"x" + std::to_wstring(line.height);
+        if (!line.upgrade_from.empty()) label += L" from " + widen(line.upgrade_from);
+        SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label.c_str()));
+    }
+}
+
+void refresh_construction_history(HWND window) {
+    const HWND list = GetDlgItem(window, kConstructionHistory);
+    SendMessageW(list, LB_RESETCONTENT, 0, 0);
+    for (size_t index = 0; index < kingdom.construction_transactions.size(); ++index) {
+        const auto& record = kingdom.construction_transactions[index];
+        std::wstring label = L"#" + std::to_wstring(index) + L" | Turn " + std::to_wstring(record.turn)
+            + L" | " + (record.successful ? L"success" : L"failed")
+            + (record.reversal ? L" | reversal" : L"")
+            + L" | " + std::to_wstring(record.bp_cost) + L" BP";
+        SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label.c_str()));
+    }
+}
+
+std::vector<std::string> construction_terrain_facts(HWND window) {
+    std::vector<std::string> facts;
+    const auto text = narrow(manager_text(window, kConstructionTerrain));
+    std::string token;
+    std::istringstream stream(text);
+    while (std::getline(stream, token, ',')) {
+        const auto first = token.find_first_not_of(" \t");
+        const auto last = token.find_last_not_of(" \t");
+        if (first != std::string::npos) facts.push_back(token.substr(first, last - first + 1));
+    }
+    return facts;
+}
+
+pkkm::ConstructionRequest construction_request(HWND window) {
+    pkkm::ConstructionRequest request;
+    request.settlement_id = construction_settlement_id;
+    request.lines = construction_lines;
+    request.override_building_limit = SendMessageW(GetDlgItem(window, kConstructionLimitOverride), BM_GETCHECK, 0, 0) == BST_CHECKED;
+    request.override_failed_checks = SendMessageW(GetDlgItem(window, kConstructionFailureOverride), BM_GETCHECK, 0, 0) == BST_CHECKED;
+    request.terrain_facts = construction_terrain_facts(window);
+    return request;
+}
+
+pkkm::Kingdom construction_candidate() {
+    pkkm::validate(kingdom);
+    return kingdom;
+}
+
+bool settlement_state_matches(const pkkm::Settlement& left, const pkkm::Settlement& right) {
+    const auto same_buildings = [](const auto& a, const auto& b) {
+        return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(), [](const auto& x, const auto& y) {
+            return x.name == y.name && x.count == y.count;
+        });
+    };
+    const auto same_placements = [](const auto& a, const auto& b) {
+        return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(), [](const auto& x, const auto& y) {
+            return x.building_name == y.building_name && x.row == y.row && x.column == y.column
+                && x.width == y.width && x.height == y.height;
+        });
+    };
+    const auto same_labels = [](const auto& a, const auto& b) {
+        return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(), [](const auto& x, const auto& y) {
+            return x.text == y.text && x.row == y.row && x.column == y.column
+                && x.width == y.width && x.height == y.height;
+        });
+    };
+    return left.name == right.name && left.population == right.population
+        && left.districts == right.districts && left.economy == right.economy
+        && left.loyalty == right.loyalty && left.stability == right.stability
+        && left.defense == right.defense && left.apply_catalog_stat_effects == right.apply_catalog_stat_effects
+        && left.id == right.id
+        && same_buildings(left.building_inventory, right.building_inventory)
+        && left.map.rows == right.map.rows && left.map.columns == right.map.columns
+        && same_placements(left.map.placements, right.map.placements)
+        && same_labels(left.map.labels, right.map.labels);
+}
+
+bool settlement_draft_matches_live() {
+    return settlement_draft.size() == kingdom.settlements.size()
+        && std::equal(settlement_draft.begin(), settlement_draft.end(), kingdom.settlements.begin(),
+            [](const auto& draft, const auto& live) { return settlement_state_matches(draft, live); });
+}
+
+std::wstring construction_preview_text(const pkkm::ConstructionPreview& preview) {
+    std::wstring text = L"Full cost " + std::to_wstring(preview.full_cost)
+        + L" BP | Final cost " + std::to_wstring(preview.discounted_cost)
+        + L" BP | Discounts " + std::to_wstring(preview.discounted_buildings)
+        + L" | Count " + std::to_wstring(preview.construction_count);
+    if (preview.failures.empty()) return text + (preview.successful ? L" | Ready to finalize" : L" | No changes");
+    text += L" | Failures: ";
+    for (size_t index = 0; index < preview.failures.size(); ++index) {
+        if (index) text += L"; ";
+        text += widen(preview.failures[index]);
+    }
+    return text;
+}
+
+void show_construction_preview(HWND window) {
+    const auto request = construction_request(window);
+    if (request.lines.empty()) throw std::invalid_argument("Add at least one construction line first.");
+    auto candidate = construction_candidate();
+    const auto preview = pkkm::apply_construction(candidate, request, settlement_catalog);
+    set_manager_text(window, kConstructionStatus, construction_preview_text(preview));
+}
+
+void finalize_construction(HWND window) {
+    const auto request = construction_request(window);
+    if (request.lines.empty()) throw std::invalid_argument("Add at least one construction line first.");
+    // Finalization applies only the construction transaction to live state.
+    // Unsaved settlement-editor changes remain discardable until Apply is used.
+    auto candidate = kingdom;
+    const auto preview = pkkm::apply_construction(candidate, request, settlement_catalog);
+    dirty = true;
+    kingdom = std::move(candidate);
+    settlement_draft = kingdom.settlements;
+    if (!preview.successful) {
+        set_manager_text(window, kConstructionStatus, construction_preview_text(preview));
+        refresh_construction_history(window);
+        return;
+    }
+    refresh_construction_history(window);
+    set_manager_text(window, kConstructionStatus, construction_preview_text(preview) + L" | Finalized");
+    const HWND owner = GetWindow(window, GW_OWNER);
+    if (owner && IsWindow(owner)) {
+        settlement_draft = kingdom.settlements;
+        refresh_settlement_form(owner);
+        refresh(GetDlgItem(GetWindow(owner, GW_OWNER), kDisplay));
+    }
+}
+
+void reverse_selected_construction(HWND window) {
+    const int selected = static_cast<int>(SendMessageW(GetDlgItem(window, kConstructionHistory), LB_GETCURSEL, 0, 0));
+    if (selected < 0 || selected >= static_cast<int>(kingdom.construction_transactions.size()))
+        throw std::invalid_argument("Select a construction transaction first.");
+    if (MessageBoxW(window, L"Reverse the selected successful construction transaction? This requires explicit confirmation.",
+            L"Reverse construction", MB_YESNO | MB_ICONQUESTION) != IDYES) return;
+    pkkm::reverse_construction(kingdom, static_cast<size_t>(selected), settlement_catalog, true);
+    dirty = true;
+    settlement_draft = kingdom.settlements;
+    refresh_construction_history(window);
+    const HWND settlement_owner = GetWindow(window, GW_OWNER);
+    if (settlement_owner && IsWindow(settlement_owner)) {
+        refresh_settlement_form(settlement_owner);
+        const HWND main_owner = GetWindow(settlement_owner, GW_OWNER);
+        if (main_owner && IsWindow(main_owner)) refresh(GetDlgItem(main_owner, kDisplay));
+    }
+    set_manager_text(window, kConstructionStatus, L"Construction reversal finalized.");
+}
+
+void create_construction_controls(HWND window) {
+    CreateWindowExW(0, L"STATIC", L"Atomic construction transaction. Preview uses a candidate copy; only Finalize mutates the kingdom.",
+        WS_CHILD | WS_VISIBLE, 18, 10, 820, 25, window, nullptr, app_instance, nullptr);
+    manager_label(window, L"Building", 20, 48, 90);
+    manager_edit(window, kConstructionTarget,
+        settlement_catalog.empty() ? L"" : widen(settlement_catalog.front().name).c_str(), 115, 44, 260);
+    manager_label(window, L"Upgrade From", 390, 48, 90); manager_edit(window, kConstructionUpgradeFrom, L"", 485, 44, 140);
+    manager_label(window, L"Row", 640, 48, 35); manager_edit(window, kConstructionRow, L"0", 680, 44, 55);
+    manager_label(window, L"Column", 750, 48, 50); manager_edit(window, kConstructionColumn, L"0", 805, 44, 55);
+    manager_label(window, L"Width", 20, 82, 55); manager_edit(window, kConstructionWidth, L"1", 80, 78, 55);
+    manager_label(window, L"Height", 150, 82, 55); manager_edit(window, kConstructionHeight, L"1", 210, 78, 55);
+    manager_label(window, L"Terrain facts", 280, 82, 85); manager_edit(window, kConstructionTerrain, L"", 375, 78, 485);
+    CreateWindowExW(0, L"BUTTON", L"Add line", WS_CHILD | WS_VISIBLE,
+        20, 112, 100, 28, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kConstructionAddLine)), app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"", WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY,
+        20, 150, 840, 140, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kConstructionLines)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Override building limit", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        20, 300, 190, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kConstructionLimitOverride)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Override failed checks", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        220, 300, 180, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kConstructionFailureOverride)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Preview", WS_CHILD | WS_VISIBLE,
+        20, 335, 95, 28, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kConstructionPreview)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Finalize", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+        125, 335, 95, 28, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kConstructionFinalize)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        230, 335, 630, 45, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kConstructionStatus)), app_instance, nullptr);
+    manager_label(window, L"Construction history", 20, 395, 200);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"", WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY,
+        20, 420, 700, 120, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kConstructionHistory)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Reverse selected", WS_CHILD | WS_VISIBLE,
+        735, 420, 125, 28, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kConstructionReverse)), app_instance, nullptr);
+}
+
+void add_construction_line(HWND window) {
+    const std::string target_name = narrow(manager_text(window, kConstructionTarget));
+    if (!catalog_entry(target_name))
+        throw std::invalid_argument("Enter an exact building name from the catalog.");
+    pkkm::ConstructionLine line;
+    line.building_name = target_name;
+    line.upgrade_from = narrow(manager_text(window, kConstructionUpgradeFrom));
+    line.row = parse_integer(manager_text(window, kConstructionRow));
+    line.column = parse_integer(manager_text(window, kConstructionColumn));
+    line.width = parse_integer(manager_text(window, kConstructionWidth));
+    line.height = parse_integer(manager_text(window, kConstructionHeight));
+    construction_lines.push_back(std::move(line));
+    refresh_construction_lines(window);
+}
+
+void open_construction_window(HWND settlement_owner) {
+    if (settlement_active_index < 0 || settlement_active_index >= static_cast<int>(settlement_draft.size()))
+        throw std::invalid_argument("Select a settlement first.");
+    save_active_settlement(settlement_owner);
+    if (!settlement_draft_matches_live())
+        throw std::invalid_argument("Apply settlement changes before opening construction.");
+    const std::string settlement_id = settlement_draft[static_cast<size_t>(settlement_active_index)].id;
+    const auto live_settlement = std::find_if(kingdom.settlements.begin(), kingdom.settlements.end(),
+        [&settlement_id](const auto& settlement) { return settlement.id == settlement_id; });
+    if (live_settlement == kingdom.settlements.end())
+        throw std::invalid_argument("Apply settlement changes before opening construction.");
+    if (!settlement_state_matches(settlement_draft[static_cast<size_t>(settlement_active_index)], *live_settlement))
+        throw std::invalid_argument("Apply settlement changes before opening construction.");
+    construction_candidate();
+    construction_lines.clear();
+    construction_settlement_id = settlement_id;
+    construction_window = CreateWindowExW(WS_EX_DLGMODALFRAME, L"PKKMConstruction", L"Construction Transactions",
+        WS_CAPTION | WS_SYSMENU | WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX,
+        kWindowOriginX, kWindowOriginY, 900, 600, settlement_owner, nullptr, app_instance, nullptr);
+    if (!construction_window) throw std::runtime_error("Could not open construction transactions");
+    EnableWindow(settlement_owner, FALSE);
+    ShowWindow(construction_window, SW_SHOW);
+}
+
+LRESULT CALLBACK construction_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
+    if (message == WM_GETMINMAXINFO) {
+        set_minimum_track_size(lparam, 900, 600);
+        return 0;
+    }
+    switch (message) {
+        case WM_CREATE: {
+            create_construction_controls(window);
+            refresh_construction_history(window);
+            return 0;
+        }
+        case WM_COMMAND: {
+            try {
+                const int id = LOWORD(wparam);
+                if (id == kConstructionAddLine) add_construction_line(window);
+                else if (id == kConstructionPreview) show_construction_preview(window);
+                else if (id == kConstructionFinalize) finalize_construction(window);
+                else if (id == kConstructionReverse) reverse_selected_construction(window);
+            } catch (const std::exception& error) {
+                MessageBoxW(window, widen(error.what()).c_str(), L"Construction transaction", MB_OK | MB_ICONWARNING);
+            }
+            return 0;
+        }
+        case WM_CLOSE:
+            DestroyWindow(window);
+            return 0;
+        case WM_DESTROY: {
+            construction_window = nullptr;
+            construction_lines.clear();
+            construction_settlement_id.clear();
+            const HWND owner = GetWindow(window, GW_OWNER);
+            if (owner && IsWindow(owner)) {
+                EnableWindow(owner, TRUE);
+                SetForegroundWindow(owner);
+            }
+            return 0;
+        }
+    }
+    return DefWindowProcW(window, message, wparam, lparam);
 }
 
 LRESULT CALLBACK settlement_manager_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
@@ -1075,6 +1370,9 @@ LRESULT CALLBACK settlement_manager_proc(HWND window, UINT message, WPARAM wpara
                                 refresh_settlement_form(window);
                             }
                         });
+                }
+                else if (id == kConstruction) {
+                    open_construction_window(window);
                 }
                 else if (id == kApplySettlements) apply_settlement_manager(window);
                 else if (id == kCancelSettlements) cancel_settlement_manager(window);
@@ -1144,7 +1442,7 @@ void command(HWND window, int id) {
             }
             prepare_editor_fields();
             editor_window = CreateWindowExW(WS_EX_DLGMODALFRAME, L"PKKMEditor", L"Edit Kingdom Inputs",
-                WS_CAPTION | WS_SYSMENU | WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT, 1025, 700,
+                WS_CAPTION | WS_SYSMENU | WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX, kWindowOriginX, kWindowOriginY, 1025, 700,
                 window, nullptr, app_instance, nullptr);
             if (editor_window) {
                 EnableWindow(window, FALSE);
@@ -1159,7 +1457,7 @@ void command(HWND window, int id) {
             settlement_draft = kingdom.settlements;
             settlement_catalog = pkkm::search_building_catalog(building_catalog, "");
             settlement_window = CreateWindowExW(WS_EX_DLGMODALFRAME, L"PKKMSettlements", L"Manage Settlements",
-                WS_CAPTION | WS_SYSMENU | WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT, 1075, 660,
+                WS_CAPTION | WS_SYSMENU | WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX, kWindowOriginX, kWindowOriginY, 1075, 660,
                 window, nullptr, app_instance, nullptr);
             if (!settlement_window) throw std::runtime_error("Could not open the settlement manager");
             EnableWindow(window, FALSE);
@@ -1174,7 +1472,7 @@ void command(HWND window, int id) {
             checklist_step_ids.clear();
             checklist_window = CreateWindowExW(WS_EX_DLGMODALFRAME, L"PKKMTurnChecklist",
                 L"Turn Checklist", WS_CAPTION | WS_SYSMENU | WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX,
-                CW_USEDEFAULT, CW_USEDEFAULT, 1010, 620, window, nullptr, app_instance, nullptr);
+                kWindowOriginX, kWindowOriginY, 1010, 620, window, nullptr, app_instance, nullptr);
             if (!checklist_window) throw std::runtime_error("Could not open the turn checklist");
             EnableWindow(window, FALSE);
             ShowWindow(checklist_window, SW_SHOW);
@@ -1186,7 +1484,7 @@ void command(HWND window, int id) {
             }
             action_window = CreateWindowExW(WS_EX_DLGMODALFRAME, L"PKKMTurnActions",
                 L"Turn Actions", WS_CAPTION | WS_SYSMENU | WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_VSCROLL,
-                                CW_USEDEFAULT, CW_USEDEFAULT, 620, 720, window, nullptr, app_instance, nullptr);
+                                kWindowOriginX, kWindowOriginY, 620, 720, window, nullptr, app_instance, nullptr);
             if (!action_window) throw std::runtime_error("Could not open the Turn Actions manager");
             EnableWindow(window, FALSE);
             ShowWindow(action_window, SW_SHOW);
@@ -1200,7 +1498,7 @@ void command(HWND window, int id) {
             calendar_active_index = -1;
             calendar_window = CreateWindowExW(WS_EX_DLGMODALFRAME, L"PKKMCalendarTracker",
                 L"Calendar Notes", WS_CAPTION | WS_SYSMENU | WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX,
-                CW_USEDEFAULT, CW_USEDEFAULT, 1050, 760, window, nullptr, app_instance, nullptr);
+                kWindowOriginX, kWindowOriginY, 1050, 760, window, nullptr, app_instance, nullptr);
             if (!calendar_window) throw std::runtime_error("Could not open the calendar notes tracker");
             EnableWindow(window, FALSE);
             ShowWindow(calendar_window, SW_SHOW);
@@ -3043,6 +3341,8 @@ void paint_greenbelt_map(HWND window) {
         static_cast<float>(kGreenbeltViewportHeight));
     Gdiplus::SolidBrush background(Gdiplus::Color(245, 245, 245));
     graphics.FillRectangle(&background, viewport);
+    const auto viewport_state = graphics.Save();
+    graphics.SetClip(viewport, Gdiplus::CombineModeReplace);
     try {
         const std::filesystem::path image_path = greenbelt_image_path();
         Gdiplus::Image image(image_path.wstring().c_str());
@@ -3128,6 +3428,7 @@ void paint_greenbelt_map(HWND window) {
         graphics.DrawString(L"Greenbelt image path is invalid.", -1, &font,
             Gdiplus::PointF(viewport.X + 8.0F, viewport.Y + 8.0F), &brush);
     }
+    graphics.Restore(viewport_state);
     EndPaint(window, &paint);
 }
 
@@ -3242,11 +3543,13 @@ void paint_greenbelt_popout(HWND window) {
     Gdiplus::Graphics graphics(device);
     RECT client{};
     GetClientRect(window, &client);
-    const Gdiplus::RectF viewport(10.0F, 112.0F,
+    const Gdiplus::RectF viewport(10.0F, 112.0F - static_cast<float>(greenbelt_popout_scroll_y),
         static_cast<float>(std::max(1L, client.right - 390L)),
         static_cast<float>(std::max(1L, client.bottom - 122L)));
     Gdiplus::SolidBrush background(Gdiplus::Color(245, 245, 245));
     graphics.FillRectangle(&background, viewport);
+    const auto viewport_state = graphics.Save();
+    graphics.SetClip(viewport, Gdiplus::CombineModeReplace);
     try {
         Gdiplus::Image image(greenbelt_image_path().wstring().c_str());
         if (image.GetLastStatus() != Gdiplus::Ok || image.GetWidth() == 0 || image.GetHeight() == 0) {
@@ -3331,6 +3634,7 @@ void paint_greenbelt_popout(HWND window) {
         graphics.DrawString(L"Greenbelt image could not be loaded.", -1, &font,
             Gdiplus::PointF(viewport.X + 8.0F, viewport.Y + 8.0F), &brush);
     }
+    graphics.Restore(viewport_state);
     EndPaint(window, &paint);
 }
 
@@ -3341,10 +3645,11 @@ void handle_greenbelt_popout_click(HWND window, LPARAM lparam, bool toggle) {
     const double view_y = static_cast<double>(static_cast<short>(HIWORD(lparam)));
     const double viewport_x = 10.0;
     const double viewport_y = 112.0;
+    const double content_view_y = view_y + greenbelt_popout_scroll_y;
     const double viewport_width = std::max(1L, client.right - 390L);
     const double viewport_height = std::max(1L, client.bottom - 122L);
-    if (view_x < viewport_x || view_y < viewport_y
-        || view_x > viewport_x + viewport_width || view_y > viewport_y + viewport_height)
+    if (view_x < viewport_x || content_view_y < viewport_y
+        || view_x > viewport_x + viewport_width || content_view_y > viewport_y + viewport_height)
         return;
     const auto calibration = greenbelt_draft.calibration;
     if (calibration.hex_width <= 0.0 || calibration.hex_height <= 0.0 || calibration.scale <= 0.0)
@@ -3358,10 +3663,11 @@ void handle_greenbelt_popout_click(HWND window, LPARAM lparam, bool toggle) {
     const double image_height = image.GetHeight() * image_scale;
     const double left = viewport_x + (viewport_width - image_width) * 0.5 + greenbelt_popout_pan_x;
     const double top = viewport_y + (viewport_height - image_height) * 0.5 + greenbelt_popout_pan_y;
-    if (view_x < left || view_y < top || view_x > left + image_width || view_y > top + image_height)
+    if (view_x < left || content_view_y < top
+        || view_x > left + image_width || content_view_y > top + image_height)
         return;
     const double image_x = (view_x - left) / image_scale;
-    const double image_y = (view_y - top) / image_scale;
+    const double image_y = (content_view_y - top) / image_scale;
     const auto coordinate = pkkm::greenbelt_hex_at_point(calibration, image_x, image_y);
     if (!pkkm::greenbelt_hex_inside_image(calibration, coordinate.q, coordinate.r,
             static_cast<int>(image.GetWidth()), static_cast<int>(image.GetHeight())))
@@ -3380,15 +3686,30 @@ void open_greenbelt_popout(HWND owner) {
         && greenbelt_active_index >= 0
         && greenbelt_active_index < static_cast<int>(greenbelt_draft.hexes.size()))
         save_greenbelt_form(greenbelt_window);
+    seed_greenbelt_calibration_if_empty();
     greenbelt_alignment_mode = false;
     greenbelt_popout_zoom = 1.0;
     greenbelt_popout_pan_x = 0.0;
     greenbelt_popout_pan_y = 0.0;
     greenbelt_popout_scroll_y = 0;
+    constexpr int popout_width = 1250;
+    constexpr int popout_height = 850;
+    MONITORINFO monitor{sizeof(monitor)};
+    const HMONITOR monitor_handle = MonitorFromWindow(owner, MONITOR_DEFAULTTONEAREST);
+    GetMonitorInfoW(monitor_handle, &monitor);
+    const RECT& work = monitor.rcWork;
+    const int work_left = static_cast<int>(work.left);
+    const int work_top = static_cast<int>(work.top);
+    const int work_right = static_cast<int>(work.right);
+    const int work_bottom = static_cast<int>(work.bottom);
+    const int origin_x = std::clamp(kWindowOriginX, work_left,
+        std::max(work_left, work_right - popout_width));
+    const int origin_y = std::clamp(kWindowOriginY, work_top,
+        std::max(work_top, work_bottom - popout_height));
     greenbelt_popout_window = CreateWindowExW(WS_EX_DLGMODALFRAME, L"PKKMGreenbeltMapPopout",
         L"Greenbelt Map - Large View", WS_CAPTION | WS_SYSMENU | WS_POPUP | WS_THICKFRAME
         | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_VSCROLL,
-        CW_USEDEFAULT, CW_USEDEFAULT, 1250, 850, owner, nullptr, app_instance, nullptr);
+        origin_x, origin_y, popout_width, popout_height, owner, nullptr, app_instance, nullptr);
     if (!greenbelt_popout_window)
         throw std::runtime_error("Could not open the large Greenbelt Map view");
     ShowWindow(greenbelt_popout_window, SW_SHOW);
@@ -3547,14 +3868,15 @@ void remove_greenbelt_custom_popup_value(HWND window, int list_id) {
     if (selected >= 0) SendMessageW(list, LB_DELETESTRING, selected, 0);
 }
 
-void commit_greenbelt_custom_popup(HWND window) {
-    if (greenbelt_active_index < 0
-        || greenbelt_active_index >= static_cast<int>(greenbelt_draft.hexes.size()))
+void commit_greenbelt_custom_popup(HWND window, bool add_to_selected_hex) {
+    const bool editing = greenbelt_custom_popup_edit_index >= 0
+        && greenbelt_custom_popup_edit_index < static_cast<int>(greenbelt_draft.custom_improvements.size());
+    if ((!editing || add_to_selected_hex)
+        && (greenbelt_active_index < 0
+            || greenbelt_active_index >= static_cast<int>(greenbelt_draft.hexes.size())))
         throw std::invalid_argument("Select a Greenbelt hex first.");
     pkkm::GreenbeltCustomImprovement item;
     item.name = narrow(manager_text(window, kGreenbeltCustomPopupName));
-    const bool editing = greenbelt_custom_popup_edit_index >= 0
-        && greenbelt_custom_popup_edit_index < static_cast<int>(greenbelt_draft.custom_improvements.size());
     item.id = editing
         ? greenbelt_draft.custom_improvements[static_cast<size_t>(greenbelt_custom_popup_edit_index)].id
         : greenbelt_custom_id_for_name(item.name);
@@ -3576,9 +3898,13 @@ void commit_greenbelt_custom_popup(HWND window) {
             *existing = item;
         }
     }
-    auto& improvements = greenbelt_draft.hexes[static_cast<size_t>(greenbelt_active_index)].improvements;
-    if (!editing && std::find(improvements.begin(), improvements.end(), item.id) == improvements.end())
-        improvements.push_back(item.id);
+    if (greenbelt_window && IsWindow(greenbelt_window))
+        refresh_greenbelt_custom_list(greenbelt_window);
+    if (!editing || add_to_selected_hex) {
+        auto& improvements = greenbelt_draft.hexes[static_cast<size_t>(greenbelt_active_index)].improvements;
+        if (std::find(improvements.begin(), improvements.end(), item.id) == improvements.end())
+            improvements.push_back(item.id);
+    }
     if (greenbelt_window && IsWindow(greenbelt_window))
         refresh_greenbelt_hex_list(greenbelt_window);
     if (greenbelt_popout_window && IsWindow(greenbelt_popout_window)) {
@@ -3626,7 +3952,7 @@ void open_greenbelt_custom_popup(HWND owner, int edit_index = -1) {
     greenbelt_custom_popup_window = CreateWindowExW(WS_EX_DLGMODALFRAME,
         L"PKKMGreenbeltCustomImprovement", L"Custom Improvement",
         WS_CAPTION | WS_SYSMENU | WS_POPUP | WS_THICKFRAME,
-        CW_USEDEFAULT, CW_USEDEFAULT, 640, 500, owner, nullptr, app_instance, nullptr);
+        kWindowOriginX, kWindowOriginY, 640, 500, owner, nullptr, app_instance, nullptr);
     if (!greenbelt_custom_popup_window) {
         const DWORD error = GetLastError();
         throw std::runtime_error("Could not open the custom improvement dialog (Win32 error "
@@ -3684,6 +4010,8 @@ LRESULT CALLBACK greenbelt_custom_popup_proc(HWND window, UINT message, WPARAM w
             CheckDlgButton(window, kGreenbeltCustomPopupManual, BST_CHECKED);
             CreateWindowExW(0, L"BUTTON", L"Add/Close", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
                 390, 420, 105, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltCustomPopupAdd)), app_instance, nullptr);
+            CreateWindowExW(0, L"BUTTON", L"Save + Add to Hex", WS_CHILD | WS_VISIBLE,
+                270, 420, 115, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltCustomPopupSaveAdd)), app_instance, nullptr);
             CreateWindowExW(0, L"BUTTON", L"Cancel", WS_CHILD | WS_VISIBLE,
                 505, 420, 90, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltCustomPopupCancel)), app_instance, nullptr);
             populate_greenbelt_custom_popup_combo(window, kGreenbeltCustomPopupEffectCombo, true);
@@ -3732,7 +4060,15 @@ LRESULT CALLBACK greenbelt_custom_popup_proc(HWND window, UINT message, WPARAM w
             }
             if (LOWORD(wparam) == kGreenbeltCustomPopupAdd) {
                 try {
-                    commit_greenbelt_custom_popup(window);
+                    commit_greenbelt_custom_popup(window, false);
+                } catch (const std::exception& error) {
+                    MessageBoxW(window, widen(error.what()).c_str(), L"Custom Improvement", MB_OK | MB_ICONWARNING);
+                }
+                return 0;
+            }
+            if (LOWORD(wparam) == kGreenbeltCustomPopupSaveAdd) {
+                try {
+                    commit_greenbelt_custom_popup(window, true);
                 } catch (const std::exception& error) {
                     MessageBoxW(window, widen(error.what()).c_str(), L"Custom Improvement", MB_OK | MB_ICONWARNING);
                 }
@@ -3782,7 +4118,7 @@ void scroll_greenbelt_popout_to(HWND window, int requested_position) {
 
 LRESULT CALLBACK greenbelt_popout_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
     if (message == WM_GETMINMAXINFO) {
-        set_minimum_track_size(lparam, 700, 900);
+        set_minimum_track_size(lparam, 1220, 700);
         return 0;
     }
     switch (message) {
@@ -4502,6 +4838,10 @@ LRESULT CALLBACK main_proc(HWND window, UINT message, WPARAM wparam, LPARAM lpar
 }
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
+    // Keep Win32 coordinates, UI Automation bounds, and screenshots in the
+    // same coordinate space on scaled displays.
+    if (!SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2))
+        SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_SYSTEM_AWARE);
     app_instance = instance;
     Gdiplus::GdiplusStartupInput gdiplus_input;
     if (Gdiplus::GdiplusStartup(&gdiplus_token, &gdiplus_input, nullptr) != Gdiplus::Ok)
@@ -4542,6 +4882,17 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     settlement_class.hCursor = LoadCursor(nullptr, IDC_ARROW);
     settlement_class.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&settlement_class)) {
+        Gdiplus::GdiplusShutdown(gdiplus_token);
+        return 1;
+    }
+
+    WNDCLASSW construction_class{};
+    construction_class.lpfnWndProc = construction_proc;
+    construction_class.hInstance = instance;
+    construction_class.lpszClassName = L"PKKMConstruction";
+    construction_class.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    construction_class.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+    if (!RegisterClassW(&construction_class)) {
         Gdiplus::GdiplusShutdown(gdiplus_token);
         return 1;
     }
@@ -4615,7 +4966,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     }
 
     HWND window = CreateWindowW(main_class.lpszClassName, L"PKKM - Kingdom Manager",
-        WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 800, 620,
+        WS_OVERLAPPEDWINDOW, kWindowOriginX, kWindowOriginY, 800, 620,
         nullptr, nullptr, instance, nullptr);
     if (!window) {
         Gdiplus::GdiplusShutdown(gdiplus_token);

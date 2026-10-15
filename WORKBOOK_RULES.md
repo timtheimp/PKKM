@@ -82,7 +82,7 @@ The importer assigns explicit `improvement`, `basic`, `town`, `city`, `district`
 python tools/import_building_catalog.py "C:/Users/darks/Downloads/Kingdom of Template.xlsx" assets/building_catalog.json
 ```
 
-The Win32 settlement manager uses catalog improvements to add/remove per-settlement building counts and displays each selected improvement's cost and lot size. Schema v5 persists inventory names/counts and the opt-in flag; older saves default the flag off. Catalog lots drive effective settlement lots, districts, and population through the formulas above. When enabled, catalog Economy/Loyalty/Stability effects contribute to kingdom totals while saved settlement stat fields remain unchanged; Defense and Unrest are preview-only. This explicit policy preserves legacy totals and prevents implicit double-counting. Costs remain unapplied.
+The Win32 settlement manager uses catalog improvements to add/remove per-settlement building counts and displays each selected improvement's cost and lot size. Schema v5 persists inventory names/counts and the opt-in flag; older saves default the flag off. Catalog lots drive effective settlement lots, districts, and population through the formulas above. When enabled, catalog Economy/Loyalty/Stability effects contribute to kingdom totals while saved settlement stat fields remain unchanged; Defense and Unrest are preview-only. This explicit policy preserves legacy totals and prevents implicit double-counting. Construction costs are applied only through the atomic construction transaction API described below.
 
 ## City improvement table boundaries (`Capital`, `City #`)
 
@@ -102,6 +102,16 @@ The source-specific formulas that are preserved as supported settlement sizing a
 - Market reference: catalog `base_value` totals are combined with the workbook population tiers for buy limit, sell limit, and spellcasting level. This is a read-only reference calculation; it does not authorize purchases, sales, discounts, or automatic resource changes.
 
 No Qt migration is required for this boundary. The current Win32 editor already exposes the supported inputs and keeps unsupported table mechanics from becoming hidden side effects.
+
+## Construction transactions
+
+`pkkm::apply_construction` is the explicit mutating path for building construction. It validates every requested line before mutating the kingdom, totals all full costs, applies at most one floor-halved discount to each eligible building, and deducts the finalized BP total immediately as one treasury change. A failed automatic check is recorded without mutation; the caller may explicitly supply the failed-check override to finalize it. The transaction record preserves the request, failures, GM-supplied terrain facts, cost, override flags, and success state.
+
+An upgrade supplies both `Upgrade From` and `Upgrade To` labels. The source inventory and placement are replaced by the target, the BP charge is the target cost minus the source cost, the target footprint must fit the supplied district-grid facts, and the upgrade counts toward the kingdom-size per-turn building limit. The source and target catalog metadata must agree; stat totals are recalculated through the existing catalog-aware settlement summary rather than by incrementing stored fields.
+
+Each qualifying built discount source grants one discounted target construction. A second qualifying source grants a second discounted target construction, while each individual building receives no more than one discount. Zero-count inventory entries provide no discounts. Reversal is a separate inverse transaction and is rejected unless the explicit reversal override is supplied; successful records cannot be reversed twice. Terrain facts are accepted and retained as GM observations only. They do not infer terrain, alter map geometry, or create unrelated BP or kingdom effects.
+
+The native Win32 **Construction Transactions** window stages multiple explicit placement lines, accepts upgrade and GM terrain inputs, previews against a candidate kingdom copy, and only mutates the live kingdom through **Finalize**. It displays persisted construction history and exposes explicit confirmed reversal. The building field accepts an exact catalog name rather than inventing a filtered catalog selection; invalid names remain rejected by the domain path.
 
 ## Settlement map sheets (`Capital Map`, `City # Map`, `Example Map`, `Multi-District Map`)
 
