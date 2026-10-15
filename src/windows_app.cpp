@@ -1909,8 +1909,13 @@ void refresh_magic_item_history(HWND window) {
 
 void refresh_event_history(HWND window) {
     HWND list = GetDlgItem(window, kEventHistory);
+    const LRESULT selected_item = SendMessageW(list, LB_GETCURSEL, 0, 0);
+    const std::size_t selected_index = selected_item == LB_ERR
+        ? std::numeric_limits<std::size_t>::max()
+        : static_cast<std::size_t>(SendMessageW(list, LB_GETITEMDATA, selected_item, 0));
     SendMessageW(list, LB_RESETCONTENT, 0, 0);
-    for (const auto& event : kingdom.kingdom_events) {
+    for (std::size_t index = 0; index < kingdom.kingdom_events.size(); ++index) {
+        const auto& event = kingdom.kingdom_events[index];
         const std::wstring line = L"Turn " + std::to_wstring(event.turn)
             + L" | d100 " + std::to_wstring(event.d100_roll)
             + L" | " + widen(pkkm::kingdom_event_kind_name(event.kind))
@@ -1928,7 +1933,9 @@ void refresh_event_history(HWND window) {
             + L" | Applied " + (event.consequences_applied ? L"yes" : L"no");
         const auto item = SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(line.c_str()));
         SendMessageW(list, LB_SETITEMDATA, item,
-            static_cast<LPARAM>(&event - kingdom.kingdom_events.data()));
+            static_cast<LPARAM>(index));
+        if (index == selected_index)
+            SendMessageW(list, LB_SETCURSEL, item, 0);
     }
 }
 
@@ -2497,6 +2504,7 @@ void apply_latest_event_consequence_dialog(HWND window) {
     dirty = true;
     refresh(GetDlgItem(GetParent(window), kDisplay));
     refresh_event_history(window);
+    refresh_event_details(window);
     const auto& event = kingdom.kingdom_events[index];
     set_manager_text(window, kEventStatus,
         L"Applied selected numeric consequence | Treasury delta " + std::to_wstring(event.treasury_delta)
