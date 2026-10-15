@@ -66,6 +66,17 @@ struct SettlementMarketReference {
     int sell_limit = 0;
     int spellcasting_level = 0;
 };
+struct SettlementMagicItemPreview {
+    int minor_slots = 0;
+    int medium_slots = 0;
+    int major_slots = 0;
+    int qualifying_buildings = 0;
+    std::vector<std::string> sources;
+};
+struct SettlementBuildingDiscountPreview {
+    bool stacking_enabled = true;
+    std::vector<std::string> source_buildings;
+};
 
 std::vector<BuildingCatalogEntry> load_building_catalog(const std::string& path);
 std::vector<BuildingCatalogEntry> search_building_catalog(
@@ -78,5 +89,10 @@ int calculate_settlement_catalog_cost(
     const Settlement& settlement, const std::vector<BuildingCatalogEntry>& catalog);
 SettlementMarketReference calculate_settlement_market_reference(
     const Settlement& settlement, const std::vector<BuildingCatalogEntry>& catalog);
+SettlementMagicItemPreview preview_settlement_magic_items(
+    const Settlement& settlement, const std::vector<BuildingCatalogEntry>& catalog);
+SettlementBuildingDiscountPreview preview_settlement_building_discounts(
+    const Settlement& settlement, const std::string& target_name,
+    const std::vector<BuildingCatalogEntry>& catalog, bool stacking_enabled);
 
 } // namespace pkkm

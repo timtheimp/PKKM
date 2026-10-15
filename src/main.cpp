@@ -85,7 +85,26 @@ int main(int argc, char** argv) {
                       << " | Item deposits " << kingdom.item_deposits.size()
                       << " | Loyalty checks " << kingdom.loyalty_checks.size()
                       << " | Commissions " << kingdom.commissions.size()
-                      << " | Magic-item outcomes " << kingdom.magic_item_outcomes.size() << "\n";
+                      << " | Magic-item outcomes " << kingdom.magic_item_outcomes.size()
+                      << " | Kingdom events " << kingdom.kingdom_events.size() << "\n";
+            for (const auto& event : kingdom.kingdom_events) {
+                std::cout << " Event | turn " << event.turn
+                          << " | d100 " << event.d100_roll
+                          << " | " << pkkm::kingdom_event_kind_name(event.kind)
+                          << " | " << (event.resolved ? "resolved" : "unresolved")
+                          << " | continuous " << (event.continuous_active ? "active" : "inactive")
+                          << " | leader " << single_line(event.affected_leader)
+                          << " | city " << single_line(event.affected_city)
+                          << " | block " << single_line(event.affected_block)
+                          << " | hex " << single_line(event.affected_hex)
+                          << " | treasury " << event.treasury_delta
+                          << " | unrest " << event.unrest_delta
+                          << " | size " << event.kingdom_size_delta
+                          << " | hex loss " << (event.hex_loss_confirmed ? "yes" : "no")
+                          << " | anarchy " << (event.anarchy_confirmed ? "yes" : "no")
+                          << " | applied " << (event.consequences_applied ? "yes" : "no")
+                          << " | notes " << single_line(event.consequence_notes) << "\n";
+            }
             std::cout << "Control DC " << summary.control_dc << " | population " << summary.population << "\n";
             if (summary.settlement_totals.count > 0) {
                 const auto& totals = summary.settlement_totals;
@@ -98,6 +117,7 @@ int main(int argc, char** argv) {
                 const auto size = pkkm::calculate_settlement_size(settlement, catalog);
                 const auto market = pkkm::calculate_settlement_market_reference(settlement, catalog);
                 const auto catalog_cost = pkkm::calculate_settlement_catalog_cost(settlement, catalog);
+                const auto magic_items = pkkm::preview_settlement_magic_items(settlement, catalog);
                 std::cout << "  " << single_line(settlement.name)
                           << " | population " << size.population
                           << " | districts " << size.districts
@@ -106,7 +126,12 @@ int main(int argc, char** argv) {
                           << " | buy limit " << market.buy_limit
                           << " | sell limit " << market.sell_limit
                           << " | spellcasting level " << market.spellcasting_level
-                          << " | catalog cost " << catalog_cost << " BP\n";
+                          << " | catalog cost " << catalog_cost << " BP"
+                          << " | magic slots minor " << magic_items.minor_slots
+                          << " medium " << magic_items.medium_slots
+                          << " major " << magic_items.major_slots << "\n";
+                for (const auto& source : magic_items.sources)
+                    std::cout << "   magic source | " << single_line(source) << "\n";
                 if (settlement.apply_catalog_stat_effects) {
                     std::cout << " catalog stat bonuses applied to kingdom totals: Economy "
                               << signed_component(effects.economy) << " | Loyalty " << signed_component(effects.loyalty)

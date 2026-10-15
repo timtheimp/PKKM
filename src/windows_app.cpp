@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <functional>
 #include <limits>
+#include <random>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -121,10 +122,41 @@ constexpr int kConsumptionBp = 6431;
 constexpr int kConsumptionApply = 6432;
 constexpr int kConsumptionStatus = 6433;
 constexpr int kConsumptionHistory = 6434;
-constexpr int kOptionalMineRule = 6439;
-constexpr int kRoyalAssassinEmployed = 6440;
-constexpr int kUpkeepPreview = 6441;
-constexpr int kUpkeepStatus = 6442;
+constexpr int kOptionalMineRule = 6462;
+constexpr int kRoyalAssassinEmployed = 6463;
+constexpr int kUpkeepPreview = 6464;
+constexpr int kUpkeepStatus = 6465;
+constexpr int kFoodStartingConsumption = 6466;
+constexpr int kFoodFarmCount = 6467;
+constexpr int kFoodExtraReduction = 6468;
+constexpr int kFoodPreview = 6469;
+constexpr int kFoodStatus = 6470;
+constexpr int kQuarryCount = 6471;
+constexpr int kQuarryPreview = 6472;
+constexpr int kQuarryStatus = 6473;
+constexpr int kMineStartingValue = 6474;
+constexpr int kMineMonthsElapsed = 6475;
+constexpr int kMinePreview = 6476;
+constexpr int kMineStatus = 6477;
+constexpr int kEventRoll = 6478;
+constexpr int kEventAutoRoll = 6479;
+constexpr int kEventResolved = 6480;
+constexpr int kEventLeader = 6481;
+constexpr int kEventCity = 6482;
+constexpr int kEventBlock = 6483;
+constexpr int kEventHex = 6484;
+constexpr int kEventPreview = 6485;
+constexpr int kEventApply = 6486;
+constexpr int kEventStatus = 6487;
+constexpr int kEventHistory = 6488;
+constexpr int kEventConsequenceNotes = 6489;
+constexpr int kEventTreasuryDelta = 6490;
+constexpr int kEventUnrestDelta = 6491;
+constexpr int kEventSizeDelta = 6492;
+constexpr int kEventHexLoss = 6493;
+constexpr int kEventAnarchy = 6494;
+constexpr int kEventApplyConsequence = 6495;
+constexpr int kEventDetails = 6496;
 constexpr int kUnrestNegativeStats = 6435;
 constexpr int kUnrestApply = 6436;
 constexpr int kUnrestStatus = 6437;
@@ -206,6 +238,16 @@ constexpr int kGreenbeltCustomPopupCostAdd = 8164;
 constexpr int kGreenbeltCustomPopupCostRemove = 8165;
 constexpr int kGreenbeltCustomPopupEffectUpdate = 8166;
 constexpr int kGreenbeltCustomPopupCostUpdate = 8167;
+constexpr int kGreenbeltFactWater = 8168;
+constexpr int kGreenbeltFactRiver = 8169;
+constexpr int kGreenbeltFactCanal = 8170;
+constexpr int kGreenbeltFactEndpoint = 8171;
+constexpr int kGreenbeltFactRoad = 8172;
+constexpr int kGreenbeltFactCrossing = 8173;
+constexpr int kGreenbeltFactFarms = 8174;
+constexpr int kGreenbeltFactSize = 8175;
+constexpr int kGreenbeltFactRoute = 8176;
+constexpr int kGreenbeltRefreshPreview = 8177;
 constexpr int kGreenbeltApply = 8201;
 constexpr int kGreenbeltCancel = 8202;
 constexpr int kGreenbeltClose = 8203;
@@ -214,7 +256,7 @@ constexpr int kGreenbeltViewportY = 104;
 constexpr int kGreenbeltViewportWidth = 700;
 constexpr int kGreenbeltViewportHeight = 250;
 constexpr int kGreenbeltContentHeight = 1310;
-constexpr int kTurnActionsContentHeight = 2310;
+constexpr int kTurnActionsContentHeight = 3250;
 
 pkkm::Kingdom kingdom;
 pkkm::Kingdom edit_draft;
@@ -235,6 +277,9 @@ bool greenbelt_popout_dragging = false;
 POINT greenbelt_popout_drag_start{};
 double greenbelt_popout_drag_origin_x = 0.0;
 double greenbelt_popout_drag_origin_y = 0.0;
+void preview_event_dialog(HWND window);
+void apply_event_dialog(HWND window);
+void apply_latest_event_consequence_dialog(HWND window);
 bool greenbelt_alignment_mode = false;
 HWND greenbelt_canvas = nullptr;
 HINSTANCE app_instance = nullptr;
@@ -254,6 +299,7 @@ pkkm::GreenbeltMap greenbelt_draft;
 std::vector<pkkm::GreenbeltImprovementDefinition> greenbelt_catalog;
 ULONG_PTR gdiplus_token = 0;
 int greenbelt_scroll_y = 0;
+int greenbelt_popout_scroll_y = 0;
 int turn_actions_scroll_y = 0;
 int turn_action_filter = 0;
 
@@ -503,6 +549,7 @@ void refresh(HWND display) {
         const auto size = pkkm::calculate_settlement_size(settlement, building_catalog);
         const auto market = pkkm::calculate_settlement_market_reference(settlement, building_catalog);
         const auto catalog_cost = pkkm::calculate_settlement_catalog_cost(settlement, building_catalog);
+        const auto magic_items = pkkm::preview_settlement_magic_items(settlement, building_catalog);
         text += L"- " + widen(settlement.name) + L" - population "
             + std::to_wstring(size.population) + L", districts " + std::to_wstring(size.districts)
             + L", lots " + std::to_wstring(size.lots)
@@ -514,7 +561,10 @@ void refresh(HWND display) {
             + L", buy limit " + std::to_wstring(market.buy_limit)
             + L", sell limit " + std::to_wstring(market.sell_limit)
             + L", spellcasting level " + std::to_wstring(market.spellcasting_level) + L"\n"
-            + L"  Catalog cost reference only: " + std::to_wstring(catalog_cost) + L" BP\n";
+            + L"  Catalog cost reference only: " + std::to_wstring(catalog_cost) + L" BP\n"
+            + L"  Magic-item slots preview: minor " + std::to_wstring(magic_items.minor_slots)
+            + L", medium " + std::to_wstring(magic_items.medium_slots)
+            + L", major " + std::to_wstring(magic_items.major_slots) + L"\n";
         if (!settlement.building_inventory.empty()) {
             text += L"  Building inventory: ";
             for (size_t index = 0; index < settlement.building_inventory.size(); ++index) {
@@ -1558,6 +1608,142 @@ void create_turn_action_controls(HWND window) {
     CreateWindowExW(0, L"STATIC", L"No Upkeep preview generated this session.", WS_CHILD | WS_VISIBLE | SS_LEFT,
         20, 2275, 575, 22, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kUpkeepStatus)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Food resource preview (non-mutating; each Farm reduces Consumption by 2)",
+        WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 2325, 560, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Starting Consumption", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 2355, 125, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"0", WS_CHILD | WS_VISIBLE | ES_NUMBER,
+        150, 2353, 70, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kFoodStartingConsumption)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Farms", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        235, 2355, 45, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"0", WS_CHILD | WS_VISIBLE | ES_NUMBER,
+        285, 2353, 60, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kFoodFarmCount)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Extra reduction", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        360, 2355, 95, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"0", WS_CHILD | WS_VISIBLE | ES_NUMBER,
+        460, 2353, 60, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kFoodExtraReduction)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Preview Food", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+        20, 2388, 125, 30, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kFoodPreview)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"No food-resource preview generated this session.",
+        WS_CHILD | WS_VISIBLE | SS_LEFT, 160, 2392, 420, 22, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kFoodStatus)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Quarry income preview (non-mutating; +1 BP per Quarry)",
+        WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 2435, 500, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Quarries", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 2465, 65, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"0", WS_CHILD | WS_VISIBLE | ES_NUMBER,
+        90, 2463, 70, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kQuarryCount)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Preview Quarry", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+        180, 2458, 135, 30, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kQuarryPreview)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"No quarry-income preview generated this session.",
+        WS_CHILD | WS_VISIBLE | SS_LEFT, 325, 2462, 255, 22, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kQuarryStatus)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Optional GM mine preview (non-mutating; unresolved accounting remains manual)",
+        WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 2490, 560, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Starting BP", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 2518, 75, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"20", WS_CHILD | WS_VISIBLE | ES_NUMBER,
+        100, 2516, 70, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kMineStartingValue)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Months elapsed", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        190, 2518, 100, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"0", WS_CHILD | WS_VISIBLE | ES_NUMBER,
+        295, 2516, 70, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kMineMonthsElapsed)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Preview Mine", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+        385, 2513, 120, 30, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kMinePreview)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"No mine preview generated this session.",
+        WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 2550, 560, 22, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kMineStatus)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"GM event record (roll/effects remain GM-controlled)",
+        WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 2590, 560, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"d100 roll", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 2620, 70, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"", WS_CHILD | WS_VISIBLE | ES_NUMBER,
+        95, 2618, 60, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kEventRoll)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Automatic roll (opt-in)", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        170, 2618, 160, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kEventAutoRoll)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Resolved", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        340, 2618, 90, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kEventResolved)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Leader", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 2655, 55, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+        80, 2653, 130, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kEventLeader)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"City", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        225, 2655, 35, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+        265, 2653, 130, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kEventCity)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Block", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        410, 2655, 45, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+        460, 2653, 120, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kEventBlock)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Hex", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 2690, 35, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+        60, 2688, 150, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kEventHex)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Preview Event", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        225, 2685, 125, 30, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kEventPreview)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Record Event", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+        365, 2685, 125, 30, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kEventApply)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"No event record created this session.",
+        WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 2725, 560, 38, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kEventStatus)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Event history", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 2770, 200, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"",
+        WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOINTEGRALHEIGHT,
+        20, 2795, 560, 100, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kEventHistory)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Select an event to inspect its consequence details.",
+        WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 2900, 560, 22, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kEventDetails)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Manual consequence record (not applied automatically)",
+        WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 2930, 560, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Notes", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 2960, 45, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+        70, 2958, 510, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kEventConsequenceNotes)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Treasury", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 2995, 65, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"0", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+        90, 2993, 60, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kEventTreasuryDelta)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Unrest", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        170, 2995, 55, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"0", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+        230, 2993, 60, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kEventUnrestDelta)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Size", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        310, 2995, 35, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"0", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+        350, 2993, 60, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kEventSizeDelta)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Hex loss completed", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        20, 3035, 145, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kEventHexLoss)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Anarchy completed", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        180, 3035, 135, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kEventAnarchy)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Apply selected numeric consequence", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        330, 3032, 250, 30, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kEventApplyConsequence)), app_instance, nullptr);
 }
 
 const wchar_t* turn_action_label(pkkm::TurnAction action) {
@@ -1719,6 +1905,50 @@ void refresh_magic_item_history(HWND window) {
             + L" | BP " + std::to_wstring(record.bp_received);
         SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(line.c_str()));
     }
+}
+
+void refresh_event_history(HWND window) {
+    HWND list = GetDlgItem(window, kEventHistory);
+    SendMessageW(list, LB_RESETCONTENT, 0, 0);
+    for (const auto& event : kingdom.kingdom_events) {
+        const std::wstring line = L"Turn " + std::to_wstring(event.turn)
+            + L" | d100 " + std::to_wstring(event.d100_roll)
+            + L" | " + widen(pkkm::kingdom_event_kind_name(event.kind))
+            + L" | " + (event.resolved ? L"Resolved" : L"Unresolved")
+            + L" | Continuous " + (event.continuous_active ? L"active" : L"inactive")
+            + L" | Leader " + widen(event.affected_leader)
+            + L" | City " + widen(event.affected_city)
+            + L" | Block " + widen(event.affected_block)
+            + L" | Hex " + widen(event.affected_hex)
+            + L" | BP " + std::to_wstring(event.treasury_delta)
+            + L" | Unrest " + std::to_wstring(event.unrest_delta)
+            + L" | Size " + std::to_wstring(event.kingdom_size_delta)
+            + L" | Hex loss " + (event.hex_loss_confirmed ? L"yes" : L"no")
+            + L" | Anarchy " + (event.anarchy_confirmed ? L"yes" : L"no")
+            + L" | Applied " + (event.consequences_applied ? L"yes" : L"no");
+        const auto item = SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(line.c_str()));
+        SendMessageW(list, LB_SETITEMDATA, item,
+            static_cast<LPARAM>(&event - kingdom.kingdom_events.data()));
+    }
+}
+
+void refresh_event_details(HWND window) {
+    HWND list = GetDlgItem(window, kEventHistory);
+    const int selected = static_cast<int>(SendMessageW(list, LB_GETCURSEL, 0, 0));
+    if (selected == LB_ERR) {
+        set_manager_text(window, kEventDetails, L"Select an event to inspect its consequence details.");
+        return;
+    }
+    const auto index = static_cast<std::size_t>(SendMessageW(list, LB_GETITEMDATA, selected, 0));
+    if (index >= kingdom.kingdom_events.size()) return;
+    const auto& event = kingdom.kingdom_events[index];
+    set_manager_text(window, kEventDetails,
+        L"Selected event " + std::to_wstring(index + 1) + L" | Treasury "
+        + std::to_wstring(kingdom.treasury_bp) + L" -> "
+        + std::to_wstring(static_cast<long long>(kingdom.treasury_bp) + event.treasury_delta)
+        + L" | Unrest " + std::to_wstring(kingdom.unrest) + L" -> "
+        + std::to_wstring(static_cast<long long>(kingdom.unrest) + event.unrest_delta)
+        + L" | Applied " + (event.consequences_applied ? L"yes" : L"no"));
 }
 
 void apply_magic_item_dialog(HWND window) {
@@ -1915,13 +2145,55 @@ void preview_upkeep_dialog(HWND window) {
         status = L"Upkeep preview | Treasury " + std::to_wstring(preview.projected_treasury)
             + L" | Unrest " + std::to_wstring(preview.projected_unrest)
             + L" | Consumption " + (preview.consumption_paid ? L"paid" : L"insufficient")
+            + L" | Negative Treasury threat: "
+            + (preview.negative_treasury_threat ? L"yes; +2 Unrest at phase end" : L"no")
+            + L" | Threshold threat before Royal Assassin: hex "
+            + (preview.threshold_threat_before_royal_assassin ? L"yes" : L"no")
+            + L", anarchy "
+            + (preview.anarchy_threat_before_royal_assassin ? L"yes" : L"no")
             + L" | Royal Assassin "
-            + (preview.royal_assassin_unrest_delta ? L"-1 Unrest" : L"inactive")
+            + (preview.royal_assassin_unrest_delta ? L"-1 Unrest at phase end" : L"inactive")
             + L" | Lose hex: " + (preview.loses_hex ? L"yes" : L"no")
             + L" | Anarchy: " + (preview.anarchy ? L"yes" : L"no");
     }
     SetWindowTextW(GetDlgItem(window, kUpkeepStatus), status.c_str());
-    SetWindowTextW(window, L"Turn Actions - Upkeep Preview");
+    const std::wstring title = L"Turn Actions - Upkeep Preview | " + status;
+    SetWindowTextW(window, title.c_str());
+}
+
+void preview_food_resource_dialog(HWND window) {
+    const int starting_consumption = parse_integer(manager_text(window, kFoodStartingConsumption));
+    const int farm_count = parse_integer(manager_text(window, kFoodFarmCount));
+    const int extra_reduction = parse_integer(manager_text(window, kFoodExtraReduction));
+    const auto preview = pkkm::preview_food_resource(
+        starting_consumption, farm_count, extra_reduction);
+    const std::wstring status = L"Food preview | Effective Consumption "
+        + std::to_wstring(preview.effective_consumption)
+        + L" | Surplus BP " + std::to_wstring(preview.surplus_bp);
+    SetWindowTextW(GetDlgItem(window, kFoodStatus), status.c_str());
+    SetWindowTextW(window, L"Turn Actions - Food Resource Preview");
+}
+
+void preview_quarry_income_dialog(HWND window) {
+    const int quarry_count = parse_integer(manager_text(window, kQuarryCount));
+    const int income = pkkm::preview_quarry_income(quarry_count);
+    const std::wstring status = L"Quarry preview | Income +"
+        + std::to_wstring(income) + L" BP";
+    SetWindowTextW(GetDlgItem(window, kQuarryStatus), status.c_str());
+    SetWindowTextW(window, L"Turn Actions - Quarry Income Preview");
+}
+
+void preview_optional_mine_dialog(HWND window) {
+    const int starting_bp = parse_integer(manager_text(window, kMineStartingValue));
+    const int months_elapsed = parse_integer(manager_text(window, kMineMonthsElapsed));
+    const auto preview = pkkm::preview_optional_mine_rule(starting_bp, months_elapsed);
+    std::wstring status = L"Mine preview | Remaining " + std::to_wstring(preview.remaining_bp)
+        + L" BP | Player share " + std::to_wstring(preview.player_share_bp)
+        + L" BP | Remainder " + std::to_wstring(preview.unresolved_remainder_bp)
+        + L" BP manual | Exhausted " + (preview.exhausted ? L"yes" : L"no")
+        + L" | Zero behavior manual";
+    SetWindowTextW(GetDlgItem(window, kMineStatus), status.c_str());
+    SetWindowTextW(window, (L"Turn Actions - Optional Mine Preview | " + status).c_str());
 }
 
 void apply_unrest_dialog(HWND window) {
@@ -1993,6 +2265,8 @@ LRESULT CALLBACK turn_actions_proc(HWND window, UINT message, WPARAM wparam, LPA
             refresh_unrest_history(window);
             refresh_commission_history(window);
             refresh_magic_item_history(window);
+            refresh_event_history(window);
+            refresh_event_details(window);
             update_turn_actions_scrollbar(window);
             SetWindowTextW(window, (L"Turn Actions - Turn " + std::to_wstring(kingdom.turn)).c_str());
             return 0;
@@ -2046,8 +2320,23 @@ LRESULT CALLBACK turn_actions_proc(HWND window, UINT message, WPARAM wparam, LPA
                         ? L"Turn Actions - Optional mine rule enabled"
                         : L"Turn Actions - Optional mine rule disabled");
                 }
+                else if (LOWORD(wparam) == kRoyalAssassinEmployed && HIWORD(wparam) == BN_CLICKED) {
+                    const bool employed = SendMessageW(
+                        GetDlgItem(window, kRoyalAssassinEmployed), BM_GETCHECK, 0, 0) == BST_CHECKED;
+                    SendMessageW(GetDlgItem(window, kRoyalAssassinEmployed), BM_SETCHECK,
+                        employed ? BST_CHECKED : BST_UNCHECKED, 0);
+                    SetWindowTextW(window, employed
+                        ? L"Turn Actions - Royal Assassin enabled"
+                        : L"Turn Actions - Royal Assassin disabled");
+                }
                 else if (LOWORD(wparam) == kConsumptionApply) apply_consumption_dialog(window);
                 else if (LOWORD(wparam) == kUpkeepPreview) preview_upkeep_dialog(window);
+                else if (LOWORD(wparam) == kFoodPreview) preview_food_resource_dialog(window);
+                else if (LOWORD(wparam) == kQuarryPreview) preview_quarry_income_dialog(window);
+                else if (LOWORD(wparam) == kMinePreview) preview_optional_mine_dialog(window);
+                else if (LOWORD(wparam) == kEventPreview) preview_event_dialog(window);
+                else if (LOWORD(wparam) == kEventApply) apply_event_dialog(window);
+                else if (LOWORD(wparam) == kEventApplyConsequence) apply_latest_event_consequence_dialog(window);
                 else if (LOWORD(wparam) == kUnrestApply) apply_unrest_dialog(window);
                 else if (LOWORD(wparam) == kCommissionApply) apply_commission_dialog(window);
                 else if (LOWORD(wparam) == kMagicItemApply) apply_magic_item_dialog(window);
@@ -2057,6 +2346,8 @@ LRESULT CALLBACK turn_actions_proc(HWND window, UINT message, WPARAM wparam, LPA
                     turn_action_filter = LOWORD(wparam) == kActionFilter ? 0
                         : LOWORD(wparam) == kActionFilterOriginal ? 1 : 2;
                     refresh_turn_action_history(window);
+                } else if (LOWORD(wparam) == kEventHistory && HIWORD(wparam) == LBN_SELCHANGE) {
+                    refresh_event_details(window);
                 } else if (LOWORD(wparam) == kActionHistory && HIWORD(wparam) == LBN_SELCHANGE) {
                     refresh_turn_action_details(window);
                 }
@@ -2106,6 +2397,25 @@ void refresh_greenbelt_preview(HWND window) {
     facts.terrain = hex.terrain;
     facts.claimed = hex.claimed;
     facts.rule_profile = kingdom.rule_profile;
+    const auto checked = [window](int id) {
+        const HWND control = GetDlgItem(window, id);
+        return control && SendMessageW(control, BM_GETCHECK, 0, 0) == BST_CHECKED;
+    };
+    const auto integer_or_zero = [window](int id) {
+        const HWND control = GetDlgItem(window, id);
+        return control ? parse_integer(manager_text(window, id)) : 0;
+    };
+    facts.water_adjacent = checked(kGreenbeltFactWater);
+    facts.river_adjacent = checked(kGreenbeltFactRiver);
+    facts.canal_adjacent = checked(kGreenbeltFactCanal);
+    facts.settlement_endpoint = checked(kGreenbeltFactEndpoint);
+    facts.connected_road = checked(kGreenbeltFactRoad);
+    facts.river_crossing = checked(kGreenbeltFactCrossing);
+    facts.neighboring_farms = integer_or_zero(kGreenbeltFactFarms);
+    facts.kingdom_size = integer_or_zero(kGreenbeltFactSize);
+    facts.route_length = integer_or_zero(kGreenbeltFactRoute);
+    facts.existing_improvements = hex.improvements;
+    facts.requested_upgrade = item.id;
     const auto preview = pkkm::preview_greenbelt_improvement(
         greenbelt_catalog, item.id, facts, false);
     std::wstring text = widen(preview.summary);
@@ -2113,12 +2423,96 @@ void refresh_greenbelt_preview(HWND window) {
     set_manager_text(window, kGreenbeltPreview, text);
 }
 
+int event_roll_from_dialog(HWND window) {
+    const std::wstring entered = manager_text(window, kEventRoll);
+    if (!entered.empty()) return parse_integer(entered);
+    if (SendMessageW(GetDlgItem(window, kEventAutoRoll), BM_GETCHECK, 0, 0) != BST_CHECKED)
+        throw std::invalid_argument("Enter a player d100 roll or enable the opt-in automatic roll.");
+    static std::random_device device;
+    static std::mt19937 generator(device());
+    std::uniform_int_distribution<int> distribution(1, 100);
+    const int generated = distribution(generator);
+    SetWindowTextW(GetDlgItem(window, kEventRoll), std::to_wstring(generated).c_str());
+    return generated;
+}
+
+void preview_event_dialog(HWND window) {
+    const int roll = event_roll_from_dialog(window);
+    const auto& definition = pkkm::kingdom_event_from_d100(roll);
+    const bool active = definition.continuous &&
+        SendMessageW(GetDlgItem(window, kEventResolved), BM_GETCHECK, 0, 0) != BST_CHECKED;
+    std::wstring status = L"Turn " + std::to_wstring(kingdom.turn) + L" | d100 "
+        + std::to_wstring(roll) + L" | " + widen(definition.name)
+        + (definition.continuous ? L" | Continuous event" : L" | One-time event")
+        + (active ? L" | Continuous status active" : L" | Continuous status inactive")
+        + L" | No effects applied";
+    set_manager_text(window, kEventStatus, status);
+}
+
+void apply_event_dialog(HWND window) {
+    const int roll = event_roll_from_dialog(window);
+    const auto& definition = pkkm::kingdom_event_from_d100(roll);
+    const bool resolved = SendMessageW(GetDlgItem(window, kEventResolved), BM_GETCHECK, 0, 0) == BST_CHECKED;
+    const bool active = definition.continuous && !resolved;
+    pkkm::KingdomEventRecord record;
+    record.turn = kingdom.turn;
+    record.d100_roll = roll;
+    record.kind = definition.kind;
+    record.resolved = resolved;
+    record.continuous_active = active;
+    record.affected_leader = narrow(manager_text(window, kEventLeader));
+    record.affected_city = narrow(manager_text(window, kEventCity));
+    record.affected_block = narrow(manager_text(window, kEventBlock));
+    record.affected_hex = narrow(manager_text(window, kEventHex));
+    record.consequence_notes = narrow(manager_text(window, kEventConsequenceNotes));
+    record.treasury_delta = parse_integer(manager_text(window, kEventTreasuryDelta));
+    record.unrest_delta = parse_integer(manager_text(window, kEventUnrestDelta));
+    record.kingdom_size_delta = parse_integer(manager_text(window, kEventSizeDelta));
+    record.hex_loss_confirmed = SendMessageW(GetDlgItem(window, kEventHexLoss), BM_GETCHECK, 0, 0) == BST_CHECKED;
+    record.anarchy_confirmed = SendMessageW(GetDlgItem(window, kEventAnarchy), BM_GETCHECK, 0, 0) == BST_CHECKED;
+    kingdom.kingdom_events.push_back(std::move(record));
+    dirty = true;
+    set_manager_text(window, kEventStatus,
+        L"Recorded turn " + std::to_wstring(kingdom.turn) + L" | d100 " + std::to_wstring(roll)
+        + L" | " + widen(definition.name) + L" | GM selections preserved | No effects applied");
+    refresh_event_history(window);
+    SetWindowTextW(window, L"Turn Actions - Event Recorded");
+}
+
+void apply_latest_event_consequence_dialog(HWND window) {
+    HWND list = GetDlgItem(window, kEventHistory);
+    const int selected = static_cast<int>(SendMessageW(list, LB_GETCURSEL, 0, 0));
+    if (selected == LB_ERR)
+        throw std::invalid_argument("Select an event history record before applying a manual consequence.");
+    const auto index = static_cast<std::size_t>(SendMessageW(list, LB_GETITEMDATA, selected, 0));
+    if (index >= kingdom.kingdom_events.size())
+        throw std::invalid_argument("Selected event history record is no longer available.");
+    const auto& pending = kingdom.kingdom_events[index];
+    const std::wstring prompt = L"Apply Treasury delta " + std::to_wstring(pending.treasury_delta)
+        + L" and Unrest delta " + std::to_wstring(pending.unrest_delta)
+        + L" to the kingdom? Kingdom Size, hex loss, and Anarchy remain manual.";
+    if (MessageBoxW(window, prompt.c_str(), L"Confirm Event Consequence", MB_YESNO | MB_ICONWARNING) != IDYES)
+        return;
+    pkkm::apply_manual_event_consequence(kingdom, index);
+    dirty = true;
+    refresh(GetDlgItem(GetParent(window), kDisplay));
+    refresh_event_history(window);
+    const auto& event = kingdom.kingdom_events[index];
+    set_manager_text(window, kEventStatus,
+        L"Applied selected numeric consequence | Treasury delta " + std::to_wstring(event.treasury_delta)
+        + L" | Unrest delta " + std::to_wstring(event.unrest_delta)
+        + L" | Kingdom Size/hex/anarchy decisions remain GM-controlled");
+    SetWindowTextW(window, L"Turn Actions - Event Consequence Applied");
+}
+
 void load_greenbelt_form(HWND window) {
     const bool has_selection = greenbelt_active_index >= 0
         && greenbelt_active_index < static_cast<int>(greenbelt_draft.hexes.size());
     for (const int id : {kGreenbeltQ, kGreenbeltR, kGreenbeltTerrain, kGreenbeltTerrainNotes, kGreenbeltClaimed,
             kGreenbeltClaimTurn, kGreenbeltSettlement, kGreenbeltImprovement,
-            kGreenbeltAddImprovement})
+            kGreenbeltAddImprovement, kGreenbeltFactWater, kGreenbeltFactRiver, kGreenbeltFactCanal,
+            kGreenbeltFactEndpoint, kGreenbeltFactRoad, kGreenbeltFactCrossing, kGreenbeltFactFarms,
+            kGreenbeltFactSize, kGreenbeltFactRoute, kGreenbeltRefreshPreview})
         EnableWindow(GetDlgItem(window, id), has_selection);
     if (!has_selection) {
         for (const int id : {kGreenbeltQ, kGreenbeltR, kGreenbeltTerrain, kGreenbeltTerrainNotes, kGreenbeltClaimTurn})
@@ -2982,9 +3376,10 @@ void open_greenbelt_popout(HWND owner) {
     greenbelt_popout_zoom = 1.0;
     greenbelt_popout_pan_x = 0.0;
     greenbelt_popout_pan_y = 0.0;
+    greenbelt_popout_scroll_y = 0;
     greenbelt_popout_window = CreateWindowExW(WS_EX_DLGMODALFRAME, L"PKKMGreenbeltMapPopout",
         L"Greenbelt Map - Large View", WS_CAPTION | WS_SYSMENU | WS_POPUP | WS_THICKFRAME
-        | WS_MINIMIZEBOX | WS_MAXIMIZEBOX,
+        | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_VSCROLL,
         CW_USEDEFAULT, CW_USEDEFAULT, 1250, 850, owner, nullptr, app_instance, nullptr);
     if (!greenbelt_popout_window)
         throw std::runtime_error("Could not open the large Greenbelt Map view");
@@ -3351,9 +3746,35 @@ LRESULT CALLBACK greenbelt_custom_popup_proc(HWND window, UINT message, WPARAM w
     return DefWindowProcW(window, message, wparam, lparam);
 }
 
+void update_greenbelt_popout_scrollbar(HWND window) {
+    RECT client{};
+    GetClientRect(window, &client);
+    SCROLLINFO info{sizeof(info), SIF_RANGE | SIF_PAGE | SIF_POS};
+    info.nMin = 0;
+    info.nMax = 1040;
+    info.nPage = static_cast<UINT>(std::max(0L, client.bottom - client.top));
+    const int max_position = std::max(0, info.nMax - static_cast<int>(info.nPage) + 1);
+    greenbelt_popout_scroll_y = std::clamp(greenbelt_popout_scroll_y, 0, max_position);
+    info.nPos = greenbelt_popout_scroll_y;
+    SetScrollInfo(window, SB_VERT, &info, TRUE);
+}
+
+void scroll_greenbelt_popout_to(HWND window, int requested_position) {
+    SCROLLINFO info{sizeof(info), SIF_RANGE | SIF_PAGE};
+    GetScrollInfo(window, SB_VERT, &info);
+    const int max_position = std::max(0, info.nMax - static_cast<int>(info.nPage) + 1);
+    const int position = std::clamp(requested_position, 0, max_position);
+    const int delta = position - greenbelt_popout_scroll_y;
+    if (delta == 0) return;
+    greenbelt_popout_scroll_y = position;
+    SetScrollPos(window, SB_VERT, position, TRUE);
+    ScrollWindowEx(window, 0, -delta, nullptr, nullptr, nullptr, nullptr,
+        SW_SCROLLCHILDREN | SW_INVALIDATE | SW_ERASE);
+}
+
 LRESULT CALLBACK greenbelt_popout_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
     if (message == WM_GETMINMAXINFO) {
-        set_minimum_track_size(lparam, 700, 500);
+        set_minimum_track_size(lparam, 700, 900);
         return 0;
     }
     switch (message) {
@@ -3416,6 +3837,9 @@ LRESULT CALLBACK greenbelt_popout_proc(HWND window, UINT message, WPARAM wparam,
                 970, 418, 140, 26, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltAddImprovement)), app_instance, nullptr);
             CreateWindowExW(0, L"STATIC", L"Rule preview", WS_CHILD | WS_VISIBLE | SS_LEFT,
                 860, 462, 180, 22, window, nullptr, app_instance, nullptr);
+            CreateWindowExW(0, L"BUTTON", L"Refresh Preview", WS_CHILD | WS_VISIBLE,
+                1035, 458, 155, 28, window,
+                reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltRefreshPreview)), app_instance, nullptr);
             CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"Select an improvement.",
                 WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_READONLY,
                 860, 488, 330, 120, window,
@@ -3423,8 +3847,28 @@ LRESULT CALLBACK greenbelt_popout_proc(HWND window, UINT message, WPARAM wparam,
             CreateWindowExW(0, L"STATIC", L"Claimed / mapped hexes", WS_CHILD | WS_VISIBLE | SS_LEFT,
                 860, 620, 330, 22, window, nullptr, app_instance, nullptr);
             CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"",
-                WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY, 860, 646, 330, 150, window,
+                WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY, 860, 646, 330, 46, window,
                 reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltHexList)), app_instance, nullptr);
+            CreateWindowExW(0, L"STATIC", L"Supplemental preview facts (caller supplied; non-mutating)",
+                WS_CHILD | WS_VISIBLE | SS_LEFT, 860, 700, 330, 22, window, nullptr, app_instance, nullptr);
+            CreateWindowExW(0, L"BUTTON", L"Water adjacent", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+                860, 728, 150, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltFactWater)), app_instance, nullptr);
+            CreateWindowExW(0, L"BUTTON", L"River adjacent", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+                1015, 728, 150, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltFactRiver)), app_instance, nullptr);
+            CreateWindowExW(0, L"BUTTON", L"Canal adjacent", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+                860, 756, 150, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltFactCanal)), app_instance, nullptr);
+            CreateWindowExW(0, L"BUTTON", L"Settlement endpoint", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+                1015, 756, 170, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltFactEndpoint)), app_instance, nullptr);
+            CreateWindowExW(0, L"BUTTON", L"Connected Road", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+                860, 784, 150, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltFactRoad)), app_instance, nullptr);
+            CreateWindowExW(0, L"BUTTON", L"River crossing", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+                1015, 784, 150, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltFactCrossing)), app_instance, nullptr);
+            manager_label(window, L"Farms", 860, 814, 45);
+            manager_edit(window, kGreenbeltFactFarms, L"0", 905, 812, 55);
+            manager_label(window, L"Size", 975, 814, 35);
+            manager_edit(window, kGreenbeltFactSize, L"0", 1010, 812, 55);
+            manager_label(window, L"Route", 1080, 814, 45);
+            manager_edit(window, kGreenbeltFactRoute, L"0", 1125, 812, 65);
             const HWND settlement_combo = GetDlgItem(window, kGreenbeltSettlement);
             const int none_index = static_cast<int>(SendMessageW(settlement_combo, CB_ADDSTRING, 0,
                 reinterpret_cast<LPARAM>(L"(none)")));
@@ -3456,14 +3900,33 @@ LRESULT CALLBACK greenbelt_popout_proc(HWND window, UINT message, WPARAM wparam,
             update_greenbelt_alignment_status(window);
             load_greenbelt_form(window);
             set_greenbelt_alignment_controls_visible(window, false);
+            update_greenbelt_popout_scrollbar(window);
             return 0;
         }
         case WM_PAINT:
             paint_greenbelt_popout(window);
             return 0;
         case WM_SIZE:
+            update_greenbelt_popout_scrollbar(window);
             InvalidateRect(window, nullptr, FALSE);
             return 0;
+        case WM_VSCROLL: {
+            SCROLLINFO info{sizeof(info), SIF_RANGE | SIF_PAGE | SIF_POS | SIF_TRACKPOS};
+            GetScrollInfo(window, SB_VERT, &info);
+            int position = info.nPos;
+            switch (LOWORD(wparam)) {
+                case SB_LINEUP: position -= 40; break;
+                case SB_LINEDOWN: position += 40; break;
+                case SB_PAGEUP: position -= static_cast<int>(info.nPage); break;
+                case SB_PAGEDOWN: position += static_cast<int>(info.nPage); break;
+                case SB_THUMBTRACK: position = info.nTrackPos; break;
+                case SB_TOP: position = info.nMin; break;
+                case SB_BOTTOM: position = info.nMax; break;
+                default: break;
+            }
+            scroll_greenbelt_popout_to(window, position);
+            return 0;
+        }
         case WM_LBUTTONDOWN:
             greenbelt_popout_dragging = true;
             greenbelt_popout_drag_start = {static_cast<LONG>(static_cast<short>(LOWORD(lparam))),
@@ -3563,6 +4026,13 @@ LRESULT CALLBACK greenbelt_popout_proc(HWND window, UINT message, WPARAM wparam,
             } else if (LOWORD(wparam) == kGreenbeltAddImprovement) {
                 try {
                     add_greenbelt_improvement(window);
+                } catch (const std::exception& error) {
+                    MessageBoxW(window, widen(error.what()).c_str(), L"Greenbelt Map", MB_OK | MB_ICONWARNING);
+                }
+            } else if (LOWORD(wparam) == kGreenbeltRefreshPreview) {
+                try {
+                    save_greenbelt_form(window);
+                    refresh_greenbelt_preview(window);
                 } catch (const std::exception& error) {
                     MessageBoxW(window, widen(error.what()).c_str(), L"Greenbelt Map", MB_OK | MB_ICONWARNING);
                 }

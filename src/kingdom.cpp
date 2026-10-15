@@ -384,6 +384,13 @@ void validate(const Kingdom& k) {
             || record.lost != (!record.commissioned && !record.sold))
             throw std::invalid_argument("Magic-item outcome record has inconsistent values");
     }
+    for (const auto& event : k.kingdom_events) {
+        if (event.turn < 1 || event.d100_roll < 1 || event.d100_roll > 100
+            || kingdom_event_from_d100(event.d100_roll).kind != event.kind
+            || (event.continuous_active && !kingdom_event_from_d100(event.d100_roll).continuous)
+            || (event.resolved && event.continuous_active))
+            throw std::invalid_argument("Kingdom event record has inconsistent values");
+    }
     std::vector<std::string> seen_calendar_entries;
     for (const auto& note : k.calendar_notes) {
         const auto& entries = calendar_template_entries();
@@ -474,13 +481,32 @@ FoodResourcePreview preview_food_resource(int starting_consumption, int farm_cou
     if (farm_reduction > std::numeric_limits<int>::max()
         || effective < std::numeric_limits<int>::min() || effective > std::numeric_limits<int>::max())
         throw std::overflow_error("Food resource preview would overflow");
+    const long long surplus = effective < 0 ? -effective : 0;
+    if (surplus > std::numeric_limits<int>::max())
+        throw std::overflow_error("Food resource surplus would overflow");
     return {starting_consumption, static_cast<int>(farm_reduction), extra_reduction,
-        static_cast<int>(effective), effective < 0 ? static_cast<int>(-effective) : 0};
+        static_cast<int>(effective), static_cast<int>(surplus)};
 }
 
 int preview_quarry_income(int quarry_count) {
     if (quarry_count < 0) throw std::invalid_argument("Quarry count cannot be negative");
     return quarry_count;
+}
+
+OptionalMinePreview preview_optional_mine_rule(int starting_bp, int months_elapsed) {
+    if (starting_bp < 0) throw std::invalid_argument("Mine starting value cannot be negative");
+    if (months_elapsed < 0) throw std::invalid_argument("Mine elapsed months cannot be negative");
+    const long long remaining = std::max(0LL,
+        static_cast<long long>(starting_bp) - months_elapsed);
+    const long long player_share = remaining * 75 / 100;
+    const long long unresolved_remainder = remaining - player_share;
+    if (remaining > std::numeric_limits<int>::max()
+        || player_share > std::numeric_limits<int>::max()
+        || unresolved_remainder > std::numeric_limits<int>::max())
+        throw std::overflow_error("Optional mine preview would overflow");
+    return {starting_bp, months_elapsed, static_cast<int>(remaining),
+        static_cast<int>(player_share), static_cast<int>(unresolved_remainder),
+        remaining == 0, true, true};
 }
 
 UpkeepPreview preview_upkeep(const Kingdom& kingdom, bool stability_success,
@@ -509,23 +535,30 @@ UpkeepPreview preview_upkeep(const Kingdom& kingdom, bool stability_success,
         throw std::overflow_error("Upkeep stability result would overflow treasury");
     preview.consumption_paid = treasury_after_stability >= consumption_bp;
     preview.consumption_treasury_delta = -consumption_bp;
-    preview.consumption_unrest_delta = preview.consumption_paid ? 0 : 2;
+    preview.consumption_unrest_delta = 0;
     const long long projected_treasury = treasury_after_stability + preview.consumption_treasury_delta;
     if (projected_treasury < std::numeric_limits<int>::min()
         || projected_treasury > std::numeric_limits<int>::max())
         throw std::overflow_error("Upkeep consumption result would overflow treasury");
     preview.projected_treasury = static_cast<int>(projected_treasury);
+    preview.negative_treasury_threat = preview.projected_treasury < 0;
+    preview.negative_treasury_unrest_delta = preview.negative_treasury_threat ? 2 : 0;
     const long long unrest_before_assassin = static_cast<long long>(kingdom.unrest)
-        + preview.stability_unrest_delta + preview.consumption_unrest_delta;
+        + preview.stability_unrest_delta + preview.consumption_unrest_delta
+        + preview.negative_treasury_unrest_delta;
     if (unrest_before_assassin < 0 || unrest_before_assassin > std::numeric_limits<int>::max())
         throw std::overflow_error("Upkeep result would overflow unrest");
+    preview.threshold_threat_before_royal_assassin = unrest_before_assassin >= 11;
+    preview.anarchy_threat_before_royal_assassin = unrest_before_assassin >= 20;
     if (royal_assassin_employed && unrest_before_assassin > 0) {
         preview.royal_assassin_unrest_delta = -1;
     }
     preview.projected_unrest = static_cast<int>(unrest_before_assassin
         + preview.royal_assassin_unrest_delta);
-    preview.loses_hex = preview.projected_unrest >= 11;
-    preview.anarchy = preview.projected_unrest >= 20;
+    // The PDF resolves the 11/20 consequences before the Royal Assassin's
+    // end-of-Upkeep reduction. Keep final flags tied to that threat state.
+    preview.loses_hex = preview.threshold_threat_before_royal_assassin;
+    preview.anarchy = preview.anarchy_threat_before_royal_assassin;
     return preview;
 }
 
@@ -544,6 +577,26 @@ void advance_turn(Kingdom& kingdom) {
         throw std::overflow_error("Cannot advance beyond the maximum supported turn");
     ++kingdom.turn;
     validate(kingdom);
+}
+
+void apply_manual_event_consequence(Kingdom& kingdom, std::size_t event_index) {
+    validate(kingdom);
+    if (event_index >= kingdom.kingdom_events.size())
+        throw std::out_of_range("Kingdom event index is out of range");
+    Kingdom candidate = kingdom;
+    auto& event = candidate.kingdom_events[event_index];
+    if (event.consequences_applied)
+        throw std::invalid_argument("Manual event consequences were already applied");
+    const long long treasury = static_cast<long long>(candidate.treasury_bp) + event.treasury_delta;
+    const long long unrest = static_cast<long long>(candidate.unrest) + event.unrest_delta;
+    if (treasury < std::numeric_limits<int>::min() || treasury > std::numeric_limits<int>::max()
+        || unrest < 0 || unrest > std::numeric_limits<int>::max())
+        throw std::overflow_error("Manual event consequence exceeds supported kingdom state");
+    candidate.treasury_bp = static_cast<int>(treasury);
+    candidate.unrest = static_cast<int>(unrest);
+    event.consequences_applied = true;
+    validate(candidate);
+    kingdom = std::move(candidate);
 }
 
 void apply_turn_action(Kingdom& kingdom, TurnAction action, int count) {
@@ -832,6 +885,44 @@ MagicItemWorkflow magic_item_workflow() {
 
 EventCadence event_cadence() {
     return {75, 25};
+}
+
+const std::vector<KingdomEventDefinition>& kingdom_event_definitions() {
+    static const std::vector<KingdomEventDefinition> definitions = {
+        {1, 3, KingdomEventKind::AssassinationAttempt, false, "Assassination Attempt"},
+        {4, 12, KingdomEventKind::BanditActivity, true, "Bandit Activity"},
+        {13, 19, KingdomEventKind::Disaster, false, "Disaster"},
+        {20, 24, KingdomEventKind::EconomicBoom, false, "Economic Boom"},
+        {25, 29, KingdomEventKind::Feud, false, "Feud"},
+        {30, 32, KingdomEventKind::FoodShortage, false, "Food Shortage"},
+        {33, 39, KingdomEventKind::FoodSurplus, false, "Food Surplus"},
+        {40, 44, KingdomEventKind::GoodWeather, false, "Good Weather"},
+        {45, 49, KingdomEventKind::MonsterAttack, true, "Monster Attack"},
+        {50, 54, KingdomEventKind::NaturalBlessing, false, "Natural Blessing"},
+        {55, 61, KingdomEventKind::OutstandingSuccess, false, "Outstanding Success"},
+        {62, 64, KingdomEventKind::Plague, true, "Plague"},
+        {65, 67, KingdomEventKind::PoliticalCalm, false, "Political Calm"},
+        {68, 77, KingdomEventKind::PublicScandal, false, "Public Scandal"},
+        {78, 85, KingdomEventKind::SensationalCrime, true, "Sensational Crime"},
+        {86, 92, KingdomEventKind::NewVassals, false, "New Vassals"},
+        {93, 100, KingdomEventKind::VisitingCelebrity, false, "Visiting Celebrity"}
+    };
+    return definitions;
+}
+
+const KingdomEventDefinition& kingdom_event_from_d100(int roll) {
+    if (roll < 1 || roll > 100) throw std::invalid_argument("Event d100 roll must be between 1 and 100");
+    for (const auto& definition : kingdom_event_definitions()) {
+        if (roll >= definition.d100_min && roll <= definition.d100_max) return definition;
+    }
+    throw std::logic_error("No Kingdom event matches the d100 roll");
+}
+
+const char* kingdom_event_kind_name(KingdomEventKind kind) {
+    for (const auto& definition : kingdom_event_definitions()) {
+        if (definition.kind == kind) return definition.name;
+    }
+    throw std::invalid_argument("Unknown Kingdom event kind");
 }
 
 TurnTransitionPreview preview_turn_transition(const Kingdom& kingdom, bool event_occurred_last_turn) {
@@ -1147,6 +1238,7 @@ void save(const Kingdom& k, const std::string& path) {
         {"settlements", Json::array()}, {"buildings", Json::array()},
         {"turn_progress", Json::array()}, {"turn_actions", Json::array()}, {"tax_actions", Json::array()},
                 {"stability_checks", Json::array()}, {"consumption_actions", Json::array()}, {"unrest_modifications", Json::array()}, {"gold_withdrawals", Json::array()}, {"gold_deposits", Json::array()}, {"item_deposits", Json::array()}, {"loyalty_checks", Json::array()}, {"commissions", Json::array()}, {"magic_item_outcomes", Json::array()}, {"calendar_notes", Json::array()},
+        {"kingdom_events", Json::array()},
         {"greenbelt_map", {{"asset_path", k.greenbelt_map.asset_path},
             {"image_width", k.greenbelt_map.image_width}, {"image_height", k.greenbelt_map.image_height},
             {"calibration", {{"origin_x", k.greenbelt_map.calibration.origin_x},
@@ -1230,6 +1322,17 @@ void save(const Kingdom& k, const std::string& path) {
             {"category", magic_item_category_name(outcome.category)}, {"sold", outcome.sold},
             {"commissioned", outcome.commissioned}, {"lost", outcome.lost},
             {"bp_received", outcome.bp_received}});
+    for (const auto& event : k.kingdom_events)
+        output["kingdom_events"].push_back({{"turn", event.turn}, {"d100_roll", event.d100_roll},
+            {"kind", kingdom_event_kind_name(event.kind)}, {"resolved", event.resolved},
+            {"continuous_active", event.continuous_active}, {"affected_leader", event.affected_leader},
+            {"affected_city", event.affected_city}, {"affected_block", event.affected_block},
+            {"affected_hex", event.affected_hex}, {"consequence_notes", event.consequence_notes},
+            {"treasury_delta", event.treasury_delta}, {"unrest_delta", event.unrest_delta},
+            {"kingdom_size_delta", event.kingdom_size_delta},
+            {"hex_loss_confirmed", event.hex_loss_confirmed},
+            {"anarchy_confirmed", event.anarchy_confirmed},
+            {"consequences_applied", event.consequences_applied}});
     for (const auto& note : k.calendar_notes)
         output["calendar_notes"].push_back({{"entry_id", note.entry_id}, {"holiday", note.holiday},
             {"kingdom_upgrades", note.kingdom_upgrades}, {"events", note.events}, {"other", note.other}});
@@ -1477,6 +1580,24 @@ Kingdom load(const std::string& path) {
                 magic_item_category_from_name(required_string(item, "category")),
                 required_bool(item, "sold"), required_bool(item, "commissioned"),
                 required_bool(item, "lost"), required_int(item, "bp_received")});
+        }
+    }
+    if (root.contains("kingdom_events")) {
+        if (!root.at("kingdom_events").is_array()) throw std::runtime_error("kingdom_events must be an array");
+        for (const auto& item : root.at("kingdom_events")) {
+            if (!item.is_object()) throw std::runtime_error("Invalid Kingdom event record");
+            const int roll = required_int(item, "d100_roll");
+            const auto& definition = kingdom_event_from_d100(roll);
+            const auto kind_name = required_string(item, "kind");
+            if (kind_name != definition.name) throw std::runtime_error("Kingdom event kind does not match d100 roll");
+            k.kingdom_events.push_back({required_int(item, "turn"), roll, definition.kind,
+                required_bool(item, "resolved"), required_bool(item, "continuous_active"),
+                required_string(item, "affected_leader"), required_string(item, "affected_city"),
+                required_string(item, "affected_block"), required_string(item, "affected_hex"),
+                item.value("consequence_notes", std::string{}), item.value("treasury_delta", 0),
+                item.value("unrest_delta", 0), item.value("kingdom_size_delta", 0),
+                item.value("hex_loss_confirmed", false), item.value("anarchy_confirmed", false)});
+            k.kingdom_events.back().consequences_applied = item.value("consequences_applied", false);
         }
     }
     if (document_version >= 9) {

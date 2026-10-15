@@ -418,7 +418,39 @@ int main(int argc, char** argv) {
       && no_event_transition.event_trigger_percent==75
       && no_event_transition.event_resolution_manual
       && prior_event_transition.event_trigger_percent==25,
-      "turn transition preview exposes the next turn and source event cadence without mutation");
+      "turn transition preview exposes the source event cadence without mutation");
+      const auto& event_table=pkkm::kingdom_event_definitions();
+      must(event_table.size()==17 && event_table.front().d100_min==1
+      && event_table.back().d100_max==100
+      && pkkm::kingdom_event_from_d100(1).kind==pkkm::KingdomEventKind::AssassinationAttempt
+      && pkkm::kingdom_event_from_d100(100).kind==pkkm::KingdomEventKind::VisitingCelebrity
+      && pkkm::kingdom_event_from_d100(45).continuous,
+      "Kingmaker event table exposes all d100 ranges and continuous events");
+      must_reject([&]{ (void)pkkm::kingdom_event_from_d100(0); });
+      must_reject([&]{ (void)pkkm::kingdom_event_from_d100(101); });
+  k.kingdom_events.push_back({4, 45, pkkm::KingdomEventKind::MonsterAttack,
+      false, true, "Warden", "Oak", "Block 3", "q0,r0",
+      "GM applied the source consequence manually", -2, 1, -1, true, false});
+  const std::string event_path="pkkm_test_events.json";
+  pkkm::save(k, event_path);
+  auto event_roundtrip=pkkm::load(event_path);
+  must(event_roundtrip.kingdom_events.size()==1
+       && event_roundtrip.kingdom_events[0].d100_roll==45
+       && event_roundtrip.kingdom_events[0].kind==pkkm::KingdomEventKind::MonsterAttack
+       && event_roundtrip.kingdom_events[0].affected_hex=="q0,r0"
+       && event_roundtrip.kingdom_events[0].treasury_delta==-2
+       && event_roundtrip.kingdom_events[0].hex_loss_confirmed,
+       "Kingdom event records roundtrip GM-selected affected entities");
+  pkkm::apply_manual_event_consequence(event_roundtrip, 0);
+  must(event_roundtrip.treasury_bp==118 && event_roundtrip.unrest==3
+       && event_roundtrip.kingdom_events[0].consequences_applied,
+       "Manual event consequence applies only explicit treasury/unrest deltas");
+  must_reject([&]{ pkkm::apply_manual_event_consequence(event_roundtrip, 0); });
+  auto invalid_continuous_event=k;
+  invalid_continuous_event.kingdom_events.push_back({4, 66, pkkm::KingdomEventKind::PoliticalCalm,
+      false, true, "", "", "", "", "", 0, 0, 0, false, false});
+  must_reject([&]{ pkkm::validate(invalid_continuous_event); });
+  std::remove(event_path.c_str());
  must(advanced.turn==5 && advanced.turn_progress.size()==1,
       "turn transition preview does not mutate turn state or checklist history");
  pkkm::Kingdom action_k=k;
@@ -641,6 +673,14 @@ int main(int argc, char** argv) {
       && surplus_food.effective_consumption==-4 && surplus_food.surplus_bp==4
       && pkkm::preview_quarry_income(3)==3,
       "food reductions convert consumption below zero to BP and quarries yield one BP each");
+ must_reject([&]{ (void)pkkm::preview_food_resource(0, 1073741823, 2); });
+ const auto mine=pkkm::preview_optional_mine_rule(20, 3);
+ must(mine.remaining_bp==17 && mine.player_share_bp==12
+      && mine.unresolved_remainder_bp==5 && !mine.exhausted
+      && mine.remainder_manual && mine.zero_behavior_manual,
+      "optional mine preview reports known depletion and player share while leaving unresolved accounting manual");
+ must_reject([&]{ (void)pkkm::preview_optional_mine_rule(-1, 0); });
+ must_reject([&]{ (void)pkkm::preview_optional_mine_rule(20, -1); });
  const auto upkeep=pkkm::preview_upkeep(k, false, 5, true, 5);
  must(upkeep.starting_treasury==120 && upkeep.starting_unrest==2
       && !upkeep.skipped_for_no_hexes && upkeep.stability_unrest_delta==2
@@ -649,6 +689,21 @@ int main(int argc, char** argv) {
       && !upkeep.loses_hex && !upkeep.anarchy
       && k.treasury_bp==120 && k.unrest==2,
       "upkeep preview composes stability, consumption, and Royal Assassin without mutation");
+ auto threshold_k=k;
+ threshold_k.unrest=11;
+ const auto threshold_upkeep=pkkm::preview_upkeep(threshold_k, false, 1, true, 5);
+ must(threshold_upkeep.threshold_threat_before_royal_assassin
+      && threshold_upkeep.loses_hex
+      && threshold_upkeep.projected_unrest==12,
+      "upkeep reports threshold threat before end-of-phase Royal Assassin reduction");
+ auto unpaid_k=k;
+ unpaid_k.treasury_bp=0;
+ const auto unpaid_upkeep=pkkm::preview_upkeep(unpaid_k, true, 5, false);
+ must(!unpaid_upkeep.consumption_paid && unpaid_upkeep.negative_treasury_threat
+      && unpaid_upkeep.negative_treasury_unrest_delta==2
+      && unpaid_upkeep.projected_treasury==-5
+      && unpaid_upkeep.projected_unrest==3,
+      "upkeep defers negative-treasury Unrest until after Consumption");
  auto empty_kingdom=k;
  empty_kingdom.greenbelt_map.hexes.clear();
  const auto skipped_upkeep=pkkm::preview_upkeep(empty_kingdom, false, 5, true, 5);
@@ -931,6 +986,49 @@ int main(int argc, char** argv) {
  must(improvement_count==70 && academy && academy->source_row==2 && academy->cost==52
       && academy->lots==2 && academy->economy==2 && academy->loyalty==2,
       "catalog import preserves the named-range rows and maps Academy source columns");
+ const auto magic_entry = std::find_if(catalog.begin(), catalog.end(), [](const auto& entry) {
+     return entry.kind==pkkm::CatalogRowKind::Improvement && !entry.magic_item.empty();
+ });
+ must(magic_entry!=catalog.end(), "catalog exposes at least one building-defined magic-item source");
+ pkkm::Settlement magic_settlement{"Magic",0,0,0,0,0,0,{{magic_entry->name,2}}};
+ const auto magic_preview=pkkm::preview_settlement_magic_items(magic_settlement,catalog);
+ must(magic_preview.qualifying_buildings==1
+      && magic_preview.minor_slots+magic_preview.medium_slots+magic_preview.major_slots>0
+      && magic_preview.sources.size()==1,
+      "magic-item preview derives slots from qualifying building inventory only");
+ pkkm::Settlement tiered_magic{"Tiered Magic",0,0,0,0,0,0,{{"Black Market (2H)",2}}};
+ const auto tiered_preview=pkkm::preview_settlement_magic_items(tiered_magic,catalog);
+ must(tiered_preview.minor_slots==4 && tiered_preview.medium_slots==2
+      && tiered_preview.major_slots==2,
+      "magic-item preview parses and scales minor, medium, and major source tiers");
+ pkkm::Settlement unknown_magic{"Unknown Magic",0,0,0,0,0,0,{{"Not A Building",1}}};
+ must_reject([&] { (void)pkkm::preview_settlement_magic_items(unknown_magic,catalog); });
+ pkkm::Settlement negative_magic{"Negative Magic",0,0,0,0,0,0,{{magic_entry->name,-1}}};
+ must_reject([&] { (void)pkkm::preview_settlement_magic_items(negative_magic,catalog); });
+ pkkm::Settlement discount_sources{"Discount Sources",0,0,0,0,0,0,{{"Black Market (2H)",1}}};
+ const auto discount_preview=pkkm::preview_settlement_building_discounts(
+      discount_sources,"Brothel",catalog,true);
+ must(discount_preview.stacking_enabled && discount_preview.source_buildings.size()==1
+      && discount_preview.source_buildings.front()=="Black Market (2H)",
+      "discount preview reports built source buildings and explicit stacking mode");
+ pkkm::Settlement stacked_sources{"Stacked Sources",0,0,0,0,0,0,{{"Academy",1},{"Bardic College",1}}};
+ const auto stacked_preview=pkkm::preview_settlement_building_discounts(
+     stacked_sources,"Library",catalog,true);
+ const auto single_preview=pkkm::preview_settlement_building_discounts(
+     stacked_sources,"Library",catalog,false);
+ must(stacked_preview.source_buildings.size()==2 && !single_preview.stacking_enabled
+      && single_preview.source_buildings.size()==1,
+      "discount preview distinguishes stacked and non-stacked built sources");
+ must_reject([&] { (void)pkkm::preview_settlement_building_discounts(
+     discount_sources,"",catalog,true); });
+ pkkm::Settlement zero_sources{"Zero Sources",0,0,0,0,0,0,{{"Academy",0}}};
+ const auto zero_discount_preview=pkkm::preview_settlement_building_discounts(
+     zero_sources,"Library",catalog,true);
+ const auto zero_magic_preview=pkkm::preview_settlement_magic_items(zero_sources,catalog);
+ must(zero_discount_preview.source_buildings.empty() && zero_magic_preview.qualifying_buildings==0
+      && zero_magic_preview.minor_slots==0 && zero_magic_preview.medium_slots==0
+      && zero_magic_preview.major_slots==0,
+      "zero-count inventory entries do not represent built sources or magic slots");
  const auto building_totals=pkkm::calculate_settlement_building_totals(
      {"Effects",0,0,0,0,0,0,{{"Academy",2},{"Barracks",1}}},catalog);
  must(building_totals.lots==5 && building_totals.economy==4 && building_totals.loyalty==4

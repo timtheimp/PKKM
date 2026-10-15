@@ -241,6 +241,17 @@ FoodResourcePreview preview_food_resource(int starting_consumption, int farm_cou
  int extra_reduction);
 void apply_consumption_action(Kingdom& kingdom, int consumption_bp);
 int preview_quarry_income(int quarry_count);
+struct OptionalMinePreview {
+ int starting_bp = 0;
+ int months_elapsed = 0;
+ int remaining_bp = 0;
+ int player_share_bp = 0;
+ int unresolved_remainder_bp = 0;
+ bool exhausted = false;
+ bool remainder_manual = true;
+ bool zero_behavior_manual = true;
+};
+OptionalMinePreview preview_optional_mine_rule(int starting_bp, int months_elapsed);
 struct UpkeepPreview {
  int starting_treasury = 0;
  int starting_unrest = 0;
@@ -250,9 +261,13 @@ struct UpkeepPreview {
  int consumption_treasury_delta = 0;
  int consumption_unrest_delta = 0;
  bool consumption_paid = false;
+ bool negative_treasury_threat = false;
+ int negative_treasury_unrest_delta = 0;
  int royal_assassin_unrest_delta = 0;
  int projected_treasury = 0;
  int projected_unrest = 0;
+ bool threshold_threat_before_royal_assassin = false;
+ bool anarchy_threat_before_royal_assassin = false;
  bool loses_hex = false;
  bool anarchy = false;
 };
@@ -345,6 +360,42 @@ struct EventCadence {
  int event_last_month_percent = 25;
 };
 EventCadence event_cadence();
+enum class KingdomEventKind {
+ AssassinationAttempt, BanditActivity, Disaster, EconomicBoom, Feud,
+ FoodShortage, FoodSurplus, GoodWeather, MonsterAttack, NaturalBlessing,
+ OutstandingSuccess, Plague, PoliticalCalm, PublicScandal, SensationalCrime,
+ NewVassals, VisitingCelebrity
+};
+struct KingdomEventDefinition {
+ int d100_min = 1;
+ int d100_max = 100;
+ KingdomEventKind kind = KingdomEventKind::AssassinationAttempt;
+ bool continuous = false;
+ const char* name = "";
+};
+const std::vector<KingdomEventDefinition>& kingdom_event_definitions();
+const KingdomEventDefinition& kingdom_event_from_d100(int roll);
+const char* kingdom_event_kind_name(KingdomEventKind kind);
+struct KingdomEventRecord {
+ int turn = 1;
+ int d100_roll = 1;
+ KingdomEventKind kind = KingdomEventKind::AssassinationAttempt;
+ bool resolved = false;
+ bool continuous_active = false;
+ std::string affected_leader;
+ std::string affected_city;
+ std::string affected_block;
+ std::string affected_hex;
+ std::string consequence_notes;
+ int treasury_delta = 0;
+ int unrest_delta = 0;
+ int kingdom_size_delta = 0;
+ bool hex_loss_confirmed = false;
+ bool anarchy_confirmed = false;
+ bool consequences_applied = false;
+};
+struct Kingdom;
+void apply_manual_event_consequence(Kingdom& kingdom, std::size_t event_index);
 struct TurnTransitionPreview {
  int current_turn = 1;
  int next_turn = 2;
@@ -393,6 +444,7 @@ struct Kingdom {
  std::vector<LoyaltyCheckRecord> loyalty_checks;
  std::vector<CommissionRecord> commissions;
  std::vector<MagicItemOutcomeRecord> magic_item_outcomes;
+ std::vector<KingdomEventRecord> kingdom_events;
  std::vector<CalendarNote> calendar_notes;
  GreenbeltMap greenbelt_map;
 };
