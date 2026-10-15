@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iterator>
 #include <limits>
+#include <regex>
 #include <stdexcept>
 #include <utility>
 
@@ -236,6 +237,82 @@ SettlementMarketReference calculate_settlement_market_reference(
     };
     return {static_cast<int>(base_value), add_checked(static_cast<int>(base_value), buy_tier, "buy limit"),
         add_checked(static_cast<int>(base_value), sell_tier, "sell limit"), tier(size.population, 3, 4, 5, 6, 7, 8)};
+}
+
+SettlementMagicItemPreview preview_settlement_magic_items(
+    const Settlement& settlement, const std::vector<BuildingCatalogEntry>& catalog) {
+    SettlementMagicItemPreview preview;
+    const std::regex slot_pattern(R"((\d+)\s+[^,;]*\b(minor|medium|major)\b)",
+        std::regex_constants::icase);
+    for (const auto& item : settlement.building_inventory) {
+        if (item.name.empty() || item.count < 0)
+            throw std::invalid_argument("Building inventory requires a name and nonnegative count");
+        if (item.count == 0) continue;
+        const auto found = std::find_if(catalog.begin(), catalog.end(), [&item](const BuildingCatalogEntry& entry) {
+            return entry.kind == CatalogRowKind::Improvement && entry.name == item.name;
+        });
+        if (found == catalog.end())
+            throw std::invalid_argument("Building is not present in the improvement catalog: " + item.name);
+        if (found->magic_item.empty()) continue;
+        ++preview.qualifying_buildings;
+        preview.sources.push_back(item.name + ": " + found->magic_item);
+        for (std::sregex_iterator it(found->magic_item.begin(), found->magic_item.end(), slot_pattern), end;
+             it != end; ++it) {
+            const long long source_slots = std::stoll((*it)[1].str());
+            if (source_slots < 0 || (item.count != 0
+                && source_slots > std::numeric_limits<long long>::max() / item.count))
+                throw std::overflow_error("Settlement magic-item slots exceed supported range");
+            const long long slots = source_slots * static_cast<long long>(item.count);
+            if (slots > std::numeric_limits<int>::max())
+                throw std::overflow_error("Settlement magic-item slots exceed supported range");
+            const std::string tier = (*it)[2].str();
+            int* target = nullptr;
+            if (tier.size() > 1 && (tier[1] == 'e' || tier[1] == 'E')) target = &preview.medium_slots;
+            else if (tier.size() > 1 && (tier[1] == 'a' || tier[1] == 'A')) target = &preview.major_slots;
+            else target = &preview.minor_slots;
+            if (!target) continue;
+            const long long next = static_cast<long long>(*target) + slots;
+            if (next > std::numeric_limits<int>::max())
+                throw std::overflow_error("Settlement magic-item slots exceed supported range");
+            *target = static_cast<int>(next);
+        }
+    }
+    return preview;
+}
+
+SettlementBuildingDiscountPreview preview_settlement_building_discounts(
+    const Settlement& settlement, const std::string& target_name,
+    const std::vector<BuildingCatalogEntry>& catalog, bool stacking_enabled) {
+    if (target_name.empty()) throw std::invalid_argument("Discount preview requires a target building");
+    SettlementBuildingDiscountPreview preview;
+    preview.stacking_enabled = stacking_enabled;
+    for (const auto& item : settlement.building_inventory) {
+        if (item.name.empty() || item.count < 0)
+            throw std::invalid_argument("Building inventory requires a name and nonnegative count");
+        if (item.count == 0) continue;
+        const auto source = std::find_if(catalog.begin(), catalog.end(), [&item](const BuildingCatalogEntry& entry) {
+            return entry.kind == CatalogRowKind::Improvement && entry.name == item.name;
+        });
+        if (source == catalog.end())
+            throw std::invalid_argument("Building is not present in the improvement catalog: " + item.name);
+        std::size_t start = 0;
+        while (start <= source->discounts.size()) {
+            const std::size_t comma = source->discounts.find(',', start);
+            std::string token = source->discounts.substr(start,
+                comma == std::string::npos ? std::string::npos : comma - start);
+            const auto first = token.find_first_not_of(" \t\r\n");
+            const auto last = token.find_last_not_of(" \t\r\n");
+            token = first == std::string::npos ? std::string{} : token.substr(first, last - first + 1);
+            if (token == target_name) {
+                preview.source_buildings.push_back(source->name);
+                break;
+            }
+            if (comma == std::string::npos) break;
+            start = comma + 1;
+        }
+        if (!stacking_enabled && !preview.source_buildings.empty()) break;
+    }
+    return preview;
 }
 
 } // namespace pkkm
