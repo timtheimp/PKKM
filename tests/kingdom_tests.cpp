@@ -1090,6 +1090,7 @@ int main(int argc, char** argv) {
  const auto city_map=pkkm::workbook_map_template(pkkm::WorkbookMapTemplate::City);
  const auto example_map=pkkm::workbook_map_template(pkkm::WorkbookMapTemplate::Example);
  const auto multi_district_map=pkkm::workbook_map_template(pkkm::WorkbookMapTemplate::MultiDistrict);
+ const auto city_layout_map=pkkm::workbook_map_template(pkkm::WorkbookMapTemplate::CityLayout);
  const auto matches_label=[](const pkkm::MapLabel& label,const std::string& text,
      int row,int column,int width,int height){
      return label.text==text && label.row==row && label.column==column
@@ -1116,6 +1117,9 @@ int main(int argc, char** argv) {
       && matches_label(example_map.labels[5],"To be built",5,2,1,1)
       && matches_label(example_map.labels[6],"4x lots eg. castle",5,5,2,2),
       "Example Map preset keeps lot captions as visual annotations with exact merged ranges");
+ must(city_layout_map.rows==6 && city_layout_map.columns==6
+      && city_layout_map.placements.empty() && city_layout_map.labels.empty(),
+      "PDF City Layout preset provides a blank 6x6 worksheet for three 2x2 districts per side");
  must(multi_district_map.rows==15 && multi_district_map.columns==15
       && multi_district_map.placements.empty() && multi_district_map.labels.size()==14
       && matches_label(multi_district_map.labels[0],"Hill",0,1,6,1)

@@ -219,7 +219,8 @@ void create_controls(HWND window) {
     SendMessageW(template_combo, CB_ADDSTRING, 0,
         reinterpret_cast<LPARAM>(L"Choose a workbook layout..."));
     for (const auto preset : {WorkbookMapTemplate::Capital, WorkbookMapTemplate::City,
-            WorkbookMapTemplate::Example, WorkbookMapTemplate::MultiDistrict}) {
+            WorkbookMapTemplate::Example, WorkbookMapTemplate::MultiDistrict,
+            WorkbookMapTemplate::CityLayout}) {
         const std::wstring label = widen(workbook_map_template_name(preset));
         SendMessageW(template_combo, CB_ADDSTRING, 0,
             reinterpret_cast<LPARAM>(label.c_str()));
@@ -254,6 +255,7 @@ LRESULT CALLBACK map_editor_proc(HWND window, UINT message, WPARAM wparam, LPARA
                 case 2: preset = WorkbookMapTemplate::City; break;
                 case 3: preset = WorkbookMapTemplate::Example; break;
                 case 4: preset = WorkbookMapTemplate::MultiDistrict; break;
+                case 5: preset = WorkbookMapTemplate::CityLayout; break;
                 default:
                     set_status(L"Choose a workbook layout first.");
                     return 0;

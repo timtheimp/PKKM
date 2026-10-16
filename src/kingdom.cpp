@@ -1498,6 +1498,7 @@ const char* workbook_map_template_name(WorkbookMapTemplate preset) {
         case WorkbookMapTemplate::City: return "City # Map";
         case WorkbookMapTemplate::Example: return "Example Map";
         case WorkbookMapTemplate::MultiDistrict: return "Multi-District Map";
+        case WorkbookMapTemplate::CityLayout: return "PDF City Layout (6x6 / 3x3 districts)";
         default: return "Unknown map template";
     }
 }
@@ -1523,6 +1524,13 @@ SettlementMap workbook_map_template(WorkbookMapTemplate preset) {
             map.labels.push_back({"2x lots", 5, 1, 1, 2});
             map.labels.push_back({"To be built", 5, 2, 1, 1});
             map.labels.push_back({"4x lots eg. castle", 5, 5, 2, 2});
+            break;
+        case WorkbookMapTemplate::CityLayout:
+            // The PDF worksheet shows three districts across and three down,
+            // with each district divided into a 2x2 block: six cells per side.
+            map.rows = 6;
+            map.columns = 6;
+            map.labels.clear();
             break;
         case WorkbookMapTemplate::MultiDistrict:
             map.rows = 15;
