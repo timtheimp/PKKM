@@ -14,7 +14,7 @@ struct SettlementMap {
  std::vector<MapPlacement> placements;
  std::vector<MapLabel> labels;
 };
-enum class WorkbookMapTemplate { Capital, City, Example, MultiDistrict };
+enum class WorkbookMapTemplate { Capital, City, Example, MultiDistrict, CityLayout };
 const char* workbook_map_template_name(WorkbookMapTemplate preset);
 SettlementMap workbook_map_template(WorkbookMapTemplate preset);
 struct Settlement {
