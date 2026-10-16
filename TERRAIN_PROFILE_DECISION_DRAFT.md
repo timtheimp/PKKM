@@ -1,18 +1,18 @@
 # Terrain Profile Decision Draft
 
-Status: **Draft for approval only**. This document does not authorize automatic BP spending, route construction, map mutation, inventory mutation, or kingdom-stat changes.
+Status: **Superseded decision record**. The terrain decisions below are approved and implemented within the documented boundary; unresolved payment, route-cost, derived-effect, and kingdom-stat mechanics remain manual.
 
 ## Purpose
 
-PKKM now has source-reconciled, non-mutating terrain previews. The remaining boundary is deciding which terrain rules are authoritative under the persisted Workbook and City Info profiles. This draft records the decision needed before any terrain rule becomes state-mutating behavior.
+PKKM has source-reconciled terrain previews and validated Greenbelt inventory application. The supplied Kingmaker PDF is the overall default rules profile, while the supplemental terrain reference remains the default for Greenbelt terrain prerequisites where it differs from the workbook. This note preserves the decision boundary and does not authorize undefined payment or derived-effect mechanics.
 
 ## Proposed profile boundary
 
-| Area | Workbook profile | City Info profile | Current implementation boundary |
+| Area | Workbook profile | PDF / supplemental profile | Current implementation boundary |
 |---|---|---|---|
 | Exploration and preparation rows | Preserve `Turn!A38:D47` values | Preserve as a parallel reference | Reference-only |
 | Farm, Road, and Highway costs | Preserve workbook reference values | Retain as a separate source candidate | Caller-supplied/manual |
-| Terrain eligibility | Use only rules explicitly present in the workbook | Use only rules explicitly present in City Info or an approved supplemental source | Preview warnings only |
+| Terrain eligibility | Use only rules explicitly present in the workbook | Use the approved supplemental terrain reference where it differs | Qualifying descriptors are sufficient; explicit facts remain caller-supplied |
 | Improvement effects | Do not infer from catalog descriptions | Do not infer from catalog descriptions | Manual |
 | Route topology and connected length | No automatic inference | No automatic inference | Explicit facts and summaries only |
 | Settlement endpoints and water topology | No automatic inference | No automatic inference | Explicit facts and warnings only |
@@ -38,7 +38,7 @@ These are additive preview checks only. They do not establish profile authority 
 
 ## Decisions required before mutation
 
-1. **Profile authority:** For each prerequisite, identify Workbook, City Info, both, or manual-only authority.
+1. **Profile authority:** The supplemental terrain reference is authoritative by default for Greenbelt prerequisites where it differs; Workbook remains an explicit override.
 2. **Payment timing:** State when BP is paid, whether failed preparation consumes BP, and whether partial preparation is allowed.
 3. **Upgrade semantics:** State whether Fort and Highway upgrades replace the source improvement, how costs differ, and whether the old record remains in history.
 4. **Topology:** Define how roads, Bridges, Highways, Canals, Aqueducts, rivers, and settlement endpoints are represented and validated.
@@ -53,4 +53,4 @@ These are additive preview checks only. They do not establish profile authority 
 4. Keep all unresolved rules as warnings or explicit manual outcomes.
 5. Run the Release build, CTest, Python suite, and package validation before considering a release slice.
 
-Until these decisions are supplied, the prudent boundary is the current non-mutating preview model.
+The approved boundary is: validate caller-supplied terrain/topology facts, apply qualifying catalog improvements to Greenbelt inventory, replace explicit Road/Watchtower sources for Highway/Fort upgrades, and leave BP, route costs, derived effects, and kingdom-stat changes manual.

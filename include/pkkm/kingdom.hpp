@@ -155,7 +155,7 @@ struct TurnProgress {
  std::vector<std::string> completed_step_ids;
 };
 const std::vector<TurnChecklistStep>& turn_checklist_steps();
-enum class RuleProfile { Workbook, CityInfo };
+enum class RuleProfile { Pdf, Workbook, CityInfo };
 enum class StabilityFailureOutcome { FailByLessThanFour, FailByAtLeastFive };
 StabilityFailureOutcome classify_stability_failure(int failure_by);
 enum class StabilityCheckBranch { Success, FailByLessThanFour, FailByAtLeastFive };
@@ -181,7 +181,7 @@ struct StabilityCheckRecord {
  int rolled_unrest = 0;
  int treasury_delta = 0;
  int unrest_delta = 0;
- RuleProfile rule_profile = RuleProfile::Workbook;
+ RuleProfile rule_profile = RuleProfile::Pdf;
 };
 
 enum class TurnAction { ClaimHex, AbandonHex, AbandonCity };
@@ -202,7 +202,7 @@ struct KingdomSizeLimits {
 KingdomSizeLimits kingdom_size_limits(int kingdom_size);
 struct TurnEconomyRates {
  int gold_per_withdrawn_bp = 2000; int gold_per_deposited_bp = 4000;
- int item_value_per_bp = 8000; int unrest_per_withdrawn_bp = 1;
+ int item_value_per_bp = 4000; int unrest_per_withdrawn_bp = 1;
  int gold_per_buy_for_kingdom_bp = 2000;
 };
 TurnEconomyRates turn_economy_rates();
@@ -218,7 +218,7 @@ struct TaxCollectionRecord {
  int result_input = 0;
  int other_bp_gained = 0;
  int treasury_delta = 0;
- RuleProfile rule_profile = RuleProfile::Workbook;
+ RuleProfile rule_profile = RuleProfile::Pdf;
 };
 void apply_tax_action(Kingdom& kingdom, bool economy_check_success,
  int result_input, int other_bp_gained);
@@ -311,7 +311,7 @@ struct ItemDepositRecord {
  int item_value = 0;
  int bp_received = 0;
  int treasury_delta = 0;
- RuleProfile rule_profile = RuleProfile::Workbook;
+ RuleProfile rule_profile = RuleProfile::Pdf;
 };
 int resolve_item_deposit_bp(int item_value);
 int resolve_item_deposit_bp(RuleProfile profile, int item_value);
@@ -333,6 +333,28 @@ struct CommissionRecord {
 void apply_commission(Kingdom& kingdom, const std::string& item_name,
  const std::string& recipient, int cost_bp, int exotic_crafters_available);
 enum class MagicItemCategory { Minor, Medium, Major };
+struct ValuableItemSaleRequest {
+ std::string item_name;
+ std::string city_id;
+ int district = 0;
+ int item_value_gp = 0;
+ MagicItemCategory category = MagicItemCategory::Minor;
+ int economy_check_result = 0;
+};
+struct ValuableItemSaleRecord {
+ int turn = 1;
+ std::string item_name;
+ std::string city_id;
+ int district = 0;
+ int item_value_gp = 0;
+ MagicItemCategory category = MagicItemCategory::Minor;
+ int economy_check_dc = 0;
+ int economy_check_result = 0;
+ bool sold = false;
+ int bp_received = 0;
+};
+int valuable_item_sale_dc(MagicItemCategory category);
+void apply_valuable_item_sale(Kingdom& kingdom, const ValuableItemSaleRequest& request);
 int magic_item_sale_bp(MagicItemCategory category);
 const char* magic_item_category_name(MagicItemCategory category);
 MagicItemCategory magic_item_category_from_name(const std::string& name);
@@ -444,6 +466,22 @@ struct TurnTransitionPreview {
  bool event_resolution_manual = true;
 };
 TurnTransitionPreview preview_turn_transition(const Kingdom& kingdom, bool event_occurred_last_turn);
+struct TurnResolutionRequest {
+ bool stability_success = false;
+ int failure_by = 0;
+ int rolled_unrest = 0;
+ int consumption_bp = 1;
+ bool royal_assassin_employed = false;
+};
+struct TurnResolutionPreview {
+ int current_turn = 1;
+ int next_turn = 2;
+ UpkeepPreview upkeep;
+ bool event_resolution_manual = true;
+};
+TurnResolutionPreview preview_turn_resolution(const Kingdom& kingdom,
+ const TurnResolutionRequest& request);
+void apply_turn_resolution(Kingdom& kingdom, const TurnResolutionRequest& request);
 enum class EventResolution { NoEvent, ManualResolutionRequired };
 EventResolution classify_event_resolution(bool event_triggered);
 struct CalendarTemplateEntry {
@@ -468,7 +506,7 @@ struct Kingdom {
  int turn = 1;
  int treasury_bp = 0;
  int unrest = 0;
- RuleProfile rule_profile = RuleProfile::Workbook;
+ RuleProfile rule_profile = RuleProfile::Pdf;
  bool use_optional_mine_rule = false;
  KingdomRuleInputs rule_inputs;
  std::vector<Settlement> settlements;
@@ -485,6 +523,7 @@ struct Kingdom {
  std::vector<LoyaltyCheckRecord> loyalty_checks;
  std::vector<CommissionRecord> commissions;
  std::vector<MagicItemOutcomeRecord> magic_item_outcomes;
+ std::vector<ValuableItemSaleRecord> valuable_item_sales;
  std::vector<KingdomEventRecord> kingdom_events;
  std::vector<ConstructionRecord> construction_transactions;
  std::vector<CalendarNote> calendar_notes;
