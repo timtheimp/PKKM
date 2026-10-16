@@ -169,6 +169,10 @@ void validate(const Kingdom& k) {
     for (const auto& s : k.settlements) {
         if (s.name.empty() || s.population < 0 || s.districts < 0)
             throw std::invalid_argument("Settlement must have a name and nonnegative population/districts");
+        if (s.city_layout.base_value < 0)
+            throw std::invalid_argument("City worksheet base value cannot be negative");
+        for (const auto& column : s.city_layout.item_columns)
+            if (column.size() > 7) throw std::invalid_argument("City worksheet item columns cannot exceed seven entries");
         for (const auto& building : s.building_inventory) {
             if (building.name.empty() || building.count < 0)
                 throw std::invalid_argument("Settlement building must have a name and nonnegative count");
@@ -1758,6 +1762,16 @@ const char* rule_profile_name(RuleProfile profile) {
     return profile == RuleProfile::CityInfo ? "city_info" : "workbook";
 }
 
+const char* city_boundary_surface_name(CityBoundarySurface surface) {
+    return surface == CityBoundarySurface::Water ? "water" : "land";
+}
+
+CityBoundarySurface city_boundary_surface_from_name(const std::string& name) {
+    if (name == "land") return CityBoundarySurface::Land;
+    if (name == "water") return CityBoundarySurface::Water;
+    throw std::invalid_argument("Unknown city worksheet boundary surface: " + name);
+}
+
 RuleProfile rule_profile_from_name(const std::string& name) {
     if (name == "pdf") return RuleProfile::Pdf;
     if (name == "workbook") return RuleProfile::Workbook;
@@ -1796,6 +1810,11 @@ void save(const Kingdom& k, const std::string& path) {
             {"economy", s.economy}, {"loyalty", s.loyalty}, {"stability", s.stability},
             {"defense", s.defense}, {"building_inventory", Json::array()},
             {"apply_catalog_stat_effects", s.apply_catalog_stat_effects},
+            {"city_layout", {{"north", city_boundary_surface_name(s.city_layout.north)},
+                {"south", city_boundary_surface_name(s.city_layout.south)},
+                {"west", city_boundary_surface_name(s.city_layout.west)},
+                {"east", city_boundary_surface_name(s.city_layout.east)},
+                {"base_value", s.city_layout.base_value}, {"item_columns", Json::array()}}},
             {"map", {{"rows", s.map.rows}, {"columns", s.map.columns},
                 {"placements", Json::array()}, {"labels", Json::array()}}}};
         for (const auto& building : s.building_inventory)
@@ -1807,6 +1826,8 @@ void save(const Kingdom& k, const std::string& path) {
         for (const auto& label : s.map.labels)
             item["map"]["labels"].push_back({{"text", label.text}, {"row", label.row},
                 {"column", label.column}, {"width", label.width}, {"height", label.height}});
+        for (const auto& column : s.city_layout.item_columns)
+            item["city_layout"]["item_columns"].push_back(column);
         output["settlements"].push_back(std::move(item));
     }
     for (const auto& b : k.buildings) output["buildings"].push_back({{"name", b.name}, {"count", b.count}});
@@ -1976,6 +1997,27 @@ Kingdom load(const std::string& path) {
             : "settlement." + std::to_string(k.settlements.size());
         if (document_version >= 5)
             k.settlements.back().apply_catalog_stat_effects = required_bool(item, "apply_catalog_stat_effects");
+        if (item.contains("city_layout")) {
+            const auto& worksheet = item.at("city_layout");
+            if (!worksheet.is_object()) throw std::runtime_error("Settlement city_layout must be an object");
+            auto& city_layout = k.settlements.back().city_layout;
+            if (worksheet.contains("north")) city_layout.north = city_boundary_surface_from_name(required_string(worksheet, "north"));
+            if (worksheet.contains("south")) city_layout.south = city_boundary_surface_from_name(required_string(worksheet, "south"));
+            if (worksheet.contains("west")) city_layout.west = city_boundary_surface_from_name(required_string(worksheet, "west"));
+            if (worksheet.contains("east")) city_layout.east = city_boundary_surface_from_name(required_string(worksheet, "east"));
+            city_layout.base_value = optional_int(worksheet, "base_value", 0);
+            if (worksheet.contains("item_columns")) {
+                const auto& columns = worksheet.at("item_columns");
+                if (!columns.is_array() || columns.size() != 4) throw std::runtime_error("Settlement city_layout item_columns must contain four arrays");
+                for (size_t index = 0; index < 4; ++index) {
+                    if (!columns[index].is_array()) throw std::runtime_error("Settlement city_layout item column must be an array");
+                    for (const auto& entry : columns[index]) {
+                        if (!entry.is_string()) throw std::runtime_error("Settlement city_layout item must be a string");
+                        city_layout.item_columns[index].push_back(entry.get<std::string>());
+                    }
+                }
+            }
+        }
         if (document_version >= 4) {
             if (!item.contains("building_inventory") || !item.at("building_inventory").is_array())
                 throw std::runtime_error("Settlement building_inventory must be an array");

@@ -9,6 +9,7 @@
 #include "pkkm/buildings.hpp"
 #include "pkkm/greenbelt.hpp"
 #include "pkkm/map_editor.hpp"
+#include "pkkm/city_layout_editor.hpp"
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -59,6 +60,7 @@ constexpr int kApplySettlements = 5117;
 constexpr int kCancelSettlements = 5118;
 constexpr int kCloseSettlements = 5121;
 constexpr int kConstruction = 5122;
+constexpr int kCityWorksheet = 5123;
 constexpr int kConstructionTarget = 5200;
 constexpr int kConstructionUpgradeFrom = 5201;
 constexpr int kConstructionRow = 5202;
@@ -869,6 +871,8 @@ void create_settlement_controls(HWND window) {
         250, 365, 125, 28, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kEditMap)), app_instance, nullptr);
     CreateWindowExW(0, L"BUTTON", L"Construction...", WS_CHILD | WS_VISIBLE | WS_TABSTOP,
         250, 400, 125, 28, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kConstruction)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"PDF Worksheet...", WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+        385, 400, 145, 28, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCityWorksheet)), app_instance, nullptr);
     CreateWindowExW(0, L"STATIC", L"Map: none", WS_CHILD | WS_VISIBLE | SS_LEFT,
         385, 365, 145, 28, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kMapSummary)), app_instance, nullptr);
 
@@ -931,7 +935,7 @@ void refresh_settlement_form(HWND window) {
     const int field_ids[] = {kSettlementName, kSettlementPopulation, kSettlementDistricts,
         kSettlementEconomy, kSettlementLoyalty, kSettlementStability, kSettlementDefense,
         kSettlementApplyCatalogStats, kInventoryList, kCatalogChoice, kBuildingCount, kAddBuilding,
-        kRemoveBuilding, kEditMap, kConstruction};
+        kRemoveBuilding, kEditMap, kConstruction, kCityWorksheet};
     for (const int id : field_ids) EnableWindow(GetDlgItem(window, id), has_selection);
     if (!has_selection) {
         for (const int id : {kSettlementName, kSettlementPopulation, kSettlementDistricts,
@@ -1150,6 +1154,11 @@ bool settlement_state_matches(const pkkm::Settlement& left, const pkkm::Settleme
         && left.districts == right.districts && left.economy == right.economy
         && left.loyalty == right.loyalty && left.stability == right.stability
         && left.defense == right.defense && left.apply_catalog_stat_effects == right.apply_catalog_stat_effects
+        && left.city_layout.north == right.city_layout.north && left.city_layout.south == right.city_layout.south
+        && left.city_layout.west == right.city_layout.west && left.city_layout.east == right.city_layout.east
+        && left.city_layout.base_value == right.city_layout.base_value
+        && std::equal(std::begin(left.city_layout.item_columns), std::end(left.city_layout.item_columns),
+            std::begin(right.city_layout.item_columns))
         && left.id == right.id
         && same_buildings(left.building_inventory, right.building_inventory)
         && left.map.rows == right.map.rows && left.map.columns == right.map.columns
@@ -1386,6 +1395,21 @@ LRESULT CALLBACK settlement_manager_proc(HWND window, UINT message, WPARAM wpara
                 else if (id == kConstruction) {
                     open_construction_window(window);
                 }
+                else if (id == kCityWorksheet) {
+                    save_active_settlement(window);
+                    if (settlement_active_index < 0) throw std::invalid_argument("Select a settlement first.");
+                    const int index = settlement_active_index;
+                    pkkm::ui::open_city_layout_worksheet(window, app_instance,
+                        settlement_draft[static_cast<size_t>(index)].city_layout,
+                        [window, index](pkkm::CityLayoutWorksheet worksheet) {
+                            if (!IsWindow(window) || index < 0 || index >= static_cast<int>(settlement_draft.size())) return;
+                            auto candidate = kingdom;
+                            candidate.settlements = settlement_draft;
+                            candidate.settlements[static_cast<size_t>(index)].city_layout = std::move(worksheet);
+                            pkkm::validate(candidate);
+                            settlement_draft[static_cast<size_t>(index)].city_layout = candidate.settlements[static_cast<size_t>(index)].city_layout;
+                        });
+                }
                 else if (id == kApplySettlements) apply_settlement_manager(window);
                 else if (id == kCancelSettlements) cancel_settlement_manager(window);
                 else if (id == kCloseSettlements) DestroyWindow(window);
@@ -1399,6 +1423,7 @@ LRESULT CALLBACK settlement_manager_proc(HWND window, UINT message, WPARAM wpara
             return 0;
         case WM_DESTROY: {
             pkkm::ui::close_map_editor(window);
+            pkkm::ui::close_city_layout_worksheet(window);
             settlement_window = nullptr;
             settlement_draft.clear();
             settlement_catalog.clear();

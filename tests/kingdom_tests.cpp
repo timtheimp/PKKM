@@ -30,6 +30,11 @@ int main(int argc, char** argv) {
  k.settlements[0].apply_catalog_stat_effects=true;
  k.settlements[0].building_inventory.push_back({"Academy", 2});
  k.settlements[0].map = {8, 8, {{"Castle", 5, 5, 2, 2}}};
+ k.settlements[0].city_layout.north = pkkm::CityBoundarySurface::Water;
+ k.settlements[0].city_layout.east = pkkm::CityBoundarySurface::Water;
+ k.settlements[0].city_layout.base_value = 500;
+ k.settlements[0].city_layout.item_columns[0] = {"Cloak of Resistance +1"};
+ k.settlements[0].city_layout.item_columns[2] = {"Wand of Cure Light Wounds", "Ring of Protection +1"};
  k.greenbelt_map.asset_path="Kingmaker-Greenbelt-Map.jpg";
  k.greenbelt_map.image_width=7865; k.greenbelt_map.image_height=2610;
  k.greenbelt_map.calibration={120.0, 40.0, 46.0, 40.0, 1.0};
@@ -73,6 +78,12 @@ int main(int argc, char** argv) {
       && r.settlements[0].building_inventory[0].name=="Academy"
       && r.settlements[0].building_inventory[0].count==2,
       "schema 10 roundtrips existing settlement state");
+ must(r.settlements[0].city_layout.north==pkkm::CityBoundarySurface::Water
+      && r.settlements[0].city_layout.east==pkkm::CityBoundarySurface::Water
+      && r.settlements[0].city_layout.base_value==500
+      && r.settlements[0].city_layout.item_columns[0].size()==1
+      && r.settlements[0].city_layout.item_columns[2].size()==2,
+      "schema 10 roundtrips manual PDF city worksheet fields");
  must(r.greenbelt_map.asset_path=="Kingmaker-Greenbelt-Map.jpg"
       && r.greenbelt_map.image_width==7865 && r.greenbelt_map.image_height==2610
       && r.greenbelt_map.calibration.origin_x==120.0

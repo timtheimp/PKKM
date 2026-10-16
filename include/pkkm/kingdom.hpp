@@ -17,6 +17,17 @@ struct SettlementMap {
 enum class WorkbookMapTemplate { Capital, City, Example, MultiDistrict, CityLayout };
 const char* workbook_map_template_name(WorkbookMapTemplate preset);
 SettlementMap workbook_map_template(WorkbookMapTemplate preset);
+enum class CityBoundarySurface { Land, Water };
+const char* city_boundary_surface_name(CityBoundarySurface surface);
+CityBoundarySurface city_boundary_surface_from_name(const std::string& name);
+struct CityLayoutWorksheet {
+ CityBoundarySurface north = CityBoundarySurface::Land;
+ CityBoundarySurface south = CityBoundarySurface::Land;
+ CityBoundarySurface west = CityBoundarySurface::Land;
+ CityBoundarySurface east = CityBoundarySurface::Land;
+ int base_value = 0;
+ std::vector<std::string> item_columns[4];
+};
 struct Settlement {
  std::string name;
  int population = 0; int districts = 0;
@@ -25,6 +36,7 @@ struct Settlement {
  bool apply_catalog_stat_effects = false;
  SettlementMap map;
  std::string id;
+ CityLayoutWorksheet city_layout;
 };
 struct GreenbeltCalibration {
  double origin_x = 0.0; double origin_y = 0.0;
