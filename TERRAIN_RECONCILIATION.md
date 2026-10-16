@@ -108,12 +108,8 @@ The first non-mutating terrain-improvement preview slice is implemented with exp
 5. connected Road/Highway facts;
 6. kingdom Size;
 7. existing improvements, requested upgrade, and route length;
-8. supplemental `city_info` profile is the default; explicit profile context remains available to the domain API.
+8. the supplied Kingmaker PDF is the overall default rules profile; the supplemental terrain reference is the approved default specifically for Greenbelt prerequisites where it differs from the workbook, and explicit `pdf`, `workbook`, or `city_info` profile context remains available to the domain API.
 
 The preview returns eligibility warnings and source metadata only. Applying a qualifying improvement updates the selected hex inventory and replaces the explicit Road or Watchtower source for Highway or Fort upgrades. It does not spend BP, alter map geometry, or apply kingdom-stat deltas. Automatic route costs and derived effects remain deferred.
 
-The facts-based preview now defaults to the supplemental `city_info` profile and accepts an explicit persisted `RuleProfile` override. It
-records its lowercase name in the preview summary. This is source context
-only; it does not silently apply profile-specific terrain semantics. The
-returned preview also exposes the selected profile as structured context so
-callers do not need to parse the summary text.
+The facts-based preview uses the supplemental terrain reference as the default authority specifically for Greenbelt prerequisites where it differs from the workbook. It accepts explicit `pdf`, `workbook`, or `city_info` profile context for the surrounding kingdom rules, records the selected profile name in the preview summary, and exposes it as structured context so callers do not need to parse summary text.
