@@ -22,7 +22,7 @@ add_custom_command(TARGET pkkm POST_BUILD
   "${CMAKE_CURRENT_SOURCE_DIR}/assets/Kingmaker-Greenbelt-Map.jpg"
   "$<TARGET_FILE_DIR:pkkm>/Kingmaker-Greenbelt-Map.jpg")
 if(WIN32)
- add_executable(pkkm_desktop WIN32 src/windows_app.cpp src/map_editor.cpp)
+ add_executable(pkkm_desktop WIN32 src/windows_app.cpp src/map_editor.cpp src/city_layout_editor.cpp)
  target_link_libraries(pkkm_desktop PRIVATE pkkm_core comctl32 gdiplus)
  add_custom_command(TARGET pkkm_desktop POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
