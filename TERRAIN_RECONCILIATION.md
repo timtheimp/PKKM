@@ -11,7 +11,7 @@ PKKM retains two parallel sources:
 
 The supplemental page reviewed for this reconciliation is: <https://www.d20pfsrd.com/gamemastering/other-rules/kingdom-building/settlements/terrain-improvements/>.
 
-The workbook table remains the source-faithful baseline for exploration time, preparation time/cost, and farm/road reference costs. The supplemental reference is a candidate source for prerequisites, improvement effects, and corridor rules only after reconciliation.
+The workbook table remains the source-faithful baseline for exploration time, preparation time/cost, and farm/road reference costs. The supplemental reference is the approved default for Greenbelt prerequisites where the profiles differ; improvement effects, route costs, and kingdom-stat effects remain manual unless separately defined.
 
 ## Directly aligned reference values
 
@@ -33,11 +33,10 @@ These values are reference data. They do not imply that PKKM should calculate pr
 
 ## Reconciled supplemental candidates
 
-The supplemental reference provides additional rules that are not represented as executable workbook mechanics:
+The supplemental reference is the default when the parallel profiles differ. The following observations remain caller-supplied rather than inferred:
 
-- A Farm is allowed in desert only with a canal, coastline, or river; Hills and Plains are also listed as valid Farm terrain.
-- A Farm requires proximity to a river, lake, swamp, or Canal, or adjacency to at least two existing Farms.
-- A Road may be built on any land hex; river crossings double the listed Road cost.
+- A Farm is buildable when its terrain has a qualifying descriptor; water access, neighboring Farms, and other supplemental facts remain caller-supplied observations when recorded.
+- A Road may be built on any land hex; river crossings double the listed Road cost. Road connectivity is supplied by the caller and connects to adjacent hexes that contain Roads. Road spacing uses the clarified 12 miles center-to-center, approximately 7 miles per side.
 - A Highway requires kingdom Size 26 or greater and upgrades a Road; Highway and Road effects depend on connected route length.
 - Aqueducts require a connected water source and settlement endpoint.
 - Canals, Fishery, Fort, Mine, Quarry, Sawmill, Watchtower, and special-terrain effects introduce additional prerequisites or kingdom-stat effects.
@@ -48,8 +47,9 @@ The supplemental reference provides additional rules that are not represented as
 The current Greenbelt catalog is intentionally conservative and does not yet
 claim full supplemental coverage. In particular:
 
-- The current Farm prerequisite text is narrower than the supplemental Farm
-  terrain list and does not encode the desert water/Canal condition.
+- The catalog retains source prerequisite text for auditability, while the
+  executable Greenbelt prerequisite accepts a qualifying terrain descriptor;
+  unresolved water/Canal and neighboring-Farm facts remain caller-supplied.
 - The current Canal terrain requirement is water/coast, while the supplemental
   terrain list places Canals on desert, hills, and plains/grassland hexes.
 - The current Fishery prerequisite text does not enumerate river and marsh
@@ -61,11 +61,12 @@ claim full supplemental coverage. In particular:
   describe manual connectivity, but do not model river crossings, upgrade cost
   differences, or route length.
 
-These are recorded conflicts, not silent corrections. The workbook table and
-existing catalog remain unchanged until a source profile and executable rule
-boundary are approved.
+These are recorded source conflicts, not silent catalog rewrites. The workbook
+table and catalog remain preserved for provenance while the approved executable
+boundary uses the supplemental default only for the validated prerequisite and
+inventory behavior described below.
 
-These rules require structured terrain topology, adjacency, route connectivity, improvement lifecycle, and source-profile decisions before they can become automatic behavior.
+Terrain descriptors are now sufficient for the terrain prerequisite: when a hex has a qualifying descriptor, the improvement is buildable. Topology facts remain caller-supplied for Roads, Highways, Bridges, Aqueducts, and related corridor checks. Applying a catalog improvement updates the Greenbelt hex inventory automatically; derived effects, BP spending, route costs, and kingdom-stat changes remain separately manual unless defined elsewhere.
 
 ## Current PKKM boundary
 
@@ -73,8 +74,9 @@ The current Greenbelt catalog and editor may display these improvements as manua
 
 - deduct BP or alter Treasury;
 - mutate Consumption, Economy, Loyalty, Stability, Defense, or Unrest automatically;
-- infer rivers, lakes, roads, connected routes, or settlement endpoints from labels;
-- infer upgrades from an existing improvement name;
+- infer rivers, lakes, connected routes, or settlement endpoints from labels; Road adjacency remains a caller-supplied observation;
+- infer upgrades solely from an existing improvement name; an upgrade must be
+  explicitly requested and validated against its source improvement;
 - convert a visual corridor or terrain label into a rule-bearing object;
 - treat workbook cost strings as executable payment instructions.
 
@@ -86,9 +88,7 @@ can preserve the reconciled Farm, Fishery, and Highway warnings, including the
 requirement for an existing Road when a Highway upgrade is requested, while
 leaving all effects and costs manual. It also warns when a non-shareable
 improvement already occupies the hex, permits existing shareable records, and
-checks the Farm alternative of water access or adjacency to two existing Farms.
-The preview also accepts the reconciled supplemental terrain sets for Canal,
-Mine, Quarry, and Sawmill without changing the conservative catalog definitions.
+accepts the supplemental terrain descriptors for Farm, Fishery, Canal, Mine, Quarry, and Sawmill.
 It preserves the source occupancy warning that a Watchtower cannot share a hex
 with a Fort or another Watchtower. Aqueduct previews additionally accept
 explicit water-source and settlement-endpoint facts and warn when either is
@@ -108,12 +108,11 @@ The first non-mutating terrain-improvement preview slice is implemented with exp
 5. connected Road/Highway facts;
 6. kingdom Size;
 7. existing improvements, requested upgrade, and route length;
-8. rule-profile selection remains a deferred boundary until profile-specific
-   terrain semantics are approved.
+8. supplemental `city_info` profile is the default; explicit profile context remains available to the domain API.
 
-The preview returns eligibility warnings and source metadata only. It does not spend BP, alter inventory, mutate map geometry, or apply kingdom-stat deltas. Automatic application remains deferred until workbook authority, City Info conflicts, and topology semantics are explicitly resolved.
+The preview returns eligibility warnings and source metadata only. Applying a qualifying improvement updates the selected hex inventory and replaces the explicit Road or Watchtower source for Highway or Fort upgrades. It does not spend BP, alter map geometry, or apply kingdom-stat deltas. Automatic route costs and derived effects remain deferred.
 
-The facts-based preview now accepts the persisted `RuleProfile` value and
+The facts-based preview now defaults to the supplemental `city_info` profile and accepts an explicit persisted `RuleProfile` override. It
 records its lowercase name in the preview summary. This is source context
 only; it does not silently apply profile-specific terrain semantics. The
 returned preview also exposes the selected profile as structured context so

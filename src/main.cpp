@@ -86,8 +86,20 @@ int main(int argc, char** argv) {
                       << " | Loyalty checks " << kingdom.loyalty_checks.size()
                       << " | Commissions " << kingdom.commissions.size()
                       << " | Magic-item outcomes " << kingdom.magic_item_outcomes.size()
+                      << " | Valuable-item sales " << kingdom.valuable_item_sales.size()
                       << " | Kingdom events " << kingdom.kingdom_events.size()
                       << " | Construction transactions " << kingdom.construction_transactions.size() << "\n";
+            for (const auto& sale : kingdom.valuable_item_sales) {
+                std::cout << " Valuable item sale | turn " << sale.turn
+                          << " | item " << single_line(sale.item_name)
+                          << " | city " << single_line(sale.city_id)
+                          << " | district " << sale.district
+                          << " | value " << sale.item_value_gp << " gp"
+                          << " | category " << pkkm::magic_item_category_name(sale.category)
+                          << " | Economy " << sale.economy_check_result << "/" << sale.economy_check_dc
+                          << " | " << (sale.sold ? "sold" : "unsold")
+                          << " | BP " << sale.bp_received << "\n";
+            }
             for (const auto& event : kingdom.kingdom_events) {
                 std::cout << " Event | turn " << event.turn
                           << " | d100 " << event.d100_roll

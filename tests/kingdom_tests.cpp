@@ -17,6 +17,10 @@ template<class F> static void must_reject(F f){bool rejected=false;try{f();}catc
 int main(int argc, char** argv) {
  try {
  pkkm::Kingdom k; k.name="Test Realm"; k.turn=4; k.treasury_bp=120; k.unrest=2;
+ must(k.rule_profile==pkkm::RuleProfile::Pdf,
+      "new kingdoms default to the supplied PDF rule profile");
+ must(pkkm::resolve_item_deposit_bp(k.rule_profile, 8000)==2,
+      "PDF item deposits use 4,000 gp per BP");
  k.turn_progress = {{4,{"upkeep.stability","income.deposit_gold"}},
                     {5,{"events.roll_d100"}}};
  k.calendar_notes = {{"calendar.row.2", "", "", "", "Opening month"},
@@ -50,6 +54,14 @@ int main(int argc, char** argv) {
  k.rule_inputs.city_count = 3; k.rule_inputs.total_city_population = 3250;
  pkkm::save(k,path); const auto r=pkkm::load(path);
  must(r.name==k.name && r.turn==4 && r.treasury_bp==120 && r.unrest==2,"roundtrip scalar fields");
+ auto legacy_root_profile=nlohmann::json::parse(contents(path));
+ legacy_root_profile.erase("rule_profile");
+ const std::string legacy_root_profile_path="pkkm_test_legacy_root_profile.json";
+ put(legacy_root_profile_path, legacy_root_profile.dump(2));
+ const auto legacy_root_profile_r=pkkm::load(legacy_root_profile_path);
+ must(legacy_root_profile_r.rule_profile==pkkm::RuleProfile::Workbook,
+      "legacy kingdoms without a root rule profile preserve Workbook semantics");
+ std::remove(legacy_root_profile_path.c_str());
  must(r.settlements.size()==1 && r.settlements[0].population==1200 && r.buildings[0].count==2,"roundtrip collections");
  must(r.settlements[0].districts==2 && r.settlements[0].economy==3 && r.settlements[0].loyalty==-1
       && r.settlements[0].stability==4 && r.settlements[0].defense==7,
@@ -107,6 +119,65 @@ int main(int argc, char** argv) {
  must(greenbelt_catalog.size()==14 && vineyard!=nullptr && vineyard->third_party
       && vineyard->terrain_requirement=="hills" && vineyard->cost_bp==3,
       "Greenbelt catalog includes the source-specific Vineyard entry");
+ pkkm::GreenbeltMap improvement_map;
+ improvement_map.hexes.push_back({2,3,"plains",true,1,"",{},""});
+ pkkm::GreenbeltImprovementPreviewFacts improvement_facts;
+ improvement_facts.terrain="plains";
+ improvement_facts.claimed=true;
+ const auto applied_farm=pkkm::apply_greenbelt_improvement(
+     improvement_map, greenbelt_catalog, 2, 3, "farm", improvement_facts);
+ must(applied_farm.allowed && improvement_map.hexes[0].improvements.size()==1
+      && improvement_map.hexes[0].improvements[0]=="farm",
+      "Greenbelt improvement application updates hex inventory");
+ const auto applied_second_farm=pkkm::apply_greenbelt_improvement(
+     improvement_map, greenbelt_catalog, 2, 3, "farm", improvement_facts);
+ must(applied_second_farm.allowed && improvement_map.hexes[0].improvements.size()==2,
+      "Shareable Greenbelt improvements may be added more than once");
+ pkkm::GreenbeltImprovementPreviewFacts road_facts;
+ road_facts.terrain="plains";
+ road_facts.claimed=true;
+ road_facts.connected_road=true;
+ road_facts.kingdom_size=26;
+ const auto applied_road=pkkm::apply_greenbelt_improvement(
+     improvement_map, greenbelt_catalog, 2, 3, "road", road_facts);
+ must(applied_road.allowed, "Greenbelt Road application accepts caller-supplied connectivity");
+ pkkm::GreenbeltMap river_road_map;
+ river_road_map.hexes.push_back({6, 7, "plains", true, 1, "", {}, ""});
+ auto river_road_facts=road_facts;
+ river_road_facts.river_crossing=true;
+ const auto river_road_apply=pkkm::apply_greenbelt_improvement(
+     river_road_map, greenbelt_catalog, 6, 7, "road", river_road_facts);
+ must(river_road_apply.allowed && river_road_map.hexes[0].improvements[0]=="road"
+      && river_road_apply.summary.find("River crossing")!=std::string::npos,
+      "Greenbelt Road application preserves river-crossing cost as a manual effect");
+ road_facts.requested_upgrade="highway";
+ road_facts.route_length=2;
+ const auto highway_apply=pkkm::apply_greenbelt_improvement(
+     improvement_map, greenbelt_catalog, 2, 3, "highway", road_facts);
+ must(highway_apply.allowed
+      && std::find(improvement_map.hexes[0].improvements.begin(),
+          improvement_map.hexes[0].improvements.end(), "road")
+          == improvement_map.hexes[0].improvements.end()
+      && std::find(improvement_map.hexes[0].improvements.begin(),
+          improvement_map.hexes[0].improvements.end(), "highway")
+          != improvement_map.hexes[0].improvements.end(),
+      "Greenbelt upgrade replaces the source improvement in hex inventory");
+ pkkm::GreenbeltMap fort_map;
+ fort_map.hexes.push_back({4, 5, "plains", true, 1, "", {"watchtower"}, ""});
+ pkkm::GreenbeltImprovementPreviewFacts fort_apply_facts;
+ fort_apply_facts.terrain="plains";
+ fort_apply_facts.claimed=true;
+ const auto fort_apply=pkkm::apply_greenbelt_improvement(
+     fort_map, greenbelt_catalog, 4, 5, "fort", fort_apply_facts);
+ must(fort_apply.allowed && fort_map.hexes[0].improvements.size()==1
+      && fort_map.hexes[0].improvements[0]=="fort",
+      "Greenbelt Fort application infers and validates a Watchtower upgrade");
+ auto mismatched_upgrade_facts=fort_apply_facts;
+ mismatched_upgrade_facts.requested_upgrade="highway";
+ must_reject([&]{ pkkm::apply_greenbelt_improvement(
+     fort_map, greenbelt_catalog, 4, 5, "fort", mismatched_upgrade_facts); });
+ must(pkkm::kGreenbeltRoadCenterDistanceMiles==12,
+      "Greenbelt road distance uses the clarified twelve-mile center spacing");
  const auto farm_preview=pkkm::preview_greenbelt_improvement(
      greenbelt_catalog,"farm","plains",true,false);
  must(farm_preview.known && farm_preview.allowed && farm_preview.bp_delta==0
@@ -119,6 +190,13 @@ int main(int argc, char** argv) {
      greenbelt_catalog,"farm","Plains, River",true,false);
  must(river_farm_preview.known && river_farm_preview.allowed,
       "Greenbelt terrain preview accepts a base terrain with a feature token");
+ pkkm::GreenbeltImprovementPreviewFacts tokenized_farm_facts;
+ tokenized_farm_facts.terrain="Plains, River";
+ tokenized_farm_facts.claimed=true;
+ const auto tokenized_farm=pkkm::preview_greenbelt_improvement(
+     greenbelt_catalog,"farm",tokenized_farm_facts,false);
+ must(tokenized_farm.allowed,
+      "Facts-based terrain preview accepts a qualifying descriptor with feature tokens");
  const auto next_hex=pkkm::make_next_greenbelt_hex(k.greenbelt_map.hexes);
  must(next_hex.q==0 && next_hex.r==0 && next_hex.terrain=="unresolved"
       && !next_hex.claimed && next_hex.improvements.empty(),
@@ -155,9 +233,8 @@ int main(int argc, char** argv) {
  desert_farm_facts.claimed=true;
  const auto blocked_desert_farm=pkkm::preview_greenbelt_improvement(
      greenbelt_catalog,"farm",desert_farm_facts,false);
- must(blocked_desert_farm.known && !blocked_desert_farm.allowed
-      && !blocked_desert_farm.warnings.empty(),
-      "Terrain preview rejects a desert Farm without water access");
+ must(blocked_desert_farm.known && blocked_desert_farm.allowed,
+      "Supplemental terrain profile permits a Farm on a qualifying desert descriptor");
  desert_farm_facts.river_adjacent=true;
  const auto allowed_desert_farm=pkkm::preview_greenbelt_improvement(
      greenbelt_catalog,"farm",desert_farm_facts,false);
@@ -168,9 +245,9 @@ int main(int argc, char** argv) {
  isolated_farm_facts.claimed=true;
  const auto isolated_farm=pkkm::preview_greenbelt_improvement(
      greenbelt_catalog,"farm",isolated_farm_facts,false);
- must(std::any_of(isolated_farm.warnings.begin(), isolated_farm.warnings.end(),
+ must(isolated_farm.allowed && !std::any_of(isolated_farm.warnings.begin(), isolated_farm.warnings.end(),
       [](const auto& warning){ return warning.find("two existing Farms")!=std::string::npos; }),
-      "Terrain preview warns when a Farm lacks water access and Farm adjacency");
+      "Terrain preview uses a qualifying terrain descriptor as the Farm build condition");
  isolated_farm_facts.neighboring_farms=2;
  const auto adjacent_farm=pkkm::preview_greenbelt_improvement(
      greenbelt_catalog,"farm",isolated_farm_facts,false);
@@ -285,10 +362,16 @@ int main(int argc, char** argv) {
  aqueduct_facts.claimed=true;
  const auto incomplete_aqueduct=pkkm::preview_greenbelt_improvement(
      greenbelt_catalog,"aqueduct",aqueduct_facts,false);
- must(incomplete_aqueduct.summary.find("Rule profile: workbook")!=std::string::npos,
+ must(incomplete_aqueduct.summary.find("Rule profile: city_info")!=std::string::npos,
       "Terrain preview records the selected rule profile in its summary");
- must(incomplete_aqueduct.rule_profile==pkkm::RuleProfile::Workbook,
-      "Terrain preview returns the Workbook rule profile as structured context");
+ must(incomplete_aqueduct.rule_profile==pkkm::RuleProfile::CityInfo,
+      "Terrain preview defaults to the supplemental City Info rule profile");
+ aqueduct_facts.rule_profile=pkkm::RuleProfile::Workbook;
+ const auto workbook_aqueduct=pkkm::preview_greenbelt_improvement(
+     greenbelt_catalog,"aqueduct",aqueduct_facts,false);
+ must(workbook_aqueduct.summary.find("Rule profile: workbook")!=std::string::npos
+      && workbook_aqueduct.rule_profile==pkkm::RuleProfile::Workbook,
+      "Terrain preview preserves an explicit Workbook profile override");
  aqueduct_facts.rule_profile=pkkm::RuleProfile::CityInfo;
  const auto city_info_aqueduct=pkkm::preview_greenbelt_improvement(
      greenbelt_catalog,"aqueduct",aqueduct_facts,false);
@@ -455,6 +538,42 @@ int main(int argc, char** argv) {
   std::remove(event_path.c_str());
  must(advanced.turn==5 && advanced.turn_progress.size()==1,
       "turn transition preview does not mutate turn state or checklist history");
+ pkkm::TurnResolutionRequest resolution_request;
+ resolution_request.stability_success=true;
+ resolution_request.consumption_bp=5;
+ resolution_request.royal_assassin_employed=true;
+ auto turn_resolution=k;
+ turn_resolution.turn=4;
+ turn_resolution.greenbelt_map.hexes.push_back({9,9,"plains",true,1,"",{},""});
+ const auto resolution_preview=pkkm::preview_turn_resolution(turn_resolution, resolution_request);
+ must(resolution_preview.current_turn==4 && resolution_preview.next_turn==5
+      && resolution_preview.upkeep.projected_treasury==115
+      && resolution_preview.upkeep.projected_unrest==0,
+      "turn resolution preview combines caller-supplied upkeep inputs without mutation");
+ pkkm::apply_turn_resolution(turn_resolution, resolution_request);
+ must(turn_resolution.turn==5 && turn_resolution.treasury_bp==115
+      && turn_resolution.unrest==0 && turn_resolution.stability_checks.size()==1
+      && turn_resolution.consumption_actions.size()==1,
+      "turn resolution applies defined upkeep outcomes and advances the turn");
+ auto threshold_resolution=turn_resolution;
+ threshold_resolution.unrest=11;
+ pkkm::TurnResolutionRequest threshold_request;
+ threshold_request.failure_by=5;
+ threshold_request.consumption_bp=1;
+ must_reject([&]{ pkkm::apply_turn_resolution(threshold_resolution, threshold_request); });
+ auto unpaid_resolution=k;
+ unpaid_resolution.treasury_bp=0;
+ pkkm::TurnResolutionRequest unpaid_request;
+ unpaid_request.stability_success=true;
+ unpaid_request.consumption_bp=5;
+ const auto unpaid_resolution_preview=pkkm::preview_turn_resolution(unpaid_resolution, unpaid_request);
+ must(!unpaid_resolution_preview.upkeep.consumption_paid
+      && unpaid_resolution_preview.upkeep.consumption_unrest_delta==2,
+      "turn resolution preview records the unpaid Consumption Unrest outcome");
+ pkkm::apply_turn_resolution(unpaid_resolution, unpaid_request);
+ must(unpaid_resolution.turn==5 && unpaid_resolution.treasury_bp==-5
+      && unpaid_resolution.consumption_actions.back().unrest_delta==2,
+      "turn resolution applies unpaid Consumption with its required Unrest increase");
  pkkm::Kingdom action_k=k;
  pkkm::apply_turn_action(action_k, pkkm::TurnAction::ClaimHex, 2);
  must(action_k.treasury_bp==118 && action_k.rule_inputs.kingdom_size==26
@@ -462,6 +581,8 @@ int main(int argc, char** argv) {
       && action_k.turn_actions[0].turn==4 && action_k.turn_actions[0].count==2
       && action_k.turn_actions[0].applied.treasury_delta==-2,
       "Claim Hex applies only its explicit delta and records the action");
+ must_reject([&]{ pkkm::apply_turn_action(k, pkkm::TurnAction::AbandonCity,
+     std::numeric_limits<int>::max()); });
  const std::string action_path="pkkm_test_turn_actions.json";
  pkkm::save(action_k, action_path);
  const auto action_r=pkkm::load(action_path);
@@ -505,37 +626,46 @@ int main(int argc, char** argv) {
       "kingdom-size Turn reference boundaries preserve source table values");
  const auto economy_rates=pkkm::turn_economy_rates();
  must(economy_rates.gold_per_withdrawn_bp==2000 && economy_rates.gold_per_deposited_bp==4000
-      && economy_rates.item_value_per_bp==8000 && economy_rates.unrest_per_withdrawn_bp==1
+      && economy_rates.item_value_per_bp==4000 && economy_rates.unrest_per_withdrawn_bp==1
       && economy_rates.gold_per_buy_for_kingdom_bp==2000,
       "income Turn reference rates preserve source conversion values");
- must(pkkm::resolve_tax_bp_delta(true, 4, 2)==6
+ must(pkkm::resolve_tax_bp_delta(true, 4, 2)==2
       && pkkm::resolve_tax_bp_delta(false, 99, 2)==2,
-      "tax Turn branches preserve success and failure BP outcomes");
+      "PDF tax branches preserve success divide-by-five and failure BP outcomes");
  must(pkkm::resolve_tax_bp_delta(pkkm::RuleProfile::CityInfo, true, 10, 2)==4,
       "City Info tax profile divides the economy result by five");
+ must_reject([&]{ (void)pkkm::resolve_tax_bp_delta(pkkm::RuleProfile::Pdf, true,
+     std::numeric_limits<int>::max(), std::numeric_limits<int>::max()); });
  pkkm::Kingdom tax_k=k;
  pkkm::apply_tax_action(tax_k, true, 4, 2);
- must(tax_k.treasury_bp==126 && tax_k.tax_actions.size()==1
-      && tax_k.tax_actions[0].turn==4 && tax_k.tax_actions[0].treasury_delta==6,
+ must(tax_k.treasury_bp==122 && tax_k.tax_actions.size()==1
+      && tax_k.tax_actions[0].turn==4 && tax_k.tax_actions[0].treasury_delta==2
+      && tax_k.tax_actions[0].rule_profile==pkkm::RuleProfile::Pdf,
       "explicit tax action applies only the source-defined BP result and records its branch inputs");
+ pkkm::Kingdom tax_overflow_k=k;
+ tax_overflow_k.treasury_bp=std::numeric_limits<int>::max();
+ must_reject([&]{ pkkm::apply_tax_action(tax_overflow_k, true, 5, 0); });
  const std::string tax_path="pkkm_test_tax_actions.json";
  pkkm::save(tax_k, tax_path);
  const auto tax_r=pkkm::load(tax_path);
  must(tax_r.tax_actions.size()==1 && tax_r.tax_actions[0].economy_check_success
       && tax_r.tax_actions[0].result_input==4
       && tax_r.tax_actions[0].other_bp_gained==2
-      && tax_r.tax_actions[0].treasury_delta==6,
+      && tax_r.tax_actions[0].treasury_delta==2,
       "tax action records roundtrip through JSON persistence");
  auto legacy_tax_json=nlohmann::json::parse(contents(tax_path));
  legacy_tax_json["tax_actions"][0]["result_divided_by_three"]
      = legacy_tax_json["tax_actions"][0]["result_input"];
+ legacy_tax_json["tax_actions"][0]["treasury_delta"] = 6;
+ legacy_tax_json["tax_actions"][0].erase("rule_profile");
  legacy_tax_json["tax_actions"][0].erase("result_input");
  put(tax_path, legacy_tax_json.dump());
  const auto legacy_tax_r=pkkm::load(tax_path);
  must(legacy_tax_r.tax_actions.size()==1
       && legacy_tax_r.tax_actions[0].result_input==4
+      && legacy_tax_r.tax_actions[0].treasury_delta==6
       && legacy_tax_r.tax_actions[0].rule_profile==pkkm::RuleProfile::Workbook,
-      "legacy tax result_divided_by_three records migrate to profile-neutral input");
+      "legacy tax records preserve pre-profile Workbook semantics");
  std::remove(tax_path.c_str());
  pkkm::Kingdom withdrawal_k=k;
  pkkm::apply_gold_withdrawal(withdrawal_k, 3, true);
@@ -560,6 +690,9 @@ int main(int argc, char** argv) {
       && withdrawal_failure_k.gold_withdrawals[0].loyalty_failure_unrest_delta==3
       && withdrawal_failure_k.gold_withdrawals[0].unrest_delta==6,
       "failed withdrawal Loyalty Check adds unrest equal to BP withdrawn");
+ auto withdrawal_overflow_k=k;
+ withdrawal_overflow_k.unrest=std::numeric_limits<int>::max();
+ must_reject([&]{ pkkm::apply_gold_withdrawal(withdrawal_overflow_k, 1, false); });
  must(pkkm::resolve_gold_deposit_bp(8000)==2,
       "gold deposit converts exact 4,000 gp units to BP");
  pkkm::Kingdom deposit_k=k;
@@ -577,24 +710,37 @@ int main(int argc, char** argv) {
       "gold deposit records roundtrip through JSON persistence");
  std::remove(deposit_path.c_str());
  must_reject([&]{ (void)pkkm::resolve_gold_deposit_bp(4001); });
- must(pkkm::resolve_item_deposit_bp(16000)==2,
-      "item deposit converts exact 8,000 gp base-value units to BP");
+ must(pkkm::resolve_item_deposit_bp(16000)==4,
+      "PDF item deposit converts exact 4,000 gp base-value units to BP");
+ must(pkkm::resolve_item_deposit_bp(pkkm::RuleProfile::Workbook, 16000)==2,
+      "Workbook item deposit override preserves 8,000 gp units");
  must(pkkm::resolve_item_deposit_bp(pkkm::RuleProfile::CityInfo, 16000)==4,
       "City Info item deposit converts exact 4,000 gp units to BP");
  pkkm::Kingdom item_deposit_k=k;
  pkkm::apply_item_deposit(item_deposit_k, 16000);
- must(item_deposit_k.treasury_bp==122 && item_deposit_k.item_deposits.size()==1
+ must(item_deposit_k.treasury_bp==124 && item_deposit_k.item_deposits.size()==1
       && item_deposit_k.item_deposits[0].item_value==16000
-      && item_deposit_k.item_deposits[0].bp_received==2
-      && item_deposit_k.item_deposits[0].treasury_delta==2,
+      && item_deposit_k.item_deposits[0].bp_received==4
+      && item_deposit_k.item_deposits[0].treasury_delta==4,
       "item deposit applies only the explicit BP conversion and records it");
  const std::string item_deposit_path="pkkm_test_item_deposit.json";
  pkkm::save(item_deposit_k, item_deposit_path);
  const auto item_deposit_r=pkkm::load(item_deposit_path);
  must(item_deposit_r.item_deposits.size()==1
       && item_deposit_r.item_deposits[0].item_value==16000
-      && item_deposit_r.item_deposits[0].bp_received==2,
+      && item_deposit_r.item_deposits[0].bp_received==4,
       "item deposit records roundtrip through JSON persistence");
+ auto legacy_item_deposit_json=nlohmann::json::parse(contents(item_deposit_path));
+ legacy_item_deposit_json["item_deposits"][0]["bp_received"] = 2;
+ legacy_item_deposit_json["item_deposits"][0]["treasury_delta"] = 2;
+ legacy_item_deposit_json["item_deposits"][0].erase("rule_profile");
+ put(item_deposit_path, legacy_item_deposit_json.dump());
+ const auto legacy_item_deposit_r=pkkm::load(item_deposit_path);
+ must(legacy_item_deposit_r.item_deposits.size()==1
+      && legacy_item_deposit_r.item_deposits[0].bp_received==2
+      && legacy_item_deposit_r.item_deposits[0].treasury_delta==2
+      && legacy_item_deposit_r.item_deposits[0].rule_profile==pkkm::RuleProfile::Workbook,
+      "legacy item deposits preserve pre-profile Workbook semantics");
  std::remove(item_deposit_path.c_str());
  pkkm::Kingdom city_info_item_deposit_k=k;
  city_info_item_deposit_k.rule_profile=pkkm::RuleProfile::CityInfo;
@@ -604,6 +750,57 @@ int main(int argc, char** argv) {
       && city_info_item_deposit_k.item_deposits[0].rule_profile==pkkm::RuleProfile::CityInfo,
       "City Info item deposit applies its profile conversion");
  must_reject([&]{ (void)pkkm::resolve_item_deposit_bp(8001); });
+ pkkm::ValuableItemSaleRequest sale_request;
+ sale_request.item_name="Recovered Crown";
+ sale_request.city_id="settlement.oak";
+ sale_request.district=1;
+ sale_request.item_value_gp=12000;
+ sale_request.category=pkkm::MagicItemCategory::Medium;
+ sale_request.economy_check_result=35;
+ pkkm::Kingdom sale_k=k;
+ pkkm::apply_valuable_item_sale(sale_k, sale_request);
+ must(sale_k.treasury_bp==128 && sale_k.valuable_item_sales.size()==1
+      && sale_k.valuable_item_sales[0].item_name=="Recovered Crown"
+      && sale_k.valuable_item_sales[0].city_id=="settlement.oak"
+      && sale_k.valuable_item_sales[0].district==1
+      && sale_k.valuable_item_sales[0].item_value_gp==12000
+      && sale_k.valuable_item_sales[0].economy_check_dc==35
+      && sale_k.valuable_item_sales[0].economy_check_result==35
+      && sale_k.valuable_item_sales[0].sold
+      && sale_k.valuable_item_sales[0].bp_received==8,
+      "valuable item sale applies the PDF medium-item result and records its market context");
+ auto unknown_city_sale=sale_request;
+ unknown_city_sale.city_id="settlement.missing";
+ must_reject([&]{ pkkm::apply_valuable_item_sale(sale_k, unknown_city_sale); });
+ auto excessive_district_sale=sale_request;
+ excessive_district_sale.district=3;
+ must_reject([&]{ pkkm::apply_valuable_item_sale(sale_k, excessive_district_sale); });
+ const std::string sale_path="pkkm_test_valuable_item_sale.json";
+ pkkm::save(sale_k,sale_path);
+ const auto sale_r=pkkm::load(sale_path);
+ must(sale_r.valuable_item_sales.size()==1
+      && sale_r.valuable_item_sales[0].category==pkkm::MagicItemCategory::Medium
+      && sale_r.valuable_item_sales[0].sold
+      && sale_r.valuable_item_sales[0].bp_received==8,
+      "valuable item sale records roundtrip through JSON persistence");
+ auto invalid_sale_json=nlohmann::json::parse(contents(sale_path));
+ invalid_sale_json["valuable_item_sales"][0]["city_id"]="settlement.missing";
+ const std::string invalid_sale_path="pkkm_test_invalid_valuable_item_sale.json";
+ put(invalid_sale_path, invalid_sale_json.dump(2));
+ must_reject([&]{ (void)pkkm::load(invalid_sale_path); });
+ std::remove(invalid_sale_path.c_str());
+ std::remove(sale_path.c_str());
+ must_reject([&]{ pkkm::apply_valuable_item_sale(sale_k, sale_request); });
+ sale_request.district=2;
+ sale_request.economy_check_result=34;
+ pkkm::apply_valuable_item_sale(sale_k, sale_request);
+ must(sale_k.treasury_bp==128 && sale_k.valuable_item_sales.size()==2
+      && !sale_k.valuable_item_sales[1].sold
+      && sale_k.valuable_item_sales[1].bp_received==0,
+      "failed valuable item sale records no treasury increase");
+ sale_request.district=3;
+ sale_request.item_value_gp=4000;
+ must_reject([&]{ pkkm::apply_valuable_item_sale(sale_k, sale_request); });
  pkkm::Kingdom loyalty_success_k=k;
  loyalty_success_k.unrest=2;
  pkkm::apply_loyalty_check(loyalty_success_k, true);
@@ -677,6 +874,8 @@ int main(int argc, char** argv) {
       "food reductions convert consumption below zero to BP and quarries yield one BP each");
  must_reject([&]{ (void)pkkm::preview_food_resource(0, 1073741823, 2); });
  const auto mine=pkkm::preview_optional_mine_rule(20, 3);
+ must(!k.use_optional_mine_rule,
+      "optional mine rule is disabled by default");
  must(mine.remaining_bp==17 && mine.player_share_bp==12
       && mine.unresolved_remainder_bp==5 && !mine.exhausted
       && mine.remainder_manual && mine.zero_behavior_manual,
@@ -702,9 +901,10 @@ int main(int argc, char** argv) {
  unpaid_k.treasury_bp=0;
  const auto unpaid_upkeep=pkkm::preview_upkeep(unpaid_k, true, 5, false);
  must(!unpaid_upkeep.consumption_paid && unpaid_upkeep.negative_treasury_threat
+      && unpaid_upkeep.consumption_unrest_delta==2
       && unpaid_upkeep.negative_treasury_unrest_delta==2
       && unpaid_upkeep.projected_treasury==-5
-      && unpaid_upkeep.projected_unrest==3,
+      && unpaid_upkeep.projected_unrest==5,
       "upkeep defers negative-treasury Unrest until after Consumption");
  auto empty_kingdom=k;
  empty_kingdom.greenbelt_map.hexes.clear();
@@ -773,6 +973,10 @@ int main(int argc, char** argv) {
       && !consumption_r.consumption_actions[1].paid,
       "negative treasury and consumption records roundtrip through JSON persistence");
  std::remove(consumption_path.c_str());
+ auto consumption_overflow_k=k;
+ consumption_overflow_k.treasury_bp=0;
+ consumption_overflow_k.unrest=std::numeric_limits<int>::max();
+ must_reject([&]{ pkkm::apply_consumption_action(consumption_overflow_k, 1); });
  pkkm::Kingdom unrest_k=k;
  unrest_k.unrest=2;
  pkkm::apply_unrest_modification(unrest_k, 3);

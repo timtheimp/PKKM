@@ -5,6 +5,7 @@
 #include <cctype>
 #include <cmath>
 #include <sstream>
+#include <stdexcept>
 #include <unordered_set>
 #include <utility>
 
@@ -205,14 +206,15 @@ GreenbeltImprovementPreview preview_greenbelt_improvement(
     preview.known = true;
     preview.summary = item->name + ": " + item->effect +
         " Preview only; BP and kingdom totals are unchanged.";
+    if (item->reference_only)
+        preview.summary += " Derived effects remain manual-only.";
     if (!claimed && !manual_override)
         preview.warnings.push_back("The hex is not claimed; manual override is required to preview placement.");
     if (!terrain_matches(item->terrain_requirement, terrain) && !manual_override)
         preview.warnings.push_back("Terrain does not meet the catalog prerequisite.");
     if (item->id == "highway" && !manual_override)
         preview.warnings.push_back("Highway requires a connected road network; confirm the route manually.");
-    if (item->reference_only)
-        preview.warnings.push_back("Placement or derived rule effects remain manual-only.");
+
     preview.allowed = preview.warnings.empty() || manual_override;
     if (manual_override && !preview.warnings.empty())
         preview.warnings.push_back("Manual override accepted; unresolved prerequisites remain recorded.");
@@ -234,9 +236,13 @@ GreenbeltImprovementPreview preview_greenbelt_improvement(
     preview.summary = item->name + ": " + item->effect
         + " Preview only; BP and kingdom totals are unchanged. Rule profile: "
         + rule_profile_name(facts.rule_profile) + ".";
+    if (item->reference_only)
+        preview.summary += " Derived effects remain manual-only.";
     if (facts.route_length > 0)
         preview.summary += " Route length " + std::to_string(facts.route_length)
             + " supplied; route effects remain manual.";
+    if (id == "road" || id == "highway")
+        preview.summary += " Road spacing uses 12 miles center-to-center (approximately 7 miles per side); adjacent-road connectivity is caller-supplied.";
     if (facts.river_crossing)
         preview.summary += " River crossing supplied; crossing costs and effects remain manual.";
     if (!facts.claimed && !manual_override)
@@ -261,30 +267,27 @@ GreenbeltImprovementPreview preview_greenbelt_improvement(
         preview.warnings.push_back("This improvement is not shareable with an existing copy on the hex.");
 
     bool terrain_allowed = terrain_matches(item->terrain_requirement, facts.terrain);
+    const auto terrain_tokens = greenbelt_terrain_tokens(facts.terrain);
+    const auto has_terrain = [&terrain_tokens](const char* token) {
+        return has_terrain_token(terrain_tokens, token);
+    };
     if (id == "farm") {
-        terrain_allowed = facts.terrain == "plains" || facts.terrain == "hills"
-            || facts.terrain == "grassland" || facts.terrain == "desert";
-        if (facts.terrain == "desert"
-            && !(facts.water_adjacent || facts.river_adjacent || facts.canal_adjacent))
-            preview.warnings.push_back("A desert Farm requires water access or a Canal.");
-        if (facts.terrain != "desert"
-            && !(facts.water_adjacent || facts.river_adjacent || facts.canal_adjacent)
-            && facts.neighboring_farms < 2)
-            preview.warnings.push_back("A Farm requires water access or adjacency to two existing Farms.");
+        terrain_allowed = has_terrain("plains") || has_terrain("hills")
+            || has_terrain("grassland") || has_terrain("desert");
     } else if (id == "fishery") {
-        terrain_allowed = facts.terrain == "water" || facts.terrain == "coast"
-            || facts.terrain == "river" || facts.terrain == "marsh";
+        terrain_allowed = has_terrain("water") || has_terrain("coast")
+            || has_terrain("river") || has_terrain("marsh");
     } else if (id == "mine") {
-        terrain_allowed = facts.terrain == "cavern" || facts.terrain == "desert"
-            || facts.terrain == "hills" || facts.terrain == "mountains";
+        terrain_allowed = has_terrain("cavern") || has_terrain("desert")
+            || has_terrain("hills") || has_terrain("mountains");
     } else if (id == "quarry") {
-        terrain_allowed = facts.terrain == "cavern" || facts.terrain == "hills"
-            || facts.terrain == "mountains";
+        terrain_allowed = has_terrain("cavern") || has_terrain("hills")
+            || has_terrain("mountains");
     } else if (id == "sawmill") {
-        terrain_allowed = facts.terrain == "forest" || facts.terrain == "jungle";
+        terrain_allowed = has_terrain("forest") || has_terrain("jungle");
     } else if (id == "canal") {
-        terrain_allowed = facts.terrain == "desert" || facts.terrain == "hills"
-            || facts.terrain == "plains" || facts.terrain == "grassland";
+        terrain_allowed = has_terrain("desert") || has_terrain("hills")
+            || has_terrain("plains") || has_terrain("grassland");
     }
     if (!terrain_allowed && !manual_override)
         preview.warnings.push_back("Terrain does not meet the reconciled prerequisite.");
@@ -294,8 +297,7 @@ GreenbeltImprovementPreview preview_greenbelt_improvement(
             preview.warnings.push_back("Highway requires a connected Road network.");
         if (facts.kingdom_size < 26 && !manual_override)
             preview.warnings.push_back("Highway requires kingdom Size 26 or greater.");
-        if (facts.requested_upgrade == "highway"
-            && std::find(facts.existing_improvements.begin(), facts.existing_improvements.end(), "road")
+        if (std::find(facts.existing_improvements.begin(), facts.existing_improvements.end(), "road")
                 == facts.existing_improvements.end()
             && !manual_override)
             preview.warnings.push_back("Highway upgrade requires an existing Road.");
@@ -306,12 +308,53 @@ GreenbeltImprovementPreview preview_greenbelt_improvement(
         && !manual_override)
         preview.warnings.push_back("A Fort upgrade requires an existing Watchtower improvement.");
     if ((id == "road" || id == "highway") && facts.river_crossing)
-        preview.warnings.push_back("River crossing doubles the reference Road cost; confirm the manual cost.");
-    if (item->reference_only)
-        preview.warnings.push_back("Placement or derived rule effects remain manual-only.");
+        preview.summary += " River crossing doubles the reference Road cost; confirm the manual cost manually.";
+
     preview.allowed = preview.warnings.empty() || manual_override;
     if (manual_override && !preview.warnings.empty())
         preview.warnings.push_back("Manual override accepted; unresolved prerequisites remain recorded.");
+    return preview;
+}
+
+GreenbeltImprovementPreview apply_greenbelt_improvement(
+    GreenbeltMap& map, const std::vector<GreenbeltImprovementDefinition>& catalog,
+    int q, int r, const std::string& id,
+    const GreenbeltImprovementPreviewFacts& facts, bool manual_override) {
+    const auto found = std::find_if(map.hexes.begin(), map.hexes.end(), [q, r](const auto& hex) {
+        return hex.q == q && hex.r == r;
+    });
+    if (found == map.hexes.end())
+        throw std::invalid_argument("Cannot apply an improvement to an unknown Greenbelt hex");
+    GreenbeltImprovementPreviewFacts effective_facts = facts;
+    effective_facts.terrain = found->terrain;
+    effective_facts.claimed = found->claimed;
+    effective_facts.existing_improvements = found->improvements;
+    if (!effective_facts.requested_upgrade.empty() && effective_facts.requested_upgrade != id)
+        throw std::invalid_argument("Requested Greenbelt upgrade must match the applied improvement");
+    const auto* item = find_greenbelt_improvement(catalog, id);
+    if (!item)
+        throw std::invalid_argument("Improvement is not present in the Greenbelt catalog");
+    const std::string source = id == "highway" ? "road" : id == "fort" ? "watchtower" : "";
+    if (effective_facts.requested_upgrade.empty() && !source.empty()
+        && std::find(found->improvements.begin(), found->improvements.end(), source)
+            != found->improvements.end())
+        effective_facts.requested_upgrade = id;
+    const auto preview = preview_greenbelt_improvement(catalog, id, effective_facts, manual_override);
+    if (!preview.allowed) {
+        std::string message = "Greenbelt improvement cannot be applied";
+        if (!preview.warnings.empty()) message += ": " + preview.warnings.front();
+        throw std::invalid_argument(message);
+    }
+    if (id == "highway" && std::find(found->improvements.begin(), found->improvements.end(), "road")
+            == found->improvements.end() && !manual_override)
+        throw std::invalid_argument("Highway requires an existing Road improvement");
+    if (effective_facts.requested_upgrade == id) {
+        if (!source.empty()) {
+            const auto source_it = std::find(found->improvements.begin(), found->improvements.end(), source);
+            if (source_it != found->improvements.end()) found->improvements.erase(source_it);
+        }
+    }
+    found->improvements.push_back(id);
     return preview;
 }
 

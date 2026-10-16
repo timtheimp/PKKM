@@ -4,6 +4,7 @@
 #include <windows.h>
 #include <commdlg.h>
 #include <gdiplus.h>
+
 #include "pkkm/kingdom.hpp"
 #include "pkkm/buildings.hpp"
 #include "pkkm/greenbelt.hpp"
@@ -145,6 +146,7 @@ constexpr int kRoyalAssassinEmployed = 6463;
 constexpr int kUpkeepPreview = 6464;
 constexpr int kUpkeepStatus = 6465;
 constexpr int kFoodStartingConsumption = 6466;
+constexpr int kTurnResolutionApply = 6470;
 constexpr int kFoodFarmCount = 6467;
 constexpr int kFoodExtraReduction = 6468;
 constexpr int kFoodPreview = 6469;
@@ -175,6 +177,15 @@ constexpr int kEventHexLoss = 6493;
 constexpr int kEventAnarchy = 6494;
 constexpr int kEventApplyConsequence = 6495;
 constexpr int kEventDetails = 6496;
+constexpr int kSaleItemName = 6497;
+constexpr int kSaleCityId = 6498;
+constexpr int kSaleDistrict = 6499;
+constexpr int kSaleItemValue = 6500;
+constexpr int kSaleCategory = 6501;
+constexpr int kSaleEconomyResult = 6502;
+constexpr int kSaleApply = 6503;
+constexpr int kSaleStatus = 6504;
+constexpr int kSaleHistory = 6505;
 constexpr int kUnrestNegativeStats = 6435;
 constexpr int kUnrestApply = 6436;
 constexpr int kUnrestStatus = 6437;
@@ -302,6 +313,7 @@ double greenbelt_popout_drag_origin_y = 0.0;
 void preview_event_dialog(HWND window);
 void apply_event_dialog(HWND window);
 void apply_latest_event_consequence_dialog(HWND window);
+void refresh_valuable_item_sale_history(HWND window);
 bool greenbelt_alignment_mode = false;
 HWND greenbelt_canvas = nullptr;
 HINSTANCE app_instance = nullptr;
@@ -1486,6 +1498,7 @@ void command(HWND window, int id) {
                 L"Turn Actions", WS_CAPTION | WS_SYSMENU | WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_VSCROLL,
                                 kWindowOriginX, kWindowOriginY, 620, 720, window, nullptr, app_instance, nullptr);
             if (!action_window) throw std::runtime_error("Could not open the Turn Actions manager");
+            refresh_valuable_item_sale_history(action_window);
             EnableWindow(window, FALSE);
             ShowWindow(action_window, SW_SHOW);
             UpdateWindow(action_window);
@@ -1638,9 +1651,12 @@ void create_turn_action_controls(HWND window) {
     HWND profile = CreateWindowExW(0, L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST,
         468, 14, 105, 120, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kRuleProfileChoice)), app_instance, nullptr);
+    SendMessageW(profile, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"PDF"));
     SendMessageW(profile, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Workbook"));
     SendMessageW(profile, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"City Info"));
-    SendMessageW(profile, CB_SETCURSEL, kingdom.rule_profile == pkkm::RuleProfile::CityInfo ? 1 : 0, 0);
+    const int profile_index = kingdom.rule_profile == pkkm::RuleProfile::Pdf ? 0
+        : kingdom.rule_profile == pkkm::RuleProfile::Workbook ? 1 : 2;
+    SendMessageW(profile, CB_SETCURSEL, profile_index, 0);
     CreateWindowExW(0, L"STATIC", L"Action", WS_CHILD | WS_VISIBLE | SS_LEFT,
         20, 62, 120, 22, window, nullptr, app_instance, nullptr);
     HWND choice = CreateWindowExW(0, L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST,
@@ -1903,6 +1919,9 @@ void create_turn_action_controls(HWND window) {
     CreateWindowExW(0, L"BUTTON", L"Preview Upkeep", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
         230, 2240, 135, 30, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kUpkeepPreview)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Apply Monthly Turn", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+        380, 2240, 175, 30, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kTurnResolutionApply)), app_instance, nullptr);
     CreateWindowExW(0, L"STATIC", L"No Upkeep preview generated this session.", WS_CHILD | WS_VISIBLE | SS_LEFT,
         20, 2275, 575, 22, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kUpkeepStatus)), app_instance, nullptr);
@@ -2042,6 +2061,43 @@ void create_turn_action_controls(HWND window) {
     CreateWindowExW(0, L"BUTTON", L"Apply selected numeric consequence", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
         330, 3032, 250, 30, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kEventApplyConsequence)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Sell valuable item (PDF rule; one check per city district per Income phase)",
+        WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 3080, 560, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Item", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 3110, 35, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+        60, 3108, 145, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kSaleItemName)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"City ID", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        215, 3110, 50, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+        270, 3108, 125, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kSaleCityId)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"District", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        405, 3110, 55, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"1", WS_CHILD | WS_VISIBLE | ES_NUMBER,
+        465, 3108, 45, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kSaleDistrict)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Value gp", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 3145, 55, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"4001", WS_CHILD | WS_VISIBLE | ES_NUMBER,
+        80, 3143, 75, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kSaleItemValue)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Category", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        170, 3145, 55, 22, window, nullptr, app_instance, nullptr);
+    HWND sale_category = CreateWindowExW(0, L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST,
+        230, 3142, 95, 120, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kSaleCategory)), app_instance, nullptr);
+    SendMessageW(sale_category, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Minor"));
+    SendMessageW(sale_category, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Medium"));
+    SendMessageW(sale_category, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Major"));
+    SendMessageW(sale_category, CB_SETCURSEL, 0, 0);
+    CreateWindowExW(0, L"STATIC", L"Economy result", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        340, 3145, 90, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"20", WS_CHILD | WS_VISIBLE | ES_NUMBER,
+        435, 3143, 55, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kSaleEconomyResult)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Record Sale", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+        500, 3140, 80, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kSaleApply)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"No valuable-item sale recorded this session.", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 3180, 560, 22, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kSaleStatus)), app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", nullptr,
+        WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOINTEGRALHEIGHT,
+        20, 3205, 560, 45, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kSaleHistory)), app_instance, nullptr);
 }
 
 const wchar_t* turn_action_label(pkkm::TurnAction action) {
@@ -2105,8 +2161,9 @@ void refresh_tax_history(HWND window) {
     SendMessageW(list, LB_RESETCONTENT, 0, 0);
     for (const auto& record : kingdom.tax_actions) {
         const bool city_info = record.rule_profile == pkkm::RuleProfile::CityInfo;
-        const std::wstring profile = city_info ? L"City Info" : L"Workbook";
-        const std::wstring input_label = city_info ? L"Economy result/5 " : L"Result/3 ";
+        const bool pdf = record.rule_profile == pkkm::RuleProfile::Pdf;
+        const std::wstring profile = city_info ? L"City Info" : pdf ? L"PDF" : L"Workbook";
+        const std::wstring input_label = city_info || pdf ? L"Economy result/5 " : L"Result ";
         const std::wstring line = L"Turn " + std::to_wstring(record.turn)
             + L" | " + (record.economy_check_success ? L"Economy success" : L"Economy failure")
             + L" | " + input_label + std::to_wstring(record.result_input)
@@ -2205,6 +2262,23 @@ void refresh_magic_item_history(HWND window) {
     }
 }
 
+void refresh_valuable_item_sale_history(HWND window) {
+    HWND list = GetDlgItem(window, kSaleHistory);
+    SendMessageW(list, LB_RESETCONTENT, 0, 0);
+    for (const auto& record : kingdom.valuable_item_sales) {
+        const std::wstring line = L"Turn " + std::to_wstring(record.turn)
+            + L" | " + widen(record.item_name)
+            + L" | City " + widen(record.city_id)
+            + L" district " + std::to_wstring(record.district)
+            + L" | " + widen(pkkm::magic_item_category_name(record.category))
+            + L" | Economy " + std::to_wstring(record.economy_check_result)
+            + L"/" + std::to_wstring(record.economy_check_dc)
+            + L" | " + (record.sold ? L"Sold" : L"Unsold")
+            + L" | BP " + std::to_wstring(record.bp_received);
+        SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(line.c_str()));
+    }
+}
+
 void refresh_event_history(HWND window) {
     HWND list = GetDlgItem(window, kEventHistory);
     const LRESULT selected_item = SendMessageW(list, LB_GETCURSEL, 0, 0);
@@ -2273,6 +2347,32 @@ void apply_magic_item_dialog(HWND window) {
     SetWindowTextW(GetDlgItem(window, kMagicItemStatus), status.c_str());
     refresh_magic_item_history(window);
     SetWindowTextW(window, L"Turn Actions - Magic-Item Outcome Recorded");
+}
+
+void apply_valuable_item_sale_dialog(HWND window) {
+    const int selected = static_cast<int>(SendMessageW(
+        GetDlgItem(window, kSaleCategory), CB_GETCURSEL, 0, 0));
+    if (selected < 0 || selected > 2) throw std::invalid_argument("Select a valuable-item category.");
+    pkkm::ValuableItemSaleRequest request;
+    request.item_name = narrow(manager_text(window, kSaleItemName));
+    request.city_id = narrow(manager_text(window, kSaleCityId));
+    request.district = parse_integer(manager_text(window, kSaleDistrict));
+    request.item_value_gp = parse_integer(manager_text(window, kSaleItemValue));
+    request.category = static_cast<pkkm::MagicItemCategory>(selected);
+    request.economy_check_result = parse_integer(manager_text(window, kSaleEconomyResult));
+    pkkm::apply_valuable_item_sale(kingdom, request);
+    dirty = true;
+    refresh(GetDlgItem(GetParent(window), kDisplay));
+    const auto& record = kingdom.valuable_item_sales.back();
+    const std::wstring status = L"Valuable-item sale recorded on Turn " + std::to_wstring(record.turn)
+        + L" | " + widen(record.item_name)
+        + L" | Economy " + std::to_wstring(record.economy_check_result)
+        + L"/" + std::to_wstring(record.economy_check_dc)
+        + (record.sold ? L" | Sold" : L" | Unsold")
+        + L" | BP received " + std::to_wstring(record.bp_received);
+    SetWindowTextW(GetDlgItem(window, kSaleStatus), status.c_str());
+    refresh_valuable_item_sale_history(window);
+    SetWindowTextW(window, L"Turn Actions - Valuable Item Sale Recorded");
 }
 
 void apply_commission_dialog(HWND window) {
@@ -2466,6 +2566,33 @@ void preview_upkeep_dialog(HWND window) {
     SetWindowTextW(window, title.c_str());
 }
 
+void apply_turn_resolution_dialog(HWND window) {
+    pkkm::TurnResolutionRequest request;
+    request.stability_success = SendMessageW(
+        GetDlgItem(window, kStabilitySuccess), BM_GETCHECK, 0, 0) == BST_CHECKED;
+    request.failure_by = parse_integer(manager_text(window, kStabilityFailureBy));
+    request.rolled_unrest = parse_integer(manager_text(window, kStabilityRoll));
+    request.consumption_bp = parse_integer(manager_text(window, kConsumptionBp));
+    request.royal_assassin_employed = SendMessageW(
+        GetDlgItem(window, kRoyalAssassinEmployed), BM_GETCHECK, 0, 0) == BST_CHECKED;
+    const auto preview = pkkm::preview_turn_resolution(kingdom, request);
+    pkkm::apply_turn_resolution(kingdom, request);
+    dirty = true;
+    refresh(GetDlgItem(GetParent(window), kDisplay));
+    refresh_stability_history(window);
+    refresh_consumption_history(window);
+    refresh_turn_action_history(window);
+    const std::wstring status = preview.upkeep.skipped_for_no_hexes
+        ? L"Monthly turn applied | Upkeep skipped because no hexes are controlled | Turn "
+            + std::to_wstring(kingdom.turn)
+        : L"Monthly turn applied | Treasury " + std::to_wstring(preview.upkeep.projected_treasury)
+            + L" | Unrest " + std::to_wstring(preview.upkeep.projected_unrest)
+            + L" | Turn " + std::to_wstring(kingdom.turn);
+    SetWindowTextW(GetDlgItem(window, kUpkeepStatus), status.c_str());
+    SetWindowTextW(window, (L"Turn Actions - Monthly Turn Applied | Turn "
+        + std::to_wstring(kingdom.turn)).c_str());
+}
+
 void preview_food_resource_dialog(HWND window) {
     const int starting_consumption = parse_integer(manager_text(window, kFoodStartingConsumption));
     const int farm_count = parse_integer(manager_text(window, kFoodFarmCount));
@@ -2604,7 +2731,8 @@ LRESULT CALLBACK turn_actions_proc(HWND window, UINT message, WPARAM wparam, LPA
                 if (LOWORD(wparam) == kRuleProfileChoice && HIWORD(wparam) == CBN_SELCHANGE) {
                     const int selected = static_cast<int>(SendMessageW(
                         GetDlgItem(window, kRuleProfileChoice), CB_GETCURSEL, 0, 0));
-                    kingdom.rule_profile = selected == 1 ? pkkm::RuleProfile::CityInfo : pkkm::RuleProfile::Workbook;
+                    kingdom.rule_profile = selected == 0 ? pkkm::RuleProfile::Pdf
+                        : selected == 1 ? pkkm::RuleProfile::Workbook : pkkm::RuleProfile::CityInfo;
                     dirty = true;
                     refresh(GetDlgItem(GetParent(window), kDisplay));
                     SetWindowTextW(window, L"Turn Actions - Rule Profile Updated");
@@ -2636,6 +2764,7 @@ LRESULT CALLBACK turn_actions_proc(HWND window, UINT message, WPARAM wparam, LPA
                 }
                 else if (LOWORD(wparam) == kConsumptionApply) apply_consumption_dialog(window);
                 else if (LOWORD(wparam) == kUpkeepPreview) preview_upkeep_dialog(window);
+                else if (LOWORD(wparam) == kTurnResolutionApply) apply_turn_resolution_dialog(window);
                 else if (LOWORD(wparam) == kFoodPreview) preview_food_resource_dialog(window);
                 else if (LOWORD(wparam) == kQuarryPreview) preview_quarry_income_dialog(window);
                 else if (LOWORD(wparam) == kMinePreview) preview_optional_mine_dialog(window);
@@ -2645,6 +2774,7 @@ LRESULT CALLBACK turn_actions_proc(HWND window, UINT message, WPARAM wparam, LPA
                 else if (LOWORD(wparam) == kUnrestApply) apply_unrest_dialog(window);
                 else if (LOWORD(wparam) == kCommissionApply) apply_commission_dialog(window);
                 else if (LOWORD(wparam) == kMagicItemApply) apply_magic_item_dialog(window);
+                else if (LOWORD(wparam) == kSaleApply) apply_valuable_item_sale_dialog(window);
                 else if (LOWORD(wparam) == kActionFilter ||
                          LOWORD(wparam) == kActionFilterOriginal ||
                          LOWORD(wparam) == kActionFilterReversal) {
@@ -3480,9 +3610,33 @@ void add_greenbelt_improvement(HWND window) {
     const std::string improvement_id = selected <= catalog_count
         ? greenbelt_catalog[static_cast<size_t>(selected - 1)].id
         : greenbelt_draft.custom_improvements[static_cast<size_t>(selected - catalog_count - 1)].id;
-    auto& improvements = greenbelt_draft.hexes[static_cast<size_t>(greenbelt_active_index)].improvements;
-    if (std::find(improvements.begin(), improvements.end(), improvement_id) == improvements.end())
-        improvements.push_back(improvement_id);
+    if (selected <= catalog_count) {
+        const auto& hex = greenbelt_draft.hexes[static_cast<size_t>(greenbelt_active_index)];
+        pkkm::GreenbeltImprovementPreviewFacts facts;
+        facts.terrain = hex.terrain;
+        facts.claimed = hex.claimed;
+        facts.rule_profile = kingdom.rule_profile;
+        const auto checked = [window](int id) {
+            const HWND control = GetDlgItem(window, id);
+            return control && SendMessageW(control, BM_GETCHECK, 0, 0) == BST_CHECKED;
+        };
+        facts.water_adjacent = checked(kGreenbeltFactWater);
+        facts.river_adjacent = checked(kGreenbeltFactRiver);
+        facts.canal_adjacent = checked(kGreenbeltFactCanal);
+        facts.settlement_endpoint = checked(kGreenbeltFactEndpoint);
+        facts.connected_road = checked(kGreenbeltFactRoad);
+        facts.river_crossing = checked(kGreenbeltFactCrossing);
+        facts.neighboring_farms = parse_integer(manager_text(window, kGreenbeltFactFarms));
+        facts.kingdom_size = parse_integer(manager_text(window, kGreenbeltFactSize));
+        facts.route_length = parse_integer(manager_text(window, kGreenbeltFactRoute));
+        facts.requested_upgrade = improvement_id;
+        pkkm::apply_greenbelt_improvement(greenbelt_draft, greenbelt_catalog,
+            hex.q, hex.r, improvement_id, facts);
+    } else {
+        auto& improvements = greenbelt_draft.hexes[static_cast<size_t>(greenbelt_active_index)].improvements;
+        if (std::find(improvements.begin(), improvements.end(), improvement_id) == improvements.end())
+            improvements.push_back(improvement_id);
+    }
     refresh_greenbelt_hex_list(window);
     if (greenbelt_window && window != greenbelt_window && IsWindow(greenbelt_window))
         refresh_greenbelt_hex_list(greenbelt_window);
@@ -4837,7 +4991,7 @@ LRESULT CALLBACK main_proc(HWND window, UINT message, WPARAM wparam, LPARAM lpar
 }
 }
 
-int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
+int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int) {
     // Keep Win32 coordinates, UI Automation bounds, and screenshots in the
     // same coordinate space on scaled displays.
     if (!SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2))
@@ -4852,6 +5006,23 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         MessageBoxW(nullptr, widen(error.what()).c_str(), L"PKKM catalog error", MB_OK | MB_ICONERROR);
         Gdiplus::GdiplusShutdown(gdiplus_token);
         return 1;
+    }
+    std::wstring startup_path = command_line ? command_line : L"";
+    if (startup_path.size() >= 2 && startup_path.front() == L'"'
+        && startup_path.back() == L'"') {
+        startup_path = startup_path.substr(1, startup_path.size() - 2);
+    }
+    if (!startup_path.empty()) {
+        try {
+            current_path = startup_path;
+            kingdom = pkkm::load(narrow(current_path));
+            dirty = false;
+        } catch (const std::exception& error) {
+            MessageBoxW(nullptr, widen(error.what()).c_str(), L"PKKM startup load error",
+                MB_OK | MB_ICONERROR);
+            Gdiplus::GdiplusShutdown(gdiplus_token);
+            return 1;
+        }
     }
     WNDCLASSW main_class{};
     main_class.lpfnWndProc = main_proc;

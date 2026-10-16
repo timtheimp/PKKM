@@ -47,7 +47,7 @@ struct GreenbeltImprovementPreview {
 
 struct GreenbeltImprovementPreviewFacts {
     std::string terrain;
-    RuleProfile rule_profile = RuleProfile::Workbook;
+    RuleProfile rule_profile = RuleProfile::CityInfo;
     bool claimed = false;
     bool water_adjacent = false;
     bool river_adjacent = false;
@@ -61,6 +61,8 @@ struct GreenbeltImprovementPreviewFacts {
     std::string requested_upgrade;
     int route_length = 0;
 };
+
+constexpr int kGreenbeltRoadCenterDistanceMiles = 12;
 
 const std::vector<GreenbeltImprovementDefinition>& greenbelt_improvement_catalog();
 GreenbeltHex make_next_greenbelt_hex(const std::vector<GreenbeltHex>& hexes);
@@ -84,5 +86,9 @@ GreenbeltImprovementPreview preview_greenbelt_improvement(
     const std::vector<GreenbeltImprovementDefinition>& catalog,
     const std::string& id, const GreenbeltImprovementPreviewFacts& facts,
     bool manual_override);
+GreenbeltImprovementPreview apply_greenbelt_improvement(
+    GreenbeltMap& map, const std::vector<GreenbeltImprovementDefinition>& catalog,
+    int q, int r, const std::string& id,
+    const GreenbeltImprovementPreviewFacts& facts, bool manual_override = false);
 
 } // namespace pkkm
