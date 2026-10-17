@@ -1569,6 +1569,12 @@ SettlementMap workbook_map_template(WorkbookMapTemplate preset) {
     return map;
 }
 
+int city_layout_district_index(const SettlementMap& map, int row, int column) {
+    if (map.rows != 6 || map.columns != 6 || row < 0 || column < 0 || row >= map.rows || column >= map.columns)
+        return 0;
+    return (row / 2) * 3 + (column / 2) + 1;
+}
+
 KingdomStatResult calculate_stat(const KingdomStatInput& input, int control_dc) {
     const long long total = static_cast<long long>(input.events) + input.alignment + input.improvements + input.leadership + input.laws
         - input.unrest - input.vacancies + input.other;
