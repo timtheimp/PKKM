@@ -1102,6 +1102,12 @@ int main(int argc, char** argv) {
  const auto example_map=pkkm::workbook_map_template(pkkm::WorkbookMapTemplate::Example);
  const auto multi_district_map=pkkm::workbook_map_template(pkkm::WorkbookMapTemplate::MultiDistrict);
  const auto city_layout_map=pkkm::workbook_map_template(pkkm::WorkbookMapTemplate::CityLayout);
+ must(pkkm::city_layout_district_index(city_layout_map,0,0)==1
+      && pkkm::city_layout_district_index(city_layout_map,1,1)==1
+      && pkkm::city_layout_district_index(city_layout_map,0,2)==2
+      && pkkm::city_layout_district_index(city_layout_map,4,4)==9
+      && pkkm::city_layout_district_index(city_layout_map,6,0)==0,
+      "PDF city layout groups cells into nine visual 2x2 districts");
  const auto matches_label=[](const pkkm::MapLabel& label,const std::string& text,
      int row,int column,int width,int height){
      return label.text==text && label.row==row && label.column==column

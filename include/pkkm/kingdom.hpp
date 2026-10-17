@@ -17,6 +17,7 @@ struct SettlementMap {
 enum class WorkbookMapTemplate { Capital, City, Example, MultiDistrict, CityLayout };
 const char* workbook_map_template_name(WorkbookMapTemplate preset);
 SettlementMap workbook_map_template(WorkbookMapTemplate preset);
+int city_layout_district_index(const SettlementMap& map, int row, int column);
 enum class CityBoundarySurface { Land, Water };
 const char* city_boundary_surface_name(CityBoundarySurface surface);
 CityBoundarySurface city_boundary_surface_from_name(const std::string& name);
