@@ -95,6 +95,6 @@ The historical source-analysis questions below are resolved for the current rele
 The remaining decisions are feature-specific and should be made before widening automation:
 
 - Define the authoritative city-layout and district-adjacency model from the preserved PDF graphics before implementing automatic city-layout mechanics.
-- Define the source tables and inventory semantics for specific magic-item generation before automating item identity, payment, slot filling, or distribution.
+- **Magic-item generation boundary resolved:** commissioned magic items are player-requested manual records. PKKM may record the named item, recipient, caller-supplied BP cost, turn, and exotic-crafter capacity, but it does not generate item identity, fill settlement slots, create player inventory, or distribute the item automatically. The Pathfinder Core Rulebook creation procedure is reference authority for future optional creation-detail fields; it does not replace Kingmaker settlement slot generation.
 - Define the authority and mutation boundary for automatic route costs, derived terrain effects, and kingdom-stat changes before applying them automatically.
 - Define the GM-confirmation workflow for event consequences that require lost-hex selection, Anarchy resolution, Kingdom Size changes, or other non-numeric effects.
