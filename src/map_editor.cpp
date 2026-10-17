@@ -121,6 +121,12 @@ void refresh_map() {
             const bool visible = row < map_draft.rows && column < map_draft.columns;
             ShowWindow(cells[index], visible ? SW_SHOW : SW_HIDE);
             SetWindowTextW(cells[index], L"");
+            if (visible && row % 2 == 0 && column % 2 == 0) {
+                const int district = city_layout_district_index(map_draft, row, column);
+                if (district > 0) {
+                    SetWindowTextW(cells[index], (L"D" + std::to_wstring(district)).c_str());
+                }
+            }
         }
     }
     for (const auto& placement : map_draft.placements) {
