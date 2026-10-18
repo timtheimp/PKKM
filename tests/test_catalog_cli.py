@@ -11,8 +11,9 @@ if len(sys.argv) == 3:
     CATALOG = Path(sys.argv[2])
 else:
     executable_candidates = [
-        PROJECT_ROOT / "build" / "asset-copy-verify" / "Release" / "pkkm.exe",
+        PROJECT_ROOT / "build" / "release-0.1.11-rc" / "Release" / "pkkm.exe",
         PROJECT_ROOT / "build" / "ci" / "Release" / "pkkm.exe",
+        PROJECT_ROOT / "build" / "asset-copy-verify" / "Release" / "pkkm.exe",
         PROJECT_ROOT / "build" / "Release" / "pkkm.exe",
     ]
     EXECUTABLE = next((path for path in executable_candidates if path.exists()), executable_candidates[0])
@@ -65,14 +66,14 @@ class CatalogCliTests(unittest.TestCase):
             capture_output=True,
             text=True,
         )
-        self.assertEqual(result.stdout.strip(), "PKKM 0.1.10")
+        self.assertEqual(result.stdout.strip(), "PKKM 0.1.11")
         alias_result = subprocess.run(
             [str(EXECUTABLE), "version"],
             check=True,
             capture_output=True,
             text=True,
         )
-        self.assertEqual(alias_result.stdout.strip(), "PKKM 0.1.10")
+        self.assertEqual(alias_result.stdout.strip(), "PKKM 0.1.11")
         version_flag = subprocess.run(
             [str(EXECUTABLE), "--version"],
             check=True,
