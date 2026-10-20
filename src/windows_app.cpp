@@ -61,6 +61,35 @@ constexpr int kCancelSettlements = 5118;
 constexpr int kCloseSettlements = 5121;
 constexpr int kConstruction = 5122;
 constexpr int kCityWorksheet = 5123;
+constexpr int kArmyName = 7000;
+constexpr int kArmyUnit = 7001;
+constexpr int kArmySize = 7002;
+constexpr int kArmyCr = 7003;
+constexpr int kArmyHd = 7004;
+constexpr int kArmySpeed = 7005;
+constexpr int kArmyLeader = 7006;
+constexpr int kArmyCha = 7007;
+constexpr int kArmyRanged = 7008;
+constexpr int kArmyWeapons = 7009;
+constexpr int kArmyArmor = 7010;
+constexpr int kArmyPotions = 7011;
+constexpr int kArmyRangedWeapons = 7012;
+constexpr int kArmySiege = 7013;
+constexpr int kArmyApply = 7014;
+constexpr int kArmyCancel = 7015;
+constexpr int kArmyClose = 7016;
+constexpr int kArmyStatus = 7017;
+constexpr int kArmyMountCr = 7018;
+constexpr int kArmyTactics = 7019;
+constexpr int kArmyAbilities = 7020;
+constexpr int kArmyPrerequisites = 7021;
+constexpr int kArmyNotes = 7022;
+constexpr int kMagicStockList = 5124;
+constexpr int kRemoveMagicStock = 5125;
+constexpr int kMagicAvailabilityBase = 5126;
+constexpr int kMagicAvailabilitySeed = 5127;
+constexpr int kMagicAvailabilityPreview = 5128;
+constexpr int kMagicAvailabilityStatus = 5129;
 constexpr int kConstructionTarget = 5200;
 constexpr int kConstructionUpgradeFrom = 5201;
 constexpr int kConstructionRow = 5202;
@@ -84,6 +113,32 @@ constexpr int kChecklistCancel = 6202;
 constexpr int kChecklistClose = 6203;
 constexpr int kChecklistEventLastTurn = 6204;
 constexpr int kChecklistTransitionStatus = 6205;
+constexpr int kChecklistCurrentStep = 6206;
+constexpr int kChecklistCompleteCurrent = 6207;
+constexpr int kChecklistSkipCurrent = 6208;
+constexpr int kChecklistPhaseSummary = 6209;
+constexpr int kChecklistBack = 6210;
+constexpr int kChecklistOpenActions = 6211;
+constexpr int kChecklistApplyClaimHex = 6212;
+constexpr int kChecklistWithdrawalBp = 6213;
+constexpr int kChecklistWithdrawalLoyalty = 6214;
+constexpr int kChecklistApplyWithdrawal = 6215;
+constexpr int kChecklistDepositGold = 6216;
+constexpr int kChecklistApplyDeposit = 6217;
+constexpr int kChecklistItemValue = 6218;
+constexpr int kChecklistApplyItemDeposit = 6219;
+constexpr int kChecklistTaxSuccess = 6220;
+constexpr int kChecklistTaxResult = 6221;
+constexpr int kChecklistTaxOther = 6222;
+constexpr int kChecklistApplyTaxes = 6223;
+constexpr int kChecklistEventOccurred = 6224;
+constexpr int kChecklistEventRoll = 6225;
+constexpr int kChecklistApplyEvent = 6226;
+constexpr int kChecklistOpenEventResolution = 6227;
+constexpr int kChecklistOpenConstruction = 6228;
+constexpr int kChecklistOpenCity = 6229;
+constexpr int kChecklistOpenArmy = 6230;
+constexpr int kChecklistOpenInputs = 6231;
 constexpr int kChecklistControlBase = 6300;
 constexpr int kActionChoice = 6400;
 constexpr int kActionCount = 6401;
@@ -318,6 +373,7 @@ void apply_latest_event_consequence_dialog(HWND window);
 void refresh_valuable_item_sale_history(HWND window);
 bool greenbelt_alignment_mode = false;
 HWND greenbelt_canvas = nullptr;
+HWND army_window = nullptr;
 HINSTANCE app_instance = nullptr;
 bool dirty = false;
 std::vector<pkkm::Settlement> settlement_draft;
@@ -325,6 +381,9 @@ std::vector<pkkm::BuildingCatalogEntry> settlement_catalog;
 std::vector<pkkm::BuildingCatalogEntry> building_catalog;
 std::vector<HWND> checklist_controls;
 std::vector<std::string> checklist_step_ids;
+std::vector<std::string> checklist_skipped_step_ids;
+std::vector<std::pair<HWND, RECT>> checklist_layout_rects;
+int checklist_review_index = -1;
 std::vector<pkkm::CalendarNote> calendar_note_draft;
 int calendar_active_index = -1;
 int settlement_active_index = -1;
@@ -338,10 +397,19 @@ std::vector<pkkm::GreenbeltImprovementDefinition> greenbelt_catalog;
 ULONG_PTR gdiplus_token = 0;
 int greenbelt_scroll_y = 0;
 int greenbelt_popout_scroll_y = 0;
+int greenbelt_popout_layout_width = 1250;
 int turn_actions_scroll_y = 0;
 int turn_action_filter = 0;
+double turn_actions_layout_scale_y = 1.0;
+int turn_actions_content_height = kTurnActionsContentHeight;
+std::vector<std::pair<HWND, RECT>> turn_actions_layout_rects;
 
 void open_greenbelt_popout(HWND owner);
+void open_army_worksheet_from_checklist(HWND window);
+void open_law_inputs_from_checklist(HWND window);
+void create_army_worksheet_controls(HWND window);
+void apply_army_worksheet(HWND window);
+LRESULT CALLBACK army_worksheet_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
 LRESULT CALLBACK greenbelt_custom_popup_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
 
 void set_minimum_track_size(LPARAM lparam, int width, int height) {
@@ -822,6 +890,13 @@ void manager_edit(HWND window, int id, const wchar_t* initial, int x, int y, int
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), app_instance, nullptr);
 }
 
+void manager_multiline_edit(HWND window, int id, int x, int y, int width, int height) {
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+        WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL,
+        x, y, width, height, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), app_instance, nullptr);
+}
+
 void manager_value(HWND window, int id, const wchar_t* initial, int x, int y, int width = 130) {
     CreateWindowExW(0, L"STATIC", initial, WS_CHILD | WS_VISIBLE | SS_LEFT,
         x, y + 4, width, 22, window,
@@ -890,12 +965,26 @@ void create_settlement_controls(HWND window) {
         930, 434, 90, 26, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kAddBuilding)), app_instance, nullptr);
     CreateWindowExW(0, L"BUTTON", L"Remove Selected Building", WS_CHILD | WS_VISIBLE,
         540, 472, 190, 28, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kRemoveBuilding)), app_instance, nullptr);
+    manager_label(window, L"Settlement magic-item stock", 540, 510, 260);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"",
+        WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY, 540, 532, 480, 42, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kMagicStockList)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Remove Selected Stock", WS_CHILD | WS_VISIBLE,
+        540, 578, 190, 26, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kRemoveMagicStock)), app_instance, nullptr);
+    manager_label(window, L"Base value gp", 20, 540, 125);
+    manager_edit(window, kMagicAvailabilityBase, L"0", 150, 540, 75);
+    manager_label(window, L"Seed", 240, 540, 45);
+    manager_edit(window, kMagicAvailabilitySeed, L"1", 290, 540, 90);
+    CreateWindowExW(0, L"BUTTON", L"Preview Availability", WS_CHILD | WS_VISIBLE,
+        20, 575, 170, 28, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kMagicAvailabilityPreview)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"No availability preview.", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        200, 575, 330, 40, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kMagicAvailabilityStatus)), app_instance, nullptr);
     CreateWindowExW(0, L"BUTTON", L"Apply", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
-        732, 575, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kApplySettlements)), app_instance, nullptr);
+        732, 600, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kApplySettlements)), app_instance, nullptr);
     CreateWindowExW(0, L"BUTTON", L"Cancel", WS_CHILD | WS_VISIBLE,
-        830, 575, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCancelSettlements)), app_instance, nullptr);
+        830, 600, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCancelSettlements)), app_instance, nullptr);
     CreateWindowExW(0, L"BUTTON", L"Close", WS_CHILD | WS_VISIBLE,
-        928, 575, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCloseSettlements)), app_instance, nullptr);
+        928, 600, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCloseSettlements)), app_instance, nullptr);
 }
 
 void refresh_settlement_list(HWND window, int selection) {
@@ -929,13 +1018,27 @@ void refresh_inventory_list(HWND window) {
     }
 }
 
+void refresh_magic_stock_list(HWND window) {
+    const HWND list = GetDlgItem(window, kMagicStockList);
+    SendMessageW(list, LB_RESETCONTENT, 0, 0);
+    if (settlement_active_index < 0 || settlement_active_index >= static_cast<int>(settlement_draft.size())) return;
+    for (const auto& stock : settlement_draft[static_cast<size_t>(settlement_active_index)].random_magic_item_stock) {
+        std::wstring label = widen(stock.tier) + L" slot " + std::to_wstring(stock.slot_index)
+            + L" | " + widen(stock.state);
+        if (!stock.item_name.empty()) label += L" | " + widen(stock.item_name);
+        if (stock.price_gp > 0) label += L" | " + std::to_wstring(stock.price_gp) + L" gp";
+        SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label.c_str()));
+    }
+}
+
 void refresh_settlement_form(HWND window) {
     const bool has_selection = settlement_active_index >= 0
         && settlement_active_index < static_cast<int>(settlement_draft.size());
     const int field_ids[] = {kSettlementName, kSettlementPopulation, kSettlementDistricts,
         kSettlementEconomy, kSettlementLoyalty, kSettlementStability, kSettlementDefense,
         kSettlementApplyCatalogStats, kInventoryList, kCatalogChoice, kBuildingCount, kAddBuilding,
-        kRemoveBuilding, kEditMap, kConstruction, kCityWorksheet};
+        kRemoveBuilding, kEditMap, kConstruction, kCityWorksheet, kMagicStockList, kRemoveMagicStock,
+        kMagicAvailabilityBase, kMagicAvailabilitySeed, kMagicAvailabilityPreview, kMagicAvailabilityStatus};
     for (const int id : field_ids) EnableWindow(GetDlgItem(window, id), has_selection);
     if (!has_selection) {
         for (const int id : {kSettlementName, kSettlementPopulation, kSettlementDistricts,
@@ -944,6 +1047,7 @@ void refresh_settlement_form(HWND window) {
         SendMessageW(GetDlgItem(window, kSettlementApplyCatalogStats), BM_SETCHECK, BST_UNCHECKED, 0);
         set_manager_text(window, kMapSummary, L"Map: none");
         refresh_inventory_list(window);
+        refresh_magic_stock_list(window);
         return;
     }
     const auto& settlement = settlement_draft[static_cast<size_t>(settlement_active_index)];
@@ -962,6 +1066,7 @@ void refresh_settlement_form(HWND window) {
             + L" L" + std::to_wstring(settlement.map.labels.size())
         : L"Map: none");
     refresh_inventory_list(window);
+    refresh_magic_stock_list(window);
 }
 
 void save_active_settlement(HWND window) {
@@ -1049,6 +1154,50 @@ void remove_inventory_building(HWND window) {
     if (selected < 0 || selected >= static_cast<int>(inventory.size())) return;
     inventory.erase(inventory.begin() + selected);
     refresh_inventory_list(window);
+}
+
+void preview_magic_availability(HWND window) {
+    if (settlement_active_index < 0 || settlement_active_index >= static_cast<int>(settlement_draft.size()))
+        throw std::invalid_argument("Select a settlement first.");
+    const int base_value = parse_integer(manager_text(window, kMagicAvailabilityBase));
+    const auto seed_text = manager_text(window, kMagicAvailabilitySeed);
+    size_t consumed = 0;
+    const auto seed = std::stoull(seed_text, &consumed);
+    if (consumed != seed_text.size()) throw std::invalid_argument("Seed must be a non-negative integer.");
+    const auto results = pkkm::preview_random_magic_item_availability(
+        settlement_draft[static_cast<size_t>(settlement_active_index)], base_value, seed);
+    int available = 0;
+    int unavailable = 0;
+    int always = 0;
+    int deferred = 0;
+    for (const auto& result : results) {
+        if (result.status == "above_base_value_always_available") ++always;
+        else if (result.status.rfind("at_or_below_base_value_available", 0) == 0) ++available;
+        else if (result.status.rfind("at_or_below_base_value_unavailable", 0) == 0) ++unavailable;
+        else if (result.status == "manual_resolution_required") ++deferred;
+    }
+    set_manager_text(window, kMagicAvailabilityStatus,
+        L"Slots: " + std::to_wstring(results.size()) + L" | Available: " + std::to_wstring(available)
+        + L" | Unavailable: " + std::to_wstring(unavailable) + L" | Always: " + std::to_wstring(always)
+        + L" | Manual: " + std::to_wstring(deferred));
+}
+
+void remove_magic_stock(HWND window) {
+    save_active_settlement(window);
+    if (settlement_active_index < 0) throw std::invalid_argument("Select a settlement first.");
+    auto& stocks = settlement_draft[static_cast<size_t>(settlement_active_index)].random_magic_item_stock;
+    const int selected = static_cast<int>(SendMessageW(GetDlgItem(window, kMagicStockList), LB_GETCURSEL, 0, 0));
+    if (selected < 0 || selected >= static_cast<int>(stocks.size()))
+        throw std::invalid_argument("Select a magic-item stock record first.");
+    const auto stock = stocks[static_cast<size_t>(selected)];
+    if (stock.state != "generated")
+        throw std::invalid_argument("Only generated stock can be removed here; manual-resolution stock requires explicit resolution first.");
+    if (MessageBoxW(window, L"Remove this generated item and return its slot to empty?",
+            L"Remove magic-item stock", MB_YESNO | MB_ICONQUESTION) != IDYES) return;
+    pkkm::remove_random_magic_item_stock(
+        settlement_draft[static_cast<size_t>(settlement_active_index)],
+        stock.tier, stock.slot_index, kingdom.turn);
+    refresh_magic_stock_list(window);
 }
 
 bool apply_settlement_manager(HWND window) {
@@ -1351,6 +1500,38 @@ LRESULT CALLBACK construction_proc(HWND window, UINT message, WPARAM wparam, LPA
     return DefWindowProcW(window, message, wparam, lparam);
 }
 
+LRESULT CALLBACK army_worksheet_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
+    if (message == WM_GETMINMAXINFO) {
+        set_minimum_track_size(lparam, 760, 650);
+        return 0;
+    }
+    switch (message) {
+        case WM_CREATE:
+            create_army_worksheet_controls(window);
+            return 0;
+        case WM_COMMAND: {
+            const int id = LOWORD(wparam);
+            if (id == kArmyApply) apply_army_worksheet(window);
+            else if (id == kArmyCancel) SetWindowTextW(GetDlgItem(window, kArmyStatus), L"Draft cancelled. No army mutation was applied.");
+            else if (id == kArmyClose) DestroyWindow(window);
+            return 0;
+        }
+        case WM_CLOSE:
+            DestroyWindow(window);
+            return 0;
+        case WM_DESTROY: {
+            army_window = nullptr;
+            const HWND owner = GetWindow(window, GW_OWNER);
+            if (owner && IsWindow(owner)) {
+                EnableWindow(owner, TRUE);
+                SetForegroundWindow(owner);
+            }
+            return 0;
+        }
+    }
+    return DefWindowProcW(window, message, wparam, lparam);
+}
+
 LRESULT CALLBACK settlement_manager_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
     if (message == WM_GETMINMAXINFO) {
         set_minimum_track_size(lparam, 760, 520);
@@ -1379,6 +1560,8 @@ LRESULT CALLBACK settlement_manager_proc(HWND window, UINT message, WPARAM wpara
                 else if (id == kRemoveSettlement) remove_settlement(window);
                 else if (id == kAddBuilding) add_inventory_building(window);
                 else if (id == kRemoveBuilding) remove_inventory_building(window);
+                else if (id == kRemoveMagicStock) remove_magic_stock(window);
+                else if (id == kMagicAvailabilityPreview) preview_magic_availability(window);
                 else if (id == kEditMap) {
                     save_active_settlement(window);
                     if (settlement_active_index < 0) throw std::invalid_argument("Select a settlement first.");
@@ -1494,7 +1677,7 @@ void command(HWND window, int id) {
             settlement_draft = kingdom.settlements;
             settlement_catalog = pkkm::search_building_catalog(building_catalog, "");
             settlement_window = CreateWindowExW(WS_EX_DLGMODALFRAME, L"PKKMSettlements", L"Manage Settlements",
-                WS_CAPTION | WS_SYSMENU | WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX, kWindowOriginX, kWindowOriginY, 1075, 660,
+                WS_CAPTION | WS_SYSMENU | WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX, kWindowOriginX, kWindowOriginY, 1075, 700,
                 window, nullptr, app_instance, nullptr);
             if (!settlement_window) throw std::runtime_error("Could not open the settlement manager");
             EnableWindow(window, FALSE);
@@ -1507,9 +1690,10 @@ void command(HWND window, int id) {
             }
             checklist_controls.clear();
             checklist_step_ids.clear();
+            checklist_skipped_step_ids.clear();
             checklist_window = CreateWindowExW(WS_EX_DLGMODALFRAME, L"PKKMTurnChecklist",
                 L"Turn Checklist", WS_CAPTION | WS_SYSMENU | WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX,
-                kWindowOriginX, kWindowOriginY, 1010, 620, window, nullptr, app_instance, nullptr);
+                kWindowOriginX, kWindowOriginY, 1010, 1010, window, nullptr, app_instance, nullptr);
             if (!checklist_window) throw std::runtime_error("Could not open the turn checklist");
             EnableWindow(window, FALSE);
             ShowWindow(checklist_window, SW_SHOW);
@@ -1521,7 +1705,7 @@ void command(HWND window, int id) {
             }
             action_window = CreateWindowExW(WS_EX_DLGMODALFRAME, L"PKKMTurnActions",
                 L"Turn Actions", WS_CAPTION | WS_SYSMENU | WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_VSCROLL,
-                                kWindowOriginX, kWindowOriginY, 620, 720, window, nullptr, app_instance, nullptr);
+                                kWindowOriginX, kWindowOriginY, 900, 850, window, nullptr, app_instance, nullptr);
             if (!action_window) throw std::runtime_error("Could not open the Turn Actions manager");
             refresh_valuable_item_sale_history(action_window);
             EnableWindow(window, FALSE);
@@ -1570,6 +1754,8 @@ void create_turn_checklist_controls(HWND window) {
         [](const auto& progress) { return progress.turn == kingdom.turn; });
     const std::vector<std::string> completed = record == kingdom.turn_progress.end()
         ? std::vector<std::string>{} : record->completed_step_ids;
+    checklist_skipped_step_ids = record == kingdom.turn_progress.end()
+        ? std::vector<std::string>{} : record->skipped_step_ids;
     CreateWindowExW(0, L"STATIC",
         L"Manual checklist only; PKKM does not resolve checks or turn outcomes.\r\nApply updates this file in memory; use File > Save to persist. Stability failure by exactly 4 is not used by this rule set.",
         WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 12, 950, 40, window, nullptr, app_instance, nullptr);
@@ -1604,18 +1790,137 @@ void create_turn_checklist_controls(HWND window) {
         checklist_controls.push_back(control);
         checklist_step_ids.push_back(step.id);
     }
+    CreateWindowExW(0, L"STATIC", L"Withdrawal BP", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        24, 525, 100, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"1", WS_CHILD | WS_VISIBLE | ES_NUMBER,
+        128, 523, 70, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistWithdrawalBp)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Loyalty check succeeded", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        215, 523, 190, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistWithdrawalLoyalty)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Apply Withdrawal", WS_CHILD | WS_VISIBLE,
+        420, 521, 160, 30, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistApplyWithdrawal)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Deposit gp", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        600, 525, 85, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"4000", WS_CHILD | WS_VISIBLE | ES_NUMBER,
+        688, 523, 75, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistDepositGold)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Apply Deposit", WS_CHILD | WS_VISIBLE,
+        770, 521, 180, 30, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistApplyDeposit)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Item gp", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        600, 555, 85, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"4000", WS_CHILD | WS_VISIBLE | ES_NUMBER,
+        688, 553, 75, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistItemValue)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Apply Item Deposit", WS_CHILD | WS_VISIBLE,
+        770, 551, 180, 30, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistApplyItemDeposit)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Tax economy succeeded", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        600, 595, 150, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistTaxSuccess)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Result", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        755, 590, 55, 18, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"0", WS_CHILD | WS_VISIBLE | ES_NUMBER,
+        755, 608, 55, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistTaxResult)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Other BP", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        820, 590, 65, 18, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"0", WS_CHILD | WS_VISIBLE | ES_NUMBER,
+        820, 608, 60, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistTaxOther)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Apply Taxes", WS_CHILD | WS_VISIBLE,
+        890, 603, 80, 30, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistApplyTaxes)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Event occurred", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        24, 650, 150, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistEventOccurred)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"d100 roll", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        190, 653, 70, 18, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"1", WS_CHILD | WS_VISIBLE | ES_NUMBER,
+        265, 650, 60, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistEventRoll)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Apply Event Roll", WS_CHILD | WS_VISIBLE,
+        340, 647, 150, 30, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistApplyEvent)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Open Event Resolution...", WS_CHILD | WS_VISIBLE,
+        500, 647, 175, 30, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistOpenEventResolution)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Open Construction...", WS_CHILD | WS_VISIBLE,
+        24, 680, 180, 30, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistOpenConstruction)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Open City Worksheet...", WS_CHILD | WS_VISIBLE,
+        214, 680, 180, 30, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistOpenCity)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Open Army Worksheet...", WS_CHILD | WS_VISIBLE,
+        404, 680, 190, 30, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistOpenArmy)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Open Law Inputs...", WS_CHILD | WS_VISIBLE,
+        604, 680, 180, 30, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistOpenInputs)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Guided step: use Complete Current Step after recording the source-defined result. Details remain manual.",
+        WS_CHILD | WS_VISIBLE | SS_LEFT | SS_NOPREFIX, 24, 720, 950, 45, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistCurrentStep)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Complete Current Step", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+        24, 780, 180, 30, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistCompleteCurrent)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Skip Optional Step", WS_CHILD | WS_VISIBLE,
+        214, 780, 160, 30, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistSkipCurrent)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Return to Previous Step", WS_CHILD | WS_VISIBLE,
+        384, 780, 175, 30, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistBack)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Open Turn Actions...", WS_CHILD | WS_VISIBLE,
+        564, 780, 160, 30, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistOpenActions)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Apply Claim Hex (1)", WS_CHILD | WS_VISIBLE,
+        730, 780, 240, 30, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistApplyClaimHex)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        24, 820, 950, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistPhaseSummary)), app_instance, nullptr);
     CreateWindowExW(0, L"BUTTON", L"Event occurred last turn", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        24, 535, 220, 24, window,
+        24, 625, 220, 24, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistEventLastTurn)), app_instance, nullptr);
     CreateWindowExW(0, L"STATIC", L"", WS_CHILD | WS_VISIBLE | SS_LEFT,
-        250, 535, 420, 24, window,
+        250, 625, 420, 24, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistTransitionStatus)), app_instance, nullptr);
     CreateWindowExW(0, L"BUTTON", L"Apply", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
-        692, 535, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistApply)), app_instance, nullptr);
+        692, 860, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistApply)), app_instance, nullptr);
     CreateWindowExW(0, L"BUTTON", L"Cancel", WS_CHILD | WS_VISIBLE,
-        790, 535, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistCancel)), app_instance, nullptr);
+        790, 860, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistCancel)), app_instance, nullptr);
     CreateWindowExW(0, L"BUTTON", L"Close", WS_CHILD | WS_VISIBLE,
-        888, 535, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistClose)), app_instance, nullptr);
+        888, 860, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistClose)), app_instance, nullptr);
+}
+
+void capture_turn_checklist_layout(HWND window) {
+    checklist_layout_rects.clear();
+    for (HWND child = GetWindow(window, GW_CHILD); child != nullptr;
+         child = GetWindow(child, GW_HWNDNEXT)) {
+        RECT screen_rect{};
+        GetWindowRect(child, &screen_rect);
+        POINT points[2] = {{screen_rect.left, screen_rect.top},
+                           {screen_rect.right, screen_rect.bottom}};
+        MapWindowPoints(nullptr, window, points, 2);
+        checklist_layout_rects.push_back({child, RECT{points[0].x, points[0].y, points[1].x, points[1].y}});
+    }
+}
+
+void layout_turn_checklist_controls(HWND window) {
+    RECT client{};
+    GetClientRect(window, &client);
+    const double scale_x = static_cast<double>(std::max(1010L, client.right - client.left)) / 1010.0;
+    const double scale_y = static_cast<double>(std::max(940L, client.bottom - client.top - 24)) / 940.0;
+    for (const auto& item : checklist_layout_rects) {
+        const RECT& base = item.second;
+        const int x = static_cast<int>(std::lround(base.left * scale_x));
+        const int y = static_cast<int>(std::lround(base.top * scale_y));
+        const int width = static_cast<int>(std::lround((base.right - base.left) * scale_x));
+        const int height = static_cast<int>(std::lround((base.bottom - base.top) * scale_y));
+        SetWindowPos(item.first, nullptr, x, y, std::max(1, width), std::max(1, height),
+            SWP_NOZORDER | SWP_NOACTIVATE);
+    }
 }
 
 void refresh_turn_transition_preview(HWND window) {
@@ -1640,6 +1945,601 @@ void refresh_turn_checklist_controls() {
     }
 }
 
+std::wstring turn_checklist_manual_note(const pkkm::TurnChecklistStep& step) {
+    if (step.id == "upkeep.magic_items") return L"Manual boundary: use settlement stock; unresolved spell or subtable branches require caller input.";
+    if (step.id == "edicts.claim_hexes" || step.id == "edicts.abandon_hexes") return L"Manual boundary: map selection and claim decisions remain caller-controlled.";
+    if (step.id == "edicts.build_improvements") return L"Manual boundary: use construction records; terrain facts and exceptions remain explicit.";
+    if (step.id == "edicts.city") return L"Manual boundary: city placement, layout, and city choices remain caller-controlled.";
+    if (step.id == "events.roll_d100") return L"Manual boundary: enter the roll; event consequences and affected entities remain caller-supplied.";
+    if (step.id == "income.buy_magic_item" || step.id == "income.buy_for_kingdom") return L"Manual boundary: purchase, buyer, and inventory resolution remain caller-supplied.";
+    if (step.id == "income.deposit_items") return L"Manual boundary: confirm the item transfer and inventory ownership before recording it.";
+    return L"Manual boundary: record the source result; PKKM does not invent unsupported rule outcomes.";
+}
+
+bool turn_checklist_draft_matches_applied() {
+    const auto record = std::find_if(kingdom.turn_progress.begin(), kingdom.turn_progress.end(),
+        [](const auto& progress) { return progress.turn == kingdom.turn; });
+    std::vector<std::string> completed;
+    for (std::size_t index = 0; index < checklist_controls.size() && index < checklist_step_ids.size(); ++index) {
+        if (SendMessageW(checklist_controls[index], BM_GETCHECK, 0, 0) == BST_CHECKED)
+            completed.push_back(checklist_step_ids[index]);
+    }
+    const std::vector<std::string> applied_completed = record == kingdom.turn_progress.end()
+        ? std::vector<std::string>{} : record->completed_step_ids;
+    const std::vector<std::string> applied_skipped = record == kingdom.turn_progress.end()
+        ? std::vector<std::string>{} : record->skipped_step_ids;
+    return completed == applied_completed && checklist_skipped_step_ids == applied_skipped;
+}
+
+void open_turn_actions_from_checklist(HWND checklist) {
+    if (!turn_checklist_draft_matches_applied()) {
+        MessageBoxW(checklist, L"Apply the checklist draft before opening Turn Actions.",
+            L"Turn checklist", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    if (action_window && IsWindow(action_window)) {
+        SetForegroundWindow(action_window);
+        return;
+    }
+    action_window = CreateWindowExW(WS_EX_DLGMODALFRAME, L"PKKMTurnActions",
+        L"Turn Actions", WS_CAPTION | WS_SYSMENU | WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_VSCROLL,
+        kWindowOriginX, kWindowOriginY, 620, 720, checklist, nullptr, app_instance, nullptr);
+    if (!action_window) throw std::runtime_error("Could not open the Turn Actions manager");
+    refresh_valuable_item_sale_history(action_window);
+    EnableWindow(checklist, FALSE);
+    ShowWindow(action_window, SW_SHOW);
+    UpdateWindow(action_window);
+}
+
+void refresh_turn_checklist_guidance(HWND window);
+void refresh_turn_checklist_phase_summary(HWND window);
+
+void apply_claim_hex_from_checklist(HWND window) {
+    if (!turn_checklist_draft_matches_applied()) {
+        MessageBoxW(window, L"Apply the checklist draft before using the Claim Hex adapter.",
+            L"Turn checklist", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    const auto status = pkkm::turn_checklist_status(kingdom, kingdom.turn);
+    if (status.next_step_id != "edicts.claim_hexes") {
+        MessageBoxW(window, L"Claim Hex is available only when it is the current guided step.",
+            L"Turn checklist", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    pkkm::apply_turn_action(kingdom, pkkm::TurnAction::ClaimHex, 1);
+    pkkm::set_turn_checklist_step(kingdom, kingdom.turn, "edicts.claim_hexes", true);
+    checklist_review_index = -1;
+    dirty = true;
+    refresh_turn_checklist_controls();
+    refresh_turn_checklist_guidance(window);
+    refresh_turn_checklist_phase_summary(window);
+    const HWND owner = GetWindow(window, GW_OWNER);
+    if (owner && IsWindow(owner)) refresh(GetDlgItem(owner, kDisplay));
+}
+
+void apply_withdrawal_from_checklist(HWND window) {
+    if (!turn_checklist_draft_matches_applied()) {
+        MessageBoxW(window, L"Apply the checklist draft before using the Withdrawal adapter.",
+            L"Turn checklist", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    const auto status = pkkm::turn_checklist_status(kingdom, kingdom.turn);
+    if (status.next_step_id != "income.withdraw_gold") {
+        MessageBoxW(window, L"Withdrawal is available only when it is the current guided step.",
+            L"Turn checklist", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    int bp_withdrawn = 0;
+    try {
+        bp_withdrawn = std::stoi(manager_text(window, kChecklistWithdrawalBp));
+    } catch (...) {
+        MessageBoxW(window, L"Enter a valid positive BP withdrawal amount.",
+            L"Turn checklist", MB_OK | MB_ICONWARNING);
+        return;
+    }
+    const bool loyalty_success = SendMessageW(
+        GetDlgItem(window, kChecklistWithdrawalLoyalty), BM_GETCHECK, 0, 0) == BST_CHECKED;
+    try {
+        pkkm::apply_gold_withdrawal(kingdom, bp_withdrawn, loyalty_success);
+        pkkm::set_turn_checklist_step(kingdom, kingdom.turn, "income.withdraw_gold", true);
+    } catch (const std::exception& error) {
+        MessageBoxW(window, widen(error.what()).c_str(), L"Turn checklist", MB_OK | MB_ICONWARNING);
+        return;
+    }
+    checklist_review_index = -1;
+    dirty = true;
+    refresh_turn_checklist_controls();
+    refresh_turn_checklist_guidance(window);
+    refresh_turn_checklist_phase_summary(window);
+    const HWND owner = GetWindow(window, GW_OWNER);
+    if (owner && IsWindow(owner)) refresh(GetDlgItem(owner, kDisplay));
+}
+
+void apply_deposit_from_checklist(HWND window) {
+    if (!turn_checklist_draft_matches_applied()) {
+        MessageBoxW(window, L"Apply the checklist draft before using the Deposit adapter.",
+            L"Turn checklist", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    const auto status = pkkm::turn_checklist_status(kingdom, kingdom.turn);
+    if (status.next_step_id != "income.deposit_gold") {
+        MessageBoxW(window, L"Deposit is available only when it is the current guided step.",
+            L"Turn checklist", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    int gold_deposited = 0;
+    try {
+        gold_deposited = std::stoi(manager_text(window, kChecklistDepositGold));
+    } catch (...) {
+        MessageBoxW(window, L"Enter a valid positive gold deposit amount.",
+            L"Turn checklist", MB_OK | MB_ICONWARNING);
+        return;
+    }
+    try {
+        pkkm::apply_gold_deposit(kingdom, gold_deposited);
+        pkkm::set_turn_checklist_step(kingdom, kingdom.turn, "income.deposit_gold", true);
+    } catch (const std::exception& error) {
+        MessageBoxW(window, widen(error.what()).c_str(), L"Turn checklist", MB_OK | MB_ICONWARNING);
+        return;
+    }
+    checklist_review_index = -1;
+    dirty = true;
+    refresh_turn_checklist_controls();
+    refresh_turn_checklist_guidance(window);
+    refresh_turn_checklist_phase_summary(window);
+    const HWND owner = GetWindow(window, GW_OWNER);
+    if (owner && IsWindow(owner)) refresh(GetDlgItem(owner, kDisplay));
+}
+
+void apply_item_deposit_from_checklist(HWND window) {
+    if (!turn_checklist_draft_matches_applied()) {
+        MessageBoxW(window, L"Apply the checklist draft before using the Item Deposit adapter.",
+            L"Turn checklist", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    const auto status = pkkm::turn_checklist_status(kingdom, kingdom.turn);
+    if (status.next_step_id != "income.deposit_items") {
+        MessageBoxW(window, L"Item Deposit is available only when it is the current guided step.",
+            L"Turn checklist", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    int item_value = 0;
+    try {
+        item_value = std::stoi(manager_text(window, kChecklistItemValue));
+    } catch (...) {
+        MessageBoxW(window, L"Enter a valid positive item value in gp.",
+            L"Turn checklist", MB_OK | MB_ICONWARNING);
+        return;
+    }
+    try {
+        pkkm::apply_item_deposit(kingdom, item_value);
+        pkkm::set_turn_checklist_step(kingdom, kingdom.turn, "income.deposit_items", true);
+    } catch (const std::exception& error) {
+        MessageBoxW(window, widen(error.what()).c_str(), L"Turn checklist", MB_OK | MB_ICONWARNING);
+        return;
+    }
+    checklist_review_index = -1;
+    dirty = true;
+    refresh_turn_checklist_controls();
+    refresh_turn_checklist_guidance(window);
+    refresh_turn_checklist_phase_summary(window);
+    const HWND owner = GetWindow(window, GW_OWNER);
+    if (owner && IsWindow(owner)) refresh(GetDlgItem(owner, kDisplay));
+}
+
+void apply_taxes_from_checklist(HWND window) {
+    if (!turn_checklist_draft_matches_applied()) {
+        MessageBoxW(window, L"Apply the checklist draft before using the Taxes adapter.",
+            L"Turn checklist", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    const auto status = pkkm::turn_checklist_status(kingdom, kingdom.turn);
+    if (status.next_step_id != "income.taxes") {
+        MessageBoxW(window, L"Taxes is available only when it is the current guided step.",
+            L"Turn checklist", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    int result_input = 0;
+    int other_bp_gained = 0;
+    try {
+        result_input = std::stoi(manager_text(window, kChecklistTaxResult));
+        other_bp_gained = std::stoi(manager_text(window, kChecklistTaxOther));
+    } catch (...) {
+        MessageBoxW(window, L"Enter valid non-negative tax inputs.",
+            L"Turn checklist", MB_OK | MB_ICONWARNING);
+        return;
+    }
+    const bool economy_success = SendMessageW(
+        GetDlgItem(window, kChecklistTaxSuccess), BM_GETCHECK, 0, 0) == BST_CHECKED;
+    try {
+        pkkm::apply_tax_action(kingdom, economy_success, result_input, other_bp_gained);
+        pkkm::set_turn_checklist_step(kingdom, kingdom.turn, "income.taxes", true);
+    } catch (const std::exception& error) {
+        MessageBoxW(window, widen(error.what()).c_str(), L"Turn checklist", MB_OK | MB_ICONWARNING);
+        return;
+    }
+    checklist_review_index = -1;
+    dirty = true;
+    refresh_turn_checklist_controls();
+    refresh_turn_checklist_guidance(window);
+    refresh_turn_checklist_phase_summary(window);
+    const HWND owner = GetWindow(window, GW_OWNER);
+    if (owner && IsWindow(owner)) refresh(GetDlgItem(owner, kDisplay));
+}
+
+void apply_event_roll_from_checklist(HWND window) {
+    if (!turn_checklist_draft_matches_applied()) {
+        MessageBoxW(window, L"Apply the checklist draft before using the Event adapter.",
+            L"Turn checklist", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    const auto status = pkkm::turn_checklist_status(kingdom, kingdom.turn);
+    if (status.next_step_id != "events.roll_d100") {
+        MessageBoxW(window, L"Event Roll is available only when it is the current guided step.",
+            L"Turn checklist", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    const bool event_occurred = SendMessageW(
+        GetDlgItem(window, kChecklistEventOccurred), BM_GETCHECK, 0, 0) == BST_CHECKED;
+    if (event_occurred) {
+        int roll = 0;
+        try {
+            roll = std::stoi(manager_text(window, kChecklistEventRoll));
+        } catch (...) {
+            MessageBoxW(window, L"Enter a d100 roll from 1 to 100.",
+                L"Turn checklist", MB_OK | MB_ICONWARNING);
+            return;
+        }
+        try {
+            pkkm::record_kingdom_event(kingdom, roll);
+        } catch (const std::exception& error) {
+            MessageBoxW(window, widen(error.what()).c_str(), L"Turn checklist", MB_OK | MB_ICONWARNING);
+            return;
+        }
+    }
+    pkkm::set_turn_checklist_step(kingdom, kingdom.turn, "events.roll_d100", true);
+    checklist_review_index = -1;
+    dirty = true;
+    refresh_turn_checklist_controls();
+    refresh_turn_checklist_guidance(window);
+    refresh_turn_checklist_phase_summary(window);
+    const HWND owner = GetWindow(window, GW_OWNER);
+    if (owner && IsWindow(owner)) refresh(GetDlgItem(owner, kDisplay));
+}
+
+void open_event_resolution_from_checklist(HWND window) {
+    if (!turn_checklist_draft_matches_applied()) {
+        MessageBoxW(window, L"Apply the checklist draft before opening Event Resolution.",
+            L"Turn checklist", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    const auto record = std::find_if(kingdom.turn_progress.begin(), kingdom.turn_progress.end(),
+        [](const auto& progress) { return progress.turn == kingdom.turn; });
+    const bool event_step_completed = record != kingdom.turn_progress.end()
+        && std::find(record->completed_step_ids.begin(), record->completed_step_ids.end(), "events.roll_d100")
+            != record->completed_step_ids.end();
+    if (!event_step_completed) {
+        MessageBoxW(window, L"Apply Event Roll before opening Event Resolution.",
+            L"Turn checklist", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    open_turn_actions_from_checklist(window);
+}
+
+void open_construction_from_checklist(HWND window) {
+    if (!turn_checklist_draft_matches_applied()) {
+        MessageBoxW(window, L"Apply the checklist draft before opening Construction.",
+            L"Turn checklist", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    const auto status = pkkm::turn_checklist_status(kingdom, kingdom.turn);
+    if (status.next_step_id != "edicts.build_improvements") {
+        MessageBoxW(window, L"Construction is available only when Build Improvements is the current guided step.",
+            L"Turn checklist", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    if (settlement_window && IsWindow(settlement_window)) {
+        SetForegroundWindow(settlement_window);
+        return;
+    }
+    settlement_draft = kingdom.settlements;
+    settlement_catalog = pkkm::search_building_catalog(building_catalog, "");
+    settlement_window = CreateWindowExW(WS_EX_DLGMODALFRAME, L"PKKMSettlements", L"Manage Settlements - Construction Context",
+        WS_CAPTION | WS_SYSMENU | WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX,
+        kWindowOriginX, kWindowOriginY, 1075, 700, window, nullptr, app_instance, nullptr);
+    if (!settlement_window) throw std::runtime_error("Could not open the construction settlement context");
+    EnableWindow(window, FALSE);
+    ShowWindow(settlement_window, SW_SHOW);
+    UpdateWindow(settlement_window);
+}
+
+void open_city_from_checklist(HWND window) {
+    if (!turn_checklist_draft_matches_applied()) {
+        MessageBoxW(window, L"Apply the checklist draft before opening the City Worksheet.",
+            L"Turn checklist", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    const auto status = pkkm::turn_checklist_status(kingdom, kingdom.turn);
+    if (status.next_step_id != "edicts.city") {
+        MessageBoxW(window, L"City Worksheet is available only when Create/Improve City is the current guided step.",
+            L"Turn checklist", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    if (settlement_window && IsWindow(settlement_window)) {
+        SetForegroundWindow(settlement_window);
+        return;
+    }
+    settlement_draft = kingdom.settlements;
+    settlement_catalog = pkkm::search_building_catalog(building_catalog, "");
+    settlement_window = CreateWindowExW(WS_EX_DLGMODALFRAME, L"PKKMSettlements", L"Manage Settlements - City Context",
+        WS_CAPTION | WS_SYSMENU | WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX,
+        kWindowOriginX, kWindowOriginY, 1075, 700, window, nullptr, app_instance, nullptr);
+    if (!settlement_window) throw std::runtime_error("Could not open the city settlement context");
+    EnableWindow(window, FALSE);
+    ShowWindow(settlement_window, SW_SHOW);
+    UpdateWindow(settlement_window);
+}
+
+void create_army_worksheet_controls(HWND window) {
+    manager_label(window, L"Source-faithful army creation. Combat resolution and special effects remain manual.", 20, 16, 700);
+    manager_label(window, L"Army name", 20, 55); manager_edit(window, kArmyName, L"", 150, 55, 250);
+    manager_label(window, L"Unit description", 20, 87); manager_edit(window, kArmyUnit, L"", 150, 87, 400);
+    manager_label(window, L"Size", 20, 119);
+    const HWND size = CreateWindowExW(0, L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST,
+        150, 119, 160, 180, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kArmySize)), app_instance, nullptr);
+    for (const wchar_t* value : {L"fine", L"diminutive", L"tiny", L"small", L"medium", L"large", L"huge", L"gargantuan", L"colossal"})
+        SendMessageW(size, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(value));
+    SendMessageW(size, CB_SETCURSEL, 4, 0);
+    manager_label(window, L"Individual CR", 340, 119); manager_edit(window, kArmyCr, L"1", 450, 119);
+    manager_label(window, L"HD average (tenths)", 20, 151); manager_edit(window, kArmyHd, L"45", 150, 151);
+    manager_label(window, L"Speed", 340, 151); manager_edit(window, kArmySpeed, L"2", 450, 151);
+    manager_label(window, L"Leader", 20, 183); manager_edit(window, kArmyLeader, L"", 150, 183, 250);
+    manager_label(window, L"Leader Cha", 340, 183); manager_edit(window, kArmyCha, L"0", 450, 183);
+    CreateWindowExW(0, L"BUTTON", L"Ranged capability", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        20, 215, 180, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kArmyRanged)), app_instance, nullptr);
+    manager_label(window, L"Weapons 0/1/2", 20, 247); manager_edit(window, kArmyWeapons, L"0", 150, 247);
+    manager_label(window, L"Armor 0/1/2", 340, 247); manager_edit(window, kArmyArmor, L"0", 450, 247);
+    manager_label(window, L"Healing potions", 20, 279); manager_edit(window, kArmyPotions, L"0", 150, 279);
+    manager_label(window, L"Ranged weapons", 340, 279); manager_edit(window, kArmyRangedWeapons, L"0", 450, 279);
+    manager_label(window, L"Siege engines", 20, 311); manager_edit(window, kArmySiege, L"0", 150, 311);
+    manager_label(window, L"Mount CR", 340, 311); manager_edit(window, kArmyMountCr, L"0", 450, 311);
+    manager_label(window, L"Tactics", 20, 347); manager_multiline_edit(window, kArmyTactics, 150, 347, 250, 70);
+    manager_label(window, L"Abilities", 420, 347, 120); manager_multiline_edit(window, kArmyAbilities, 540, 347, 180, 70);
+    manager_label(window, L"Prerequisites", 20, 427); manager_multiline_edit(window, kArmyPrerequisites, 150, 427, 250, 55);
+    manager_label(window, L"Notes / GM approval", 420, 427, 120); manager_multiline_edit(window, kArmyNotes, 540, 427, 180, 55);
+    CreateWindowExW(0, L"STATIC", L"Derived values appear after Apply. Combat outcomes, tactics during combat, and special effects remain manual.",
+        WS_CHILD | WS_VISIBLE | SS_LEFT | SS_NOPREFIX, 20, 495, 700, 38, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kArmyStatus)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Apply", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+        430, 555, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kArmyApply)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Cancel", WS_CHILD | WS_VISIBLE,
+        528, 555, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kArmyCancel)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Close", WS_CHILD | WS_VISIBLE,
+        626, 555, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kArmyClose)), app_instance, nullptr);
+}
+
+int army_hd_tenths(const std::wstring& value) {
+    if (value == L"d6") return 35;
+    if (value == L"d8") return 45;
+    if (value == L"d10") return 55;
+    if (value == L"d12") return 65;
+    return std::stoi(value);
+}
+
+std::vector<std::string> army_lines(const std::wstring& value) {
+    std::vector<std::string> lines;
+    std::wistringstream stream(value);
+    std::wstring line;
+    while (std::getline(stream, line)) {
+        if (!line.empty()) lines.push_back(narrow(line));
+    }
+    return lines;
+}
+
+void apply_army_worksheet(HWND window) {
+    try {
+        pkkm::ArmyCreationRequest request;
+        request.name = narrow(manager_text(window, kArmyName));
+        request.unit_description = narrow(manager_text(window, kArmyUnit));
+        request.size_category = narrow(manager_text(window, kArmySize));
+        request.individual_cr = std::stoi(manager_text(window, kArmyCr));
+        request.hd_average_tenths = army_hd_tenths(manager_text(window, kArmyHd));
+        request.speed = std::stoi(manager_text(window, kArmySpeed));
+        request.leader = narrow(manager_text(window, kArmyLeader));
+        request.leader_charisma = std::stoi(manager_text(window, kArmyCha));
+        request.ranged = SendMessageW(GetDlgItem(window, kArmyRanged), BM_GETCHECK, 0, 0) == BST_CHECKED;
+        request.improved_weapons = std::stoi(manager_text(window, kArmyWeapons));
+        request.improved_armor = std::stoi(manager_text(window, kArmyArmor));
+        request.healing_potions = std::stoi(manager_text(window, kArmyPotions));
+        request.ranged_weapons = std::stoi(manager_text(window, kArmyRangedWeapons));
+        request.siege_engines = std::stoi(manager_text(window, kArmySiege));
+        request.mount_cr = std::stoi(manager_text(window, kArmyMountCr));
+        request.tactics = army_lines(manager_text(window, kArmyTactics));
+        request.special_abilities = army_lines(manager_text(window, kArmyAbilities));
+        request.prerequisites = army_lines(manager_text(window, kArmyPrerequisites));
+        request.notes = narrow(manager_text(window, kArmyNotes));
+        pkkm::apply_army_creation(kingdom, request);
+        const auto& army = kingdom.armies.back();
+        std::wstring summary = L"Applied: " + widen(army.request.name)
+            + L" | soldiers " + std::to_wstring(army.soldiers)
+            + L" | CR " + std::to_wstring(army.army_cr)
+            + L" | HP " + std::to_wstring(army.hit_points)
+            + L" | DV " + std::to_wstring(army.defense_value)
+            + L" | OM " + std::to_wstring(army.offense_modifier)
+            + L" | Consumption " + std::to_wstring(army.weekly_consumption)
+            + L" | BP " + std::to_wstring(army.bp_cost);
+        set_manager_text(window, kArmyStatus, summary);
+        dirty = true;
+        const HWND owner = GetWindow(window, GW_OWNER);
+        if (owner && IsWindow(owner)) refresh(GetDlgItem(owner, kDisplay));
+    } catch (const std::exception& error) {
+        MessageBoxW(window, widen(error.what()).c_str(), L"Army worksheet", MB_OK | MB_ICONWARNING);
+    }
+}
+
+void open_army_worksheet_from_checklist(HWND window) {
+    if (!turn_checklist_draft_matches_applied()) {
+        MessageBoxW(window, L"Apply the checklist draft before opening the Army Worksheet.", L"Turn checklist", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    const auto status = pkkm::turn_checklist_status(kingdom, kingdom.turn);
+    if (status.next_step_id != "edicts.armies") {
+        MessageBoxW(window, L"Army Worksheet is available only when Create Armies is the current guided step.", L"Turn checklist", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    if (army_window && IsWindow(army_window)) { SetForegroundWindow(army_window); return; }
+    army_window = CreateWindowExW(WS_EX_DLGMODALFRAME, L"PKKMArmyWorksheet", L"Army Worksheet - Turn Context",
+        WS_CAPTION | WS_SYSMENU | WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX,
+        kWindowOriginX, kWindowOriginY, 760, 650, window, nullptr, app_instance, nullptr);
+    if (!army_window) throw std::runtime_error("Could not open the Army Worksheet");
+    EnableWindow(window, FALSE);
+    ShowWindow(army_window, SW_SHOW);
+    UpdateWindow(army_window);
+}
+
+void open_law_inputs_from_checklist(HWND window) {
+    if (!turn_checklist_draft_matches_applied()) {
+        MessageBoxW(window, L"Apply the checklist draft before opening Law Inputs.", L"Turn checklist", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    const auto status = pkkm::turn_checklist_status(kingdom, kingdom.turn);
+    if (status.next_step_id != "edicts.adjust_laws") {
+        MessageBoxW(window, L"Law Inputs are available only when Adjust Edict Laws is the current guided step.",
+            L"Turn checklist", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    if (editor_window && IsWindow(editor_window)) { SetForegroundWindow(editor_window); return; }
+    prepare_editor_fields();
+    editor_window = CreateWindowExW(WS_EX_DLGMODALFRAME, L"PKKMEditor", L"Edit Kingdom Inputs - Turn Context",
+        WS_CAPTION | WS_SYSMENU | WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX,
+        kWindowOriginX, kWindowOriginY, 1025, 700, window, nullptr, app_instance, nullptr);
+    if (!editor_window) throw std::runtime_error("Could not open Law Inputs");
+    EnableWindow(window, FALSE);
+    ShowWindow(editor_window, SW_SHOW);
+    UpdateWindow(editor_window);
+}
+
+void refresh_turn_checklist_guidance(HWND window) {
+    const auto& steps = pkkm::turn_checklist_steps();
+    std::wstring text = L"Guided step: ";
+    if (checklist_review_index >= 0 && static_cast<std::size_t>(checklist_review_index) < steps.size()) {
+        const auto& step = steps[static_cast<std::size_t>(checklist_review_index)];
+        text += L"reviewing " + widen(step.phase) + L" / " + widen(step.marker) + L": " + widen(step.label)
+            + L". " + turn_checklist_manual_note(step) + L" Current state is preserved until you change it.";
+        SetWindowTextW(GetDlgItem(window, kChecklistCurrentStep), text.c_str());
+        return;
+    }
+    std::size_t next_index = steps.size();
+    for (std::size_t index = 0; index < steps.size() && index < checklist_controls.size(); ++index) {
+        const bool checked = SendMessageW(checklist_controls[index], BM_GETCHECK, 0, 0) == BST_CHECKED;
+        const bool skipped = std::find(checklist_skipped_step_ids.begin(), checklist_skipped_step_ids.end(), steps[index].id)
+            != checklist_skipped_step_ids.end();
+        if (!checked && !skipped) {
+            next_index = index;
+            break;
+        }
+    }
+    if (next_index == steps.size()) {
+        text += L"all checklist steps are marked complete for this turn.";
+    } else {
+        const auto& step = steps[next_index];
+        text += widen(step.phase) + L" / " + widen(step.marker) + L": " + widen(step.label)
+            + L". " + turn_checklist_manual_note(step);
+    }
+    SetWindowTextW(GetDlgItem(window, kChecklistCurrentStep), text.c_str());
+}
+
+void refresh_turn_checklist_phase_summary(HWND window) {
+    const auto& steps = pkkm::turn_checklist_steps();
+    std::vector<std::string> phases;
+    std::vector<int> total;
+    std::vector<int> finished;
+    for (std::size_t index = 0; index < steps.size() && index < checklist_controls.size(); ++index) {
+        auto phase = std::find(phases.begin(), phases.end(), steps[index].phase);
+        if (phase == phases.end()) {
+            phases.push_back(steps[index].phase);
+            total.push_back(0);
+            finished.push_back(0);
+            phase = phases.end() - 1;
+        }
+        const auto phase_index = static_cast<std::size_t>(phase - phases.begin());
+        ++total[phase_index];
+        const bool completed = SendMessageW(checklist_controls[index], BM_GETCHECK, 0, 0) == BST_CHECKED;
+        const bool skipped = std::find(checklist_skipped_step_ids.begin(), checklist_skipped_step_ids.end(), steps[index].id)
+            != checklist_skipped_step_ids.end();
+        if (completed || skipped) ++finished[phase_index];
+    }
+    std::wstring text = L"Phase progress: ";
+    for (std::size_t index = 0; index < phases.size(); ++index) {
+        if (index != 0) text += L" | ";
+        text += widen(phases[index]) + L" " + std::to_wstring(finished[index]) + L"/" + std::to_wstring(total[index]);
+    }
+    SetWindowTextW(GetDlgItem(window, kChecklistPhaseSummary), text.c_str());
+}
+
+void complete_current_turn_checklist_step(HWND window) {
+    checklist_review_index = -1;
+    for (std::size_t index = 0; index < checklist_controls.size(); ++index) {
+        if (SendMessageW(checklist_controls[index], BM_GETCHECK, 0, 0) != BST_CHECKED) {
+            SendMessageW(checklist_controls[index], BM_SETCHECK, BST_CHECKED, 0);
+            checklist_skipped_step_ids.erase(
+                std::remove(checklist_skipped_step_ids.begin(), checklist_skipped_step_ids.end(), checklist_step_ids[index]),
+                checklist_skipped_step_ids.end());
+            refresh_turn_checklist_guidance(window);
+                refresh_turn_checklist_phase_summary(window);
+            return;
+        }
+    }
+    refresh_turn_checklist_guidance(window);
+                refresh_turn_checklist_phase_summary(window);
+}
+
+void skip_current_turn_checklist_step(HWND window) {
+    checklist_review_index = -1;
+    const auto& steps = pkkm::turn_checklist_steps();
+    for (std::size_t index = 0; index < checklist_controls.size() && index < steps.size(); ++index) {
+        const bool checked = SendMessageW(checklist_controls[index], BM_GETCHECK, 0, 0) == BST_CHECKED;
+        const bool skipped = std::find(checklist_skipped_step_ids.begin(), checklist_skipped_step_ids.end(), steps[index].id)
+            != checklist_skipped_step_ids.end();
+        if (!checked && !skipped) {
+            if (!steps[index].optional) {
+                MessageBoxW(window, L"Only optional checklist steps can be skipped.", L"Turn checklist", MB_OK | MB_ICONINFORMATION);
+                return;
+            }
+            checklist_skipped_step_ids.push_back(steps[index].id);
+            refresh_turn_checklist_guidance(window);
+                refresh_turn_checklist_phase_summary(window);
+            return;
+        }
+    }
+    refresh_turn_checklist_guidance(window);
+                refresh_turn_checklist_phase_summary(window);
+}
+
+void return_to_previous_turn_checklist_step(HWND window) {
+    const auto& steps = pkkm::turn_checklist_steps();
+    std::size_t pending_index = steps.size();
+    for (std::size_t index = 0; index < steps.size() && index < checklist_controls.size(); ++index) {
+        const bool completed = SendMessageW(checklist_controls[index], BM_GETCHECK, 0, 0) == BST_CHECKED;
+        const bool skipped = std::find(checklist_skipped_step_ids.begin(), checklist_skipped_step_ids.end(), steps[index].id)
+            != checklist_skipped_step_ids.end();
+        if (!completed && !skipped) {
+            pending_index = index;
+            break;
+        }
+    }
+    const std::size_t previous_index = pending_index == steps.size()
+        ? steps.size() - 1 : pending_index == 0 ? steps.size() : pending_index - 1;
+    if (previous_index >= steps.size() || previous_index >= checklist_controls.size()) {
+        MessageBoxW(window, L"There is no previous checklist step to revisit.", L"Turn checklist", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    checklist_review_index = static_cast<int>(previous_index);
+    SetFocus(checklist_controls[previous_index]);
+    refresh_turn_checklist_guidance(window);
+    refresh_turn_checklist_phase_summary(window);
+}
+
 void apply_turn_checklist(HWND window) {
     std::vector<std::string> completed;
     for (size_t index = 0; index < checklist_controls.size(); ++index) {
@@ -1649,16 +2549,17 @@ void apply_turn_checklist(HWND window) {
     auto record = std::find_if(kingdom.turn_progress.begin(), kingdom.turn_progress.end(),
         [](const auto& progress) { return progress.turn == kingdom.turn; });
     bool changed = false;
-    if (completed.empty()) {
+    if (completed.empty() && checklist_skipped_step_ids.empty()) {
         if (record != kingdom.turn_progress.end()) {
             kingdom.turn_progress.erase(record);
             changed = true;
         }
     } else if (record == kingdom.turn_progress.end()) {
-        kingdom.turn_progress.push_back({kingdom.turn, std::move(completed)});
+        kingdom.turn_progress.push_back({kingdom.turn, std::move(completed), checklist_skipped_step_ids});
         changed = true;
-    } else if (record->completed_step_ids != completed) {
+    } else if (record->completed_step_ids != completed || record->skipped_step_ids != checklist_skipped_step_ids) {
         record->completed_step_ids = std::move(completed);
+        record->skipped_step_ids = checklist_skipped_step_ids;
         changed = true;
     }
     if (changed) {
@@ -2134,17 +3035,44 @@ const wchar_t* turn_action_label(pkkm::TurnAction action) {
     return L"Unknown action";
 }
 
+std::wstring turn_action_checklist_label(pkkm::TurnAction action) {
+    const std::string step_id = pkkm::turn_action_checklist_step(action);
+    const auto& steps = pkkm::turn_checklist_steps();
+    const auto step = std::find_if(steps.begin(), steps.end(),
+        [&step_id](const auto& candidate) { return candidate.id == step_id; });
+    if (step == steps.end()) return L"Unmapped checklist step";
+    return widen(step->phase) + L" / " + widen(step->marker) + L": " + widen(step->label);
+}
+
 void refresh_turn_action_history(HWND window) {
     HWND list = GetDlgItem(window, kActionHistory);
     SendMessageW(list, LB_RESETCONTENT, 0, 0);
     const int filter = turn_action_filter;
+    std::vector<std::size_t> visible_indices;
     for (std::size_t index = 0; index < kingdom.turn_actions.size(); ++index) {
         const auto& record = kingdom.turn_actions[index];
         if ((filter == 1 && record.reversal) || (filter == 2 && !record.reversal)) continue;
+        visible_indices.push_back(index);
+    }
+    const auto& checklist_steps = pkkm::turn_checklist_steps();
+    std::stable_sort(visible_indices.begin(), visible_indices.end(),
+        [&checklist_steps](std::size_t left, std::size_t right) {
+            const auto step_index = [&checklist_steps](pkkm::TurnAction action) {
+                const std::string id = pkkm::turn_action_checklist_step(action);
+                const auto step = std::find_if(checklist_steps.begin(), checklist_steps.end(),
+                    [&id](const auto& candidate) { return candidate.id == id; });
+                return step == checklist_steps.end()
+                    ? checklist_steps.size() : static_cast<std::size_t>(step - checklist_steps.begin());
+            };
+            return step_index(kingdom.turn_actions[left].action) < step_index(kingdom.turn_actions[right].action);
+        });
+    for (const std::size_t index : visible_indices) {
+        const auto& record = kingdom.turn_actions[index];
         const auto& delta = record.applied;
         const std::wstring prefix = record.reversal
             ? L"REVERSAL of #" + std::to_wstring(record.reverses_index + 1) + L" - " : L"";
-        const auto line = prefix + L"Turn " + std::to_wstring(record.turn) + L": "
+        const auto line = L"[" + turn_action_checklist_label(record.action) + L"] "
+            + prefix + L"Turn " + std::to_wstring(record.turn) + L": "
             + turn_action_label(record.action) + L" x" + std::to_wstring(record.count)
             + L" | BP " + std::to_wstring(delta.treasury_delta)
             + L" | Size " + std::to_wstring(delta.kingdom_size_delta)
@@ -2671,13 +3599,138 @@ void apply_unrest_dialog(HWND window) {
     SetWindowTextW(window, L"Turn Actions - Unrest Modified");
 }
 
+void capture_turn_actions_layout(HWND window) {
+    turn_actions_layout_rects.clear();
+    for (HWND child = GetWindow(window, GW_CHILD); child != nullptr;
+         child = GetWindow(child, GW_HWNDNEXT)) {
+        RECT screen_rect{};
+        GetWindowRect(child, &screen_rect);
+        POINT points[2] = {{screen_rect.left, screen_rect.top},
+                           {screen_rect.right, screen_rect.bottom}};
+        MapWindowPoints(nullptr, window, points, 2);
+        turn_actions_layout_rects.push_back({child,
+            RECT{points[0].x, points[0].y, points[1].x, points[1].y}});
+    }
+}
+
+void layout_turn_actions_controls(HWND window) {
+    RECT client{};
+    GetClientRect(window, &client);
+    const int client_width = client.right - client.left;
+    const int client_height = client.bottom - client.top;
+    const double scale_x = std::min(2.4, static_cast<double>(std::max(620, client_width)) / 620.0);
+    constexpr int top_band_height = 520;
+    constexpr int section_gap = 20;
+    constexpr int column_gap = 1;
+    constexpr int section_count = 12;
+    constexpr int section_starts[section_count] = {
+        520, 760, 980, 1220, 1410, 1810, 2070, 2310, 2440, 2710, 3000, 3180};
+    constexpr int section_ends[section_count] = {
+        760, 980, 1220, 1410, 1810, 2070, 2310, 2440, 2710, 3000, 3180, 3400};
+    const int column_count = client_width >= 1800 ? 4 : (client_width >= 1200 ? 2 : 1);
+    const bool use_columns = column_count > 1;
+    if (!use_columns) {
+        turn_actions_content_height = kTurnActionsContentHeight;
+        turn_actions_layout_scale_y = client_height >= turn_actions_content_height
+            ? static_cast<double>(client_height) / static_cast<double>(turn_actions_content_height)
+            : 1.0;
+        for (const auto& item : turn_actions_layout_rects) {
+            const RECT& base = item.second;
+            const int x = static_cast<int>(std::lround(base.left * scale_x));
+            const int y = static_cast<int>(std::lround(base.top * turn_actions_layout_scale_y))
+                - turn_actions_scroll_y;
+            const int width = static_cast<int>(std::lround((base.right - base.left) * scale_x));
+            const int height = static_cast<int>(std::lround(
+                (base.bottom - base.top) * turn_actions_layout_scale_y));
+            SetWindowPos(item.first, nullptr, x, y, std::max(1, width), std::max(1, height),
+                SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+        return;
+    }
+
+    const int column_width = std::max(1,
+        (client_width - column_gap * (column_count - 1)) / column_count);
+    int column_bottom[4] = {
+        top_band_height, top_band_height, top_band_height, top_band_height};
+    int column_min_left[4] = {0, 0, 0, 0};
+    int column_max_right[4] = {1, 1, 1, 1};
+    const auto section_for = [&](LONG top) {
+        int section = section_count - 1;
+        for (int index = 0; index < section_count; ++index) {
+            if (top < section_ends[index]) {
+                section = index;
+                break;
+            }
+        }
+        return section;
+    };
+    for (const auto& item : turn_actions_layout_rects) {
+        const RECT& base = item.second;
+        if (base.top < top_band_height) {
+            continue;
+        }
+        const int section = section_for(base.top);
+        const int column = section / (section_count / column_count);
+        column_min_left[column] = std::min(column_min_left[column],
+            static_cast<int>(base.left));
+        column_max_right[column] = std::max(column_max_right[column],
+            static_cast<int>(base.right));
+    }
+    double column_scale_x[4]{};
+    for (int column = 0; column < column_count; ++column) {
+        const int content_width = std::max(1,
+            column_max_right[column] - column_min_left[column]);
+        column_scale_x[column] = std::min(1.2,
+            static_cast<double>(column_width) / static_cast<double>(content_width));
+    }
+    int section_y[section_count]{};
+    for (int section = 0; section < section_count; ++section) {
+        const int column = section / (section_count / column_count);
+        const int section_offset = column_bottom[column] == top_band_height
+            ? 0 : section_gap;
+        section_y[section] = column_bottom[column] + section_offset;
+        column_bottom[column] = section_y[section]
+            + section_ends[section] - section_starts[section];
+    }
+    for (const auto& item : turn_actions_layout_rects) {
+        const RECT& base = item.second;
+        if (base.top < top_band_height) {
+            const int x = static_cast<int>(std::lround(base.left * scale_x));
+            const int y = base.top - turn_actions_scroll_y;
+            const int width = static_cast<int>(std::lround((base.right - base.left) * scale_x));
+            SetWindowPos(item.first, nullptr, x, y, std::max(1, width),
+                std::max(1, static_cast<int>(base.bottom - base.top)),
+                SWP_NOZORDER | SWP_NOACTIVATE);
+            continue;
+        }
+        const int section = section_for(base.top);
+        const int column = section / (section_count / column_count);
+        const int y = section_y[section]
+            + base.top - section_starts[section] - turn_actions_scroll_y;
+        const double column_scale = column_scale_x[column];
+        const int x = column * (column_width + column_gap)
+            + static_cast<int>(std::lround(
+                (base.left - column_min_left[column]) * column_scale));
+        const int width = static_cast<int>(std::lround(
+            (base.right - base.left) * column_scale));
+        const int height = base.bottom - base.top;
+        SetWindowPos(item.first, nullptr, x, y, std::max(1, width), std::max(1, height),
+            SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+    turn_actions_content_height = *std::max_element(
+        std::begin(column_bottom), std::begin(column_bottom) + column_count) + 36;
+    turn_actions_layout_scale_y = 1.0;
+}
+
 void update_turn_actions_scrollbar(HWND window) {
     RECT client{};
     GetClientRect(window, &client);
     SCROLLINFO info{sizeof(info), SIF_RANGE | SIF_PAGE | SIF_POS};
     info.nMin = 0;
-    info.nMax = kTurnActionsContentHeight - 1;
+    info.nMax = static_cast<int>(std::lround(
+        turn_actions_content_height * turn_actions_layout_scale_y)) - 1;
     info.nPage = static_cast<UINT>(std::max(0L, client.bottom - client.top));
+    ShowScrollBar(window, SB_VERT, info.nMax + 1 > static_cast<int>(info.nPage));
     const int max_position = std::max(0, info.nMax - static_cast<int>(info.nPage) + 1);
     const int previous_position = turn_actions_scroll_y;
     turn_actions_scroll_y = std::clamp(turn_actions_scroll_y, 0, max_position);
@@ -2705,7 +3758,7 @@ void scroll_turn_actions_to(HWND window, int requested_position) {
 
 LRESULT CALLBACK turn_actions_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
     if (message == WM_GETMINMAXINFO) {
-        set_minimum_track_size(lparam, 560, 460);
+        set_minimum_track_size(lparam, 760, 650);
         return 0;
     }
     switch (message) {
@@ -2713,6 +3766,8 @@ LRESULT CALLBACK turn_actions_proc(HWND window, UINT message, WPARAM wparam, LPA
             turn_action_filter = 0;
             turn_actions_scroll_y = 0;
             create_turn_action_controls(window);
+            capture_turn_actions_layout(window);
+            layout_turn_actions_controls(window);
             refresh_turn_action_history(window);
             refresh_tax_history(window);
             refresh_gold_withdrawal_history(window);
@@ -2728,7 +3783,9 @@ LRESULT CALLBACK turn_actions_proc(HWND window, UINT message, WPARAM wparam, LPA
             SetWindowTextW(window, (L"Turn Actions - Turn " + std::to_wstring(kingdom.turn)).c_str());
             return 0;
         case WM_SIZE:
+            layout_turn_actions_controls(window);
             update_turn_actions_scrollbar(window);
+            layout_turn_actions_controls(window);
             return 0;
         case WM_VSCROLL: {
             SCROLLINFO info{sizeof(info), SIF_RANGE | SIF_PAGE | SIF_POS | SIF_TRACKPOS};
@@ -2824,6 +3881,9 @@ LRESULT CALLBACK turn_actions_proc(HWND window, UINT message, WPARAM wparam, LPA
             return 0;
         case WM_DESTROY: {
             action_window = nullptr;
+            turn_actions_layout_rects.clear();
+            turn_actions_layout_scale_y = 1.0;
+            turn_actions_content_height = kTurnActionsContentHeight;
             const HWND owner = GetWindow(window, GW_OWNER);
             if (owner && IsWindow(owner)) {
                 EnableWindow(owner, TRUE);
@@ -4130,7 +5190,7 @@ void open_greenbelt_custom_popup(HWND owner, int edit_index = -1) {
     greenbelt_custom_popup_edit_index = edit_index;
     greenbelt_custom_popup_window = CreateWindowExW(WS_EX_DLGMODALFRAME,
         L"PKKMGreenbeltCustomImprovement", L"Custom Improvement",
-        WS_CAPTION | WS_SYSMENU | WS_POPUP | WS_THICKFRAME,
+        WS_CAPTION | WS_SYSMENU | WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX,
         kWindowOriginX, kWindowOriginY, 640, 500, owner, nullptr, app_instance, nullptr);
     if (!greenbelt_custom_popup_window) {
         const DWORD error = GetLastError();
@@ -4142,6 +5202,10 @@ void open_greenbelt_custom_popup(HWND owner, int edit_index = -1) {
 }
 
 LRESULT CALLBACK greenbelt_custom_popup_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
+    if (message == WM_GETMINMAXINFO) {
+        set_minimum_track_size(lparam, 640, 500);
+        return 0;
+    }
     switch (message) {
         case WM_CREATE:
             manager_label(window, L"ID (automatic)", 20, 20, 110);
@@ -4280,6 +5344,27 @@ void update_greenbelt_popout_scrollbar(HWND window) {
     greenbelt_popout_scroll_y = std::clamp(greenbelt_popout_scroll_y, 0, max_position);
     info.nPos = greenbelt_popout_scroll_y;
     SetScrollInfo(window, SB_VERT, &info, TRUE);
+}
+
+void layout_greenbelt_popout_tools(HWND window) {
+    RECT client{};
+    GetClientRect(window, &client);
+    const int width = client.right - client.left;
+    const int delta_x = width - greenbelt_popout_layout_width;
+    if (delta_x == 0) return;
+    for (HWND child = GetWindow(window, GW_CHILD); child != nullptr;
+         child = GetWindow(child, GW_HWNDNEXT)) {
+        RECT screen_rect{};
+        GetWindowRect(child, &screen_rect);
+        POINT points[2] = {{screen_rect.left, screen_rect.top},
+                           {screen_rect.right, screen_rect.bottom}};
+        MapWindowPoints(nullptr, window, points, 2);
+        if (points[0].x < 840) continue;
+        SetWindowPos(child, nullptr, points[0].x + delta_x, points[0].y,
+            points[1].x - points[0].x, points[1].y - points[0].y,
+            SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+    greenbelt_popout_layout_width = width;
 }
 
 void scroll_greenbelt_popout_to(HWND window, int requested_position) {
@@ -4423,6 +5508,9 @@ LRESULT CALLBACK greenbelt_popout_proc(HWND window, UINT message, WPARAM wparam,
             update_greenbelt_alignment_status(window);
             load_greenbelt_form(window);
             set_greenbelt_alignment_controls_visible(window, false);
+            RECT client{};
+            GetClientRect(window, &client);
+            greenbelt_popout_layout_width = client.right - client.left;
             update_greenbelt_popout_scrollbar(window);
             return 0;
         }
@@ -4430,6 +5518,7 @@ LRESULT CALLBACK greenbelt_popout_proc(HWND window, UINT message, WPARAM wparam,
             paint_greenbelt_popout(window);
             return 0;
         case WM_SIZE:
+            layout_greenbelt_popout_tools(window);
             update_greenbelt_popout_scrollbar(window);
             InvalidateRect(window, nullptr, FALSE);
             return 0;
@@ -4600,6 +5689,7 @@ LRESULT CALLBACK greenbelt_popout_proc(HWND window, UINT message, WPARAM wparam,
             if (greenbelt_custom_popup_window && IsWindow(greenbelt_custom_popup_window))
                 DestroyWindow(greenbelt_custom_popup_window);
             greenbelt_popout_window = nullptr;
+            greenbelt_popout_layout_width = 1250;
             return 0;
     }
     return DefWindowProcW(window, message, wparam, lparam);
@@ -4902,21 +5992,78 @@ LRESULT CALLBACK calendar_tracker_proc(HWND window, UINT message, WPARAM wparam,
 
 LRESULT CALLBACK turn_checklist_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
     if (message == WM_GETMINMAXINFO) {
-        set_minimum_track_size(lparam, 760, 460);
+        set_minimum_track_size(lparam, 1010, 940);
         return 0;
     }
     switch (message) {
         case WM_CREATE:
             create_turn_checklist_controls(window);
+            capture_turn_checklist_layout(window);
+            layout_turn_checklist_controls(window);
             refresh_turn_transition_preview(window);
+            refresh_turn_checklist_guidance(window);
+                refresh_turn_checklist_phase_summary(window);
             SetWindowTextW(window, (L"Turn Checklist - Turn " + std::to_wstring(kingdom.turn)).c_str());
             return 0;
+        case WM_SIZE:
+            layout_turn_checklist_controls(window);
+            return 0;
         case WM_COMMAND:
-            if (LOWORD(wparam) == kChecklistEventLastTurn && HIWORD(wparam) == BN_CLICKED)
+            if (LOWORD(wparam) >= kChecklistControlBase
+                && LOWORD(wparam) < kChecklistControlBase + static_cast<int>(checklist_controls.size())
+                && HIWORD(wparam) == BN_CLICKED) {
+                checklist_review_index = -1;
+                const auto index = static_cast<std::size_t>(LOWORD(wparam) - kChecklistControlBase);
+                if (index < checklist_step_ids.size()
+                    && SendMessageW(checklist_controls[index], BM_GETCHECK, 0, 0) == BST_CHECKED) {
+                    checklist_skipped_step_ids.erase(
+                        std::remove(checklist_skipped_step_ids.begin(), checklist_skipped_step_ids.end(), checklist_step_ids[index]),
+                        checklist_skipped_step_ids.end());
+                }
+                refresh_turn_checklist_guidance(window);
+                refresh_turn_checklist_phase_summary(window);
+            } else if (LOWORD(wparam) == kChecklistEventLastTurn && HIWORD(wparam) == BN_CLICKED)
                 refresh_turn_transition_preview(window);
+            else if (LOWORD(wparam) == kChecklistCompleteCurrent)
+                complete_current_turn_checklist_step(window);
+            else if (LOWORD(wparam) == kChecklistSkipCurrent)
+                skip_current_turn_checklist_step(window);
+            else if (LOWORD(wparam) == kChecklistBack)
+                return_to_previous_turn_checklist_step(window);
+            else if (LOWORD(wparam) == kChecklistOpenActions)
+                open_turn_actions_from_checklist(window);
+            else if (LOWORD(wparam) == kChecklistApplyClaimHex)
+                apply_claim_hex_from_checklist(window);
+            else if (LOWORD(wparam) == kChecklistApplyWithdrawal)
+                apply_withdrawal_from_checklist(window);
+            else if (LOWORD(wparam) == kChecklistApplyDeposit)
+                apply_deposit_from_checklist(window);
+            else if (LOWORD(wparam) == kChecklistApplyItemDeposit)
+                apply_item_deposit_from_checklist(window);
+            else if (LOWORD(wparam) == kChecklistApplyTaxes)
+                apply_taxes_from_checklist(window);
+            else if (LOWORD(wparam) == kChecklistApplyEvent)
+                apply_event_roll_from_checklist(window);
+            else if (LOWORD(wparam) == kChecklistOpenEventResolution)
+                open_event_resolution_from_checklist(window);
+            else if (LOWORD(wparam) == kChecklistOpenConstruction)
+                open_construction_from_checklist(window);
+            else if (LOWORD(wparam) == kChecklistOpenCity)
+                open_city_from_checklist(window);
+            else if (LOWORD(wparam) == kChecklistOpenArmy)
+                open_army_worksheet_from_checklist(window);
+            else if (LOWORD(wparam) == kChecklistOpenInputs)
+                open_law_inputs_from_checklist(window);
             else if (LOWORD(wparam) == kChecklistApply) apply_turn_checklist(window);
             else if (LOWORD(wparam) == kChecklistCancel) {
+                checklist_review_index = -1;
                 refresh_turn_checklist_controls();
+                const auto record = std::find_if(kingdom.turn_progress.begin(), kingdom.turn_progress.end(),
+                    [](const auto& progress) { return progress.turn == kingdom.turn; });
+                checklist_skipped_step_ids = record == kingdom.turn_progress.end()
+                    ? std::vector<std::string>{} : record->skipped_step_ids;
+                refresh_turn_checklist_guidance(window);
+                refresh_turn_checklist_phase_summary(window);
                 CheckDlgButton(window, kChecklistEventLastTurn, BST_UNCHECKED);
                 refresh_turn_transition_preview(window);
             }
@@ -4927,8 +6074,11 @@ LRESULT CALLBACK turn_checklist_proc(HWND window, UINT message, WPARAM wparam, L
             return 0;
         case WM_DESTROY: {
             checklist_window = nullptr;
+            checklist_review_index = -1;
             checklist_controls.clear();
             checklist_step_ids.clear();
+            checklist_skipped_step_ids.clear();
+            checklist_layout_rects.clear();
             const HWND owner = GetWindow(window, GW_OWNER);
             if (owner && IsWindow(owner)) {
                 EnableWindow(owner, TRUE);
@@ -5009,6 +6159,7 @@ LRESULT CALLBACK main_proc(HWND window, UINT message, WPARAM wparam, LPARAM lpar
             if (action_window && IsWindow(action_window)) DestroyWindow(action_window);
             if (calendar_window && IsWindow(calendar_window)) DestroyWindow(calendar_window);
             if (greenbelt_window && IsWindow(greenbelt_window)) DestroyWindow(greenbelt_window);
+            if (army_window && IsWindow(army_window)) DestroyWindow(army_window);
             PostQuitMessage(0);
             return 0;
     }
@@ -5078,6 +6229,17 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int) {
     settlement_class.hCursor = LoadCursor(nullptr, IDC_ARROW);
     settlement_class.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&settlement_class)) {
+        Gdiplus::GdiplusShutdown(gdiplus_token);
+        return 1;
+    }
+
+    WNDCLASSW army_class{};
+    army_class.lpfnWndProc = army_worksheet_proc;
+    army_class.hInstance = instance;
+    army_class.lpszClassName = L"PKKMArmyWorksheet";
+    army_class.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    army_class.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+    if (!RegisterClassW(&army_class)) {
         Gdiplus::GdiplusShutdown(gdiplus_token);
         return 1;
     }

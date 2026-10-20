@@ -29,6 +29,17 @@ struct CityLayoutWorksheet {
  int base_value = 0;
  std::vector<std::string> item_columns[4];
 };
+struct SettlementMagicItemStock {
+ std::string tier; // minor, medium, or major
+ int slot_index = 0;
+ std::string state = "empty"; // empty, generated, sold, or manual_resolution
+ std::string item_name;
+ int price_gp = 0;
+ std::string source_table;
+ std::string source_url;
+ int generated_turn = 0;
+ int last_changed_turn = 0;
+};
 struct Settlement {
  std::string name;
  int population = 0; int districts = 0;
@@ -38,6 +49,7 @@ struct Settlement {
  SettlementMap map;
  std::string id;
  CityLayoutWorksheet city_layout;
+ std::vector<SettlementMagicItemStock> random_magic_item_stock;
 };
 struct GreenbeltCalibration {
  double origin_x = 0.0; double origin_y = 0.0;
@@ -166,6 +178,7 @@ struct TurnChecklistStep {
 struct TurnProgress {
  int turn = 1;
  std::vector<std::string> completed_step_ids;
+ std::vector<std::string> skipped_step_ids;
 };
 const std::vector<TurnChecklistStep>& turn_checklist_steps();
 enum class RuleProfile { Pdf, Workbook, CityInfo };
@@ -198,6 +211,7 @@ struct StabilityCheckRecord {
 };
 
 enum class TurnAction { ClaimHex, AbandonHex, AbandonCity };
+const char* turn_action_checklist_step(TurnAction action);
 struct TurnActionOutcome { int treasury_delta = 0; int kingdom_size_delta = 0; int unrest_delta = 0; };
 TurnActionOutcome resolve_turn_action(TurnAction action);
 struct TurnActionRecord {
@@ -471,6 +485,42 @@ struct ConstructionRecord {
  std::vector<std::string> discount_sources;
 };
 struct Kingdom;
+ struct ArmyCreationRequest {
+ std::string name;
+ std::string unit_description;
+ std::string size_category = "medium";
+ int individual_cr = 1;
+ int hd_average_tenths = 45; // d6=35, d8=45, d10=55, d12=65
+ int speed = 2;
+ std::string leader;
+ int leader_charisma = 0;
+ bool ranged = false;
+ int mount_cr = 0;
+ int improved_weapons = 0; // 0 none, 1 masterwork, 2 magic
+ int improved_armor = 0; // 0 none, 1 masterwork, 2 magic
+ int healing_potions = 0;
+ int ranged_weapons = 0;
+ int siege_engines = 0;
+ std::vector<std::string> tactics;
+ std::vector<std::string> special_abilities;
+ std::vector<std::string> prerequisites;
+ std::string notes;
+};
+struct ArmyRecord {
+ int turn = 1;
+ ArmyCreationRequest request;
+ int soldiers = 0;
+ int army_cr = 0;
+ int hit_points = 0;
+ int current_hit_points = 0;
+ int defense_value = 0;
+ int offense_modifier = 0;
+ int morale = 0;
+ int weekly_consumption = 0;
+ int bp_cost = 0;
+};
+void apply_army_creation(Kingdom& kingdom, const ArmyCreationRequest& request);
+std::size_t record_kingdom_event(Kingdom& kingdom, int d100_roll);
 void apply_manual_event_consequence(Kingdom& kingdom, std::size_t event_index);
 struct TurnTransitionPreview {
  int current_turn = 1;
@@ -539,9 +589,20 @@ struct Kingdom {
  std::vector<ValuableItemSaleRecord> valuable_item_sales;
  std::vector<KingdomEventRecord> kingdom_events;
  std::vector<ConstructionRecord> construction_transactions;
+ std::vector<ArmyRecord> armies;
  std::vector<CalendarNote> calendar_notes;
  GreenbeltMap greenbelt_map;
 };
+struct TurnChecklistStatus {
+ int turn = 1;
+ std::vector<TurnChecklistStep> steps;
+ std::vector<std::string> completed_step_ids;
+ std::vector<std::string> skipped_step_ids;
+ std::string next_step_id;
+};
+TurnChecklistStatus turn_checklist_status(const Kingdom& kingdom, int turn);
+void set_turn_checklist_step(Kingdom& kingdom, int turn, const std::string& step_id, bool completed);
+void skip_turn_checklist_step(Kingdom& kingdom, int turn, const std::string& step_id);
 void advance_turn(Kingdom& kingdom);
 void apply_turn_action(Kingdom& kingdom, TurnAction action, int count = 1);
 void reverse_last_turn_action(Kingdom& kingdom);

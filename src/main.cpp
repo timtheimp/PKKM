@@ -35,6 +35,15 @@ std::string single_line(std::string value) {
     return result;
 }
 
+const char* random_magic_item_tier_name(pkkm::RandomMagicItemTier tier) {
+    switch (tier) {
+    case pkkm::RandomMagicItemTier::Minor: return "minor";
+    case pkkm::RandomMagicItemTier::Medium: return "medium";
+    case pkkm::RandomMagicItemTier::Major: return "major";
+    }
+    return "unknown";
+}
+
 void print_stat(const char* name, const pkkm::KingdomStatBreakdown& stat) {
     std::cout << name << " " << stat.total << " (" << stat.check_threshold_percent << "% check)\n"
               << "  Events " << signed_component(stat.events)
@@ -55,7 +64,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (argc == 2 && (std::string(argv[1]) == "--help" || std::string(argv[1]) == "help")) {
-            std::cout << "Usage: pkkm --help | --version | new <kingdom.json> | show <kingdom.json> | catalog <catalog.json> [query]\n";
+            std::cout << "Usage: pkkm --help | --version | new <kingdom.json> | show <kingdom.json> | random-items <kingdom.json> <seed> | random-items-apply <kingdom.json> <seed> | random-items-availability <kingdom.json> <base-value-gp> <seed> | catalog <catalog.json> [query]\n";
             return 0;
         }
         if (argc == 3 && std::string(argv[1]) == "new") {
@@ -204,6 +213,82 @@ int main(int argc, char** argv) {
             print_stat("Stability", summary.stability);
             return 0;
         }
+        if (argc == 4 && std::string(argv[1]) == "random-items") {
+            const auto kingdom = pkkm::load(argv[2]);
+            std::size_t parsed = 0;
+            const auto seed = std::stoull(argv[3], &parsed);
+            if (parsed != std::string(argv[3]).size())
+                throw std::invalid_argument("Random magic-item seed must be an unsigned integer");
+            const auto executable = std::filesystem::absolute(std::filesystem::path(argv[0]));
+            const auto catalog_path = (executable.parent_path() / "building_catalog.json").string();
+            const auto catalog = pkkm::load_building_catalog(catalog_path);
+            const auto random_catalog = pkkm::load_random_magic_item_catalog(
+                (executable.parent_path() / "random_magic_item_catalog.json").string());
+            for (const auto& settlement : kingdom.settlements) {
+                const auto slots = pkkm::preview_settlement_magic_items(settlement, catalog);
+                const auto preview = pkkm::preview_settlement_random_magic_items(slots, seed);
+                std::cout << single_line(settlement.name) << " | seed " << preview.seed
+                          << " | source profile " << preview.source_profile
+                          << " | catalog records " << random_catalog.record_count
+                          << " | slots minor " << slots.minor_slots
+                          << " medium " << slots.medium_slots
+                          << " major " << slots.major_slots << "\n";
+                for (const auto& item : preview.candidates) {
+                    std::cout << " random item | " << random_magic_item_tier_name(item.tier)
+                              << " slot " << item.slot_index
+                              << " | category roll " << item.category_roll
+                              << " | " << item.category
+                              << " | variant " << item.variant
+                              << " | " << item.resolution_status << "\n";
+                }
+            }
+            return 0;
+        }
+        if (argc == 4 && std::string(argv[1]) == "random-items-apply") {
+            auto kingdom = pkkm::load(argv[2]);
+            std::size_t parsed = 0;
+            const auto seed = std::stoull(argv[3], &parsed);
+            if (parsed != std::string(argv[3]).size())
+                throw std::invalid_argument("Random magic-item seed must be an unsigned integer");
+            const auto executable = std::filesystem::absolute(std::filesystem::path(argv[0]));
+            const auto catalog = pkkm::load_building_catalog(
+                (executable.parent_path() / "building_catalog.json").string());
+            const auto random_catalog = pkkm::load_random_magic_item_catalog(
+                (executable.parent_path() / "random_magic_item_catalog.json").string());
+            int populated = 0;
+            for (auto& settlement : kingdom.settlements) {
+                const auto slots = pkkm::preview_settlement_magic_items(settlement, catalog);
+                populated += pkkm::apply_random_magic_item_upkeep(
+                    settlement, slots, random_catalog, seed, kingdom.turn);
+            }
+            pkkm::save(kingdom, argv[2]);
+            std::cout << "Applied random magic-item upkeep | seed " << seed
+                      << " | populated " << populated
+                      << " | catalog records " << random_catalog.record_count << "\n";
+            return 0;
+        }
+        if (argc == 5 && std::string(argv[1]) == "random-items-availability") {
+            const auto kingdom = pkkm::load(argv[2]);
+            std::size_t parsed_base = 0;
+            const auto base_value = std::stoi(argv[3], &parsed_base);
+            if (parsed_base != std::string(argv[3]).size())
+                throw std::invalid_argument("Random magic-item base value must be an integer");
+            std::size_t parsed_seed = 0;
+            const auto seed = std::stoull(argv[4], &parsed_seed);
+            if (parsed_seed != std::string(argv[4]).size())
+                throw std::invalid_argument("Random magic-item seed must be an unsigned integer");
+            for (const auto& settlement : kingdom.settlements) {
+                const auto availability = pkkm::preview_random_magic_item_availability(
+                    settlement, base_value, seed);
+                std::cout << single_line(settlement.name) << " | availability base value "
+                          << base_value << " gp | seed " << seed << "\n";
+                for (const auto& item : availability)
+                    std::cout << " stock | " << item.tier << " slot " << item.slot_index
+                              << " | roll " << item.roll << " | available "
+                              << (item.available ? "yes" : "no") << " | " << item.status << "\n";
+            }
+            return 0;
+        }
         if ((argc == 3 || argc == 4) && std::string(argv[1]) == "catalog") {
             const auto catalog = pkkm::load_building_catalog(argv[2]);
             const auto matches = pkkm::search_building_catalog(catalog, argc == 4 ? argv[3] : "");
@@ -230,7 +315,7 @@ int main(int argc, char** argv) {
             }
             return 0;
         }
-        std::cerr << "Usage: pkkm --help | --version | new <kingdom.json> | show <kingdom.json> | catalog <catalog.json> [query]\n";
+        std::cerr << "Usage: pkkm --help | --version | new <kingdom.json> | show <kingdom.json> | random-items <kingdom.json> <seed> | random-items-apply <kingdom.json> <seed> | random-items-availability <kingdom.json> <base-value-gp> <seed> | catalog <catalog.json> [query]\n";
         return 2;
     } catch (const std::exception& error) {
         std::cerr << error.what() << "\n";

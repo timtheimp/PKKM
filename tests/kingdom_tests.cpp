@@ -22,7 +22,7 @@ int main(int argc, char** argv) {
  must(pkkm::resolve_item_deposit_bp(k.rule_profile, 8000)==2,
       "PDF item deposits use 4,000 gp per BP");
  k.turn_progress = {{4,{"upkeep.stability","income.deposit_gold"}},
-                    {5,{"events.roll_d100"}}};
+                     {5,{"events.roll_d100"}, {"upkeep.loyalty_check"}}};
  k.calendar_notes = {{"calendar.row.2", "", "", "", "Opening month"},
                      {"calendar.row.14", "Founding festival", "Build the bridge", "Dragon sighting", ""}};
  k.settlements.push_back({"Oak", 1200, 2, 3, -1, 4, 7});
@@ -33,6 +33,9 @@ int main(int argc, char** argv) {
  k.settlements[0].city_layout.north = pkkm::CityBoundarySurface::Water;
  k.settlements[0].city_layout.east = pkkm::CityBoundarySurface::Water;
  k.settlements[0].city_layout.base_value = 500;
+ k.settlements[0].random_magic_item_stock.push_back({"minor", 1, "generated",
+     "Ring of counterspells", 4000, "Greater Minor Rings",
+     "https://www.d20pfsrd.com/magic-items/rings", 7, 7});
  k.settlements[0].city_layout.item_columns[0] = {"Cloak of Resistance +1"};
  k.settlements[0].city_layout.item_columns[2] = {"Wand of Cure Light Wounds", "Ring of Protection +1"};
  k.greenbelt_map.asset_path="Kingmaker-Greenbelt-Map.jpg";
@@ -59,6 +62,74 @@ int main(int argc, char** argv) {
  k.rule_inputs.city_count = 3; k.rule_inputs.total_city_population = 3250;
  pkkm::save(k,path); const auto r=pkkm::load(path);
  must(r.name==k.name && r.turn==4 && r.treasury_bp==120 && r.unrest==2,"roundtrip scalar fields");
+ pkkm::ArmyCreationRequest army_request;
+ army_request.name = "Regular Army";
+ army_request.unit_description = "Humans (fighter 2)";
+ army_request.size_category = "gargantuan";
+ army_request.individual_cr = 1;
+ army_request.hd_average_tenths = 55;
+ army_request.improved_weapons = 1;
+ army_request.improved_armor = 1;
+ army_request.ranged_weapons = 1;
+ army_request.mount_cr = 2;
+ army_request.tactics = {"Hold the line", "Protect the banner"};
+ army_request.special_abilities = {"Shield wall"};
+ army_request.prerequisites = {"GM approval"};
+ army_request.notes = "Manual source note";
+ auto army_kingdom = k;
+ pkkm::apply_army_creation(army_kingdom, army_request);
+ must(army_kingdom.armies.size() == 1 && army_kingdom.armies[0].soldiers == 1000
+      && army_kingdom.armies[0].army_cr == 7 && army_kingdom.armies[0].hit_points == 38
+      && army_kingdom.armies[0].defense_value == 20 && army_kingdom.armies[0].offense_modifier == 10
+      && army_kingdom.armies[0].weekly_consumption == 3 && army_kingdom.armies[0].bp_cost == 12,
+      "army creation derives source-defined statistics and resource cost");
+ pkkm::save(army_kingdom,path);
+ const auto army_roundtrip = pkkm::load(path);
+ must(army_roundtrip.armies.size() == 1 && army_roundtrip.armies[0].request.name == "Regular Army"
+      && army_roundtrip.armies[0].army_cr == 7 && army_roundtrip.armies[0].bp_cost == 12
+      && army_roundtrip.armies[0].request.mount_cr == 2
+      && army_roundtrip.armies[0].request.tactics.size() == 2
+      && army_roundtrip.armies[0].request.special_abilities.front() == "Shield wall"
+      && army_roundtrip.armies[0].request.prerequisites.front() == "GM approval"
+      && army_roundtrip.armies[0].request.notes == "Manual source note",
+      "army worksheet record round-trips through JSON");
+ must(r.turn_progress.size() == 2 && r.turn_progress[1].skipped_step_ids.size() == 1
+      && r.turn_progress[1].skipped_step_ids.front() == "upkeep.loyalty_check",
+      "turn checklist skipped-step state round-trips through JSON");
+ auto checklist_status = pkkm::turn_checklist_status(r, 4);
+ must(checklist_status.turn == 4 && checklist_status.steps.size() == pkkm::turn_checklist_steps().size(),
+      "turn checklist status preserves source step order");
+ must(checklist_status.completed_step_ids.size() == 2
+       && checklist_status.completed_step_ids[0] == "upkeep.stability"
+       && checklist_status.completed_step_ids[1] == "income.deposit_gold"
+       && checklist_status.next_step_id == "upkeep.consumption",
+       "turn checklist status canonicalizes completed steps and finds the next step");
+  must(std::string(pkkm::turn_action_checklist_step(pkkm::TurnAction::ClaimHex)) == "edicts.claim_hexes"
+       && std::string(pkkm::turn_action_checklist_step(pkkm::TurnAction::AbandonHex)) == "edicts.abandon_hexes"
+       && std::string(pkkm::turn_action_checklist_step(pkkm::TurnAction::AbandonCity)) == "edicts.city",
+       "turn actions map to their source checklist steps");
+ auto empty_checklist_status = pkkm::turn_checklist_status(r, 6);
+ must(empty_checklist_status.completed_step_ids.empty()
+       && empty_checklist_status.next_step_id == "upkeep.stability",
+       "turn checklist status starts an untracked turn at the first step");
+  auto wizard_state = r;
+  pkkm::set_turn_checklist_step(wizard_state, 6, "upkeep.stability", true);
+  auto marked_checklist_status = pkkm::turn_checklist_status(wizard_state, 6);
+  must(marked_checklist_status.completed_step_ids.size() == 1
+       && marked_checklist_status.completed_step_ids.front() == "upkeep.stability"
+       && marked_checklist_status.next_step_id == "upkeep.consumption",
+       "turn checklist step completion persists in the turn workflow state");
+  pkkm::set_turn_checklist_step(wizard_state, 6, "upkeep.stability", false);
+  must(pkkm::turn_checklist_status(wizard_state, 6).completed_step_ids.empty(),
+         "turn checklist step completion can be explicitly cleared");
+    for (const char* step_id : {"upkeep.stability", "upkeep.consumption", "upkeep.magic_items", "upkeep.modify_unrest"})
+        pkkm::set_turn_checklist_step(wizard_state, 6, step_id, true);
+    pkkm::skip_turn_checklist_step(wizard_state, 6, "upkeep.loyalty_check");
+    auto skipped_checklist_status = pkkm::turn_checklist_status(wizard_state, 6);
+    must(skipped_checklist_status.skipped_step_ids.size() == 1
+         && skipped_checklist_status.skipped_step_ids.front() == "upkeep.loyalty_check"
+         && skipped_checklist_status.next_step_id == "edicts.assign_leadership",
+         "optional checklist steps require an explicit skip before the wizard advances");
  auto legacy_root_profile=nlohmann::json::parse(contents(path));
  legacy_root_profile.erase("rule_profile");
  const std::string legacy_root_profile_path="pkkm_test_legacy_root_profile.json";
@@ -81,6 +152,9 @@ int main(int argc, char** argv) {
  must(r.settlements[0].city_layout.north==pkkm::CityBoundarySurface::Water
       && r.settlements[0].city_layout.east==pkkm::CityBoundarySurface::Water
       && r.settlements[0].city_layout.base_value==500
+      && r.settlements[0].random_magic_item_stock.size()==1
+      && r.settlements[0].random_magic_item_stock[0].item_name=="Ring of counterspells"
+      && r.settlements[0].random_magic_item_stock[0].price_gp==4000
       && r.settlements[0].city_layout.item_columns[0].size()==1
       && r.settlements[0].city_layout.item_columns[2].size()==2,
       "schema 10 roundtrips manual PDF city worksheet fields");
@@ -524,6 +598,15 @@ int main(int argc, char** argv) {
       "Kingmaker event table exposes all d100 ranges and continuous events");
       must_reject([&]{ (void)pkkm::kingdom_event_from_d100(0); });
       must_reject([&]{ (void)pkkm::kingdom_event_from_d100(101); });
+      auto generated_event = k;
+      const auto generated_event_index = pkkm::record_kingdom_event(generated_event, 42);
+      must(generated_event_index == 0 && generated_event.kingdom_events.size() == 1
+           && generated_event.kingdom_events[0].turn == generated_event.turn
+           && generated_event.kingdom_events[0].kind == pkkm::KingdomEventKind::GoodWeather
+           && !generated_event.kingdom_events[0].continuous_active
+           && !generated_event.kingdom_events[0].consequences_applied,
+           "recording an event roll creates an unresolved source-faithful event record");
+      must_reject([&]{ (void)pkkm::record_kingdom_event(generated_event, 0); });
   k.kingdom_events.push_back({4, 45, pkkm::KingdomEventKind::MonsterAttack,
       false, true, "Warden", "Oak", "Block 3", "q0,r0",
       "GM applied the source consequence manually", -2, 1, -1, true, false});
@@ -1228,6 +1311,65 @@ int main(int argc, char** argv) {
  must(tiered_preview.minor_slots==4 && tiered_preview.medium_slots==2
       && tiered_preview.major_slots==2,
       "magic-item preview parses and scales minor, medium, and major source tiers");
+ const auto random_preview=pkkm::preview_settlement_random_magic_items(tiered_preview,42);
+ must(random_preview.seed==42 && random_preview.source_profile=="d20pfsrd-all-captured"
+      && random_preview.candidates.size()==8,
+      "random magic-item preview creates one candidate per available slot");
+ must(random_preview.candidates[0].tier==pkkm::RandomMagicItemTier::Minor
+      && random_preview.candidates[4].tier==pkkm::RandomMagicItemTier::Medium
+      && random_preview.candidates[6].tier==pkkm::RandomMagicItemTier::Major,
+      "random magic-item preview preserves slot tiers and order");
+ must(random_preview.candidates[0].category_roll>=1
+      && random_preview.candidates[0].category_roll<=100
+      && !random_preview.candidates[0].category.empty()
+      && (random_preview.candidates[0].variant=="lesser"
+          || random_preview.candidates[0].variant=="greater")
+      && !random_preview.candidates[0].resolution_status.empty(),
+      "random magic-item preview records auditable category rolls and resolution status");
+ const auto repeated_random_preview=pkkm::preview_settlement_random_magic_items(tiered_preview,42);
+ must(repeated_random_preview.candidates[0].category_roll==random_preview.candidates[0].category_roll
+      && repeated_random_preview.candidates[0].category==random_preview.candidates[0].category
+      && repeated_random_preview.candidates[0].variant==random_preview.candidates[0].variant,
+      "random magic-item preview is reproducible for a supplied seed");
+ pkkm::RandomMagicItemCatalogReference upkeep_catalog;
+ upkeep_catalog.source_profile="d20pfsrd-all-captured";
+ upkeep_catalog.record_count=1;
+ upkeep_catalog.records.push_back({"rings", "minor", "lesser", "Lesser Minor Rings",
+     1, 100, "Ring of counterspells", 4000, "https://www.d20pfsrd.com/magic-items/rings"});
+ pkkm::Settlement upkeep_settlement=tiered_magic;
+ const int populated_slots=pkkm::apply_random_magic_item_upkeep(
+     upkeep_settlement, tiered_preview, upkeep_catalog, 42, 7);
+ must(populated_slots==8 && upkeep_settlement.random_magic_item_stock.size()==8,
+      "random magic-item upkeep populates each empty settlement slot");
+ const int repeated_population=pkkm::apply_random_magic_item_upkeep(
+     upkeep_settlement, tiered_preview, upkeep_catalog, 42, 8);
+ must(repeated_population==0,
+      "random magic-item upkeep preserves generated and manual-resolution stock");
+ auto generated_stock=std::find_if(upkeep_settlement.random_magic_item_stock.begin(),
+     upkeep_settlement.random_magic_item_stock.end(), [](const auto& stock) {
+         return stock.state=="generated";
+     });
+ if (generated_stock!=upkeep_settlement.random_magic_item_stock.end()) {
+     pkkm::remove_random_magic_item_stock(upkeep_settlement,
+         generated_stock->tier, generated_stock->slot_index, 9);
+     must(generated_stock->state=="empty" && generated_stock->item_name.empty(),
+          "random magic-item purchase or sale removes generated stock until next upkeep");
+ }
+ pkkm::Settlement availability_settlement;
+ availability_settlement.name="Availability";
+ availability_settlement.random_magic_item_stock.push_back({"minor",1,"generated",
+     "Affordable Ring",4000,"Table","source",1,1});
+ availability_settlement.random_magic_item_stock.push_back({"medium",1,"generated",
+     "Expensive Ring",5000,"Table","source",1,1});
+ const auto availability=pkkm::preview_random_magic_item_availability(
+     availability_settlement,4000,42);
+ must(availability.size()==2 && availability[1].available
+      && availability[1].status=="above_base_value_always_available"
+      && availability[0].roll>=1 && availability[0].roll<=100,
+      "random magic-item availability applies the 75 percent base-value rule as a pure preview");
+ pkkm::SettlementMagicItemPreview negative_random_slots;
+ negative_random_slots.minor_slots=-1;
+ must_reject([&] { (void)pkkm::preview_settlement_random_magic_items(negative_random_slots,42); });
  pkkm::Settlement unknown_magic{"Unknown Magic",0,0,0,0,0,0,{{"Not A Building",1}}};
  must_reject([&] { (void)pkkm::preview_settlement_magic_items(unknown_magic,catalog); });
  pkkm::Settlement negative_magic{"Negative Magic",0,0,0,0,0,0,{{magic_entry->name,-1}}};

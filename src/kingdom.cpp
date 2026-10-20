@@ -177,6 +177,19 @@ void validate(const Kingdom& k) {
             if (building.name.empty() || building.count < 0)
                 throw std::invalid_argument("Settlement building must have a name and nonnegative count");
         }
+        for (const auto& stock : s.random_magic_item_stock) {
+            if (stock.tier != "minor" && stock.tier != "medium" && stock.tier != "major")
+                throw std::invalid_argument("Settlement random magic-item stock has an unsupported tier");
+            if (stock.slot_index < 1 || stock.state.empty())
+                throw std::invalid_argument("Settlement random magic-item stock requires a positive slot and state");
+            if (stock.state != "empty" && stock.state != "generated"
+                && stock.state != "sold" && stock.state != "manual_resolution")
+                throw std::invalid_argument("Settlement random magic-item stock has an unsupported state");
+            if (stock.price_gp < 0 || stock.generated_turn < 0 || stock.last_changed_turn < 0)
+                throw std::invalid_argument("Settlement random magic-item stock values cannot be negative");
+            if (stock.state == "generated" && stock.item_name.empty())
+                throw std::invalid_argument("Generated random magic-item stock requires an item name");
+        }
         const auto& map = s.map;
         if (map.rows == 0 && map.columns == 0 && map.placements.empty() && map.labels.empty()) continue;
         if (map.rows <= 0 || map.columns <= 0)
@@ -283,6 +296,16 @@ void validate(const Kingdom& k) {
             const auto& steps = turn_checklist_steps();
             if (std::none_of(steps.begin(), steps.end(), [&id](const auto& step) { return step.id == id; }))
                 throw std::invalid_argument("Turn checklist contains an unknown step id");
+            if (std::find(seen_steps.begin(), seen_steps.end(), id) != seen_steps.end())
+                throw std::invalid_argument("Turn checklist step ids must be unique");
+            seen_steps.push_back(id);
+        }
+        for (const auto& id : progress.skipped_step_ids) {
+            const auto& steps = turn_checklist_steps();
+            const auto step = std::find_if(steps.begin(), steps.end(),
+                [&id](const auto& candidate) { return candidate.id == id; });
+            if (step == steps.end()) throw std::invalid_argument("Turn checklist contains an unknown skipped step id");
+            if (!step->optional) throw std::invalid_argument("Only optional checklist steps can be skipped");
             if (std::find(seen_steps.begin(), seen_steps.end(), id) != seen_steps.end())
                 throw std::invalid_argument("Turn checklist step ids must be unique");
             seen_steps.push_back(id);
@@ -469,6 +492,13 @@ void validate(const Kingdom& k) {
                 throw std::invalid_argument("Construction record contains an invalid line");
         }
     }
+    for (const auto& army : k.armies) {
+        if (army.turn < 1 || army.request.name.empty() || army.request.unit_description.empty()
+            || army.soldiers < 1 || army.army_cr < 1 || army.hit_points < 1
+            || army.current_hit_points < 0 || army.current_hit_points > army.hit_points
+            || army.defense_value < 1 || army.weekly_consumption < 1 || army.bp_cost < 0)
+            throw std::invalid_argument("Army record has inconsistent values");
+    }
     std::vector<std::string> seen_calendar_entries;
     for (const auto& note : k.calendar_notes) {
         const auto& entries = calendar_template_entries();
@@ -510,6 +540,80 @@ const std::vector<TurnChecklistStep>& turn_checklist_steps() {
         {"events.roll_d100", "Phase 4 Events", "Step 1", "Roll d% for event", false}
     };
     return steps;
+}
+
+TurnChecklistStatus turn_checklist_status(const Kingdom& kingdom, int turn) {
+    if (turn < 1) throw std::invalid_argument("Checklist turn must be at least 1");
+    TurnChecklistStatus status;
+    status.turn = turn;
+    status.steps = turn_checklist_steps();
+    const auto record = std::find_if(kingdom.turn_progress.begin(), kingdom.turn_progress.end(),
+        [turn](const auto& progress) { return progress.turn == turn; });
+    if (record == kingdom.turn_progress.end()) {
+        status.next_step_id = status.steps.empty() ? std::string{} : status.steps.front().id;
+        return status;
+    }
+    for (const auto& step : status.steps) {
+        if (std::find(record->completed_step_ids.begin(), record->completed_step_ids.end(), step.id)
+            != record->completed_step_ids.end())
+            status.completed_step_ids.push_back(step.id);
+        else if (std::find(record->skipped_step_ids.begin(), record->skipped_step_ids.end(), step.id)
+                != record->skipped_step_ids.end())
+            status.skipped_step_ids.push_back(step.id);
+        else if (status.next_step_id.empty())
+            status.next_step_id = step.id;
+    }
+    return status;
+}
+
+void set_turn_checklist_step(Kingdom& kingdom, int turn, const std::string& step_id, bool completed) {
+    if (turn < 1) throw std::invalid_argument("Checklist turn must be at least 1");
+    const auto& steps = turn_checklist_steps();
+    if (std::none_of(steps.begin(), steps.end(),
+            [&step_id](const auto& step) { return step.id == step_id; }))
+        throw std::invalid_argument("Turn checklist contains an unknown step id");
+    auto record = std::find_if(kingdom.turn_progress.begin(), kingdom.turn_progress.end(),
+        [turn](const auto& progress) { return progress.turn == turn; });
+    if (completed) {
+        if (record == kingdom.turn_progress.end()) {
+            kingdom.turn_progress.push_back({turn, {step_id}, {}});
+        } else {
+            record->skipped_step_ids.erase(
+                std::remove(record->skipped_step_ids.begin(), record->skipped_step_ids.end(), step_id),
+                record->skipped_step_ids.end());
+            if (std::find(record->completed_step_ids.begin(), record->completed_step_ids.end(), step_id)
+                    == record->completed_step_ids.end())
+                record->completed_step_ids.push_back(step_id);
+        }
+    } else if (record != kingdom.turn_progress.end()) {
+        record->completed_step_ids.erase(
+            std::remove(record->completed_step_ids.begin(), record->completed_step_ids.end(), step_id),
+            record->completed_step_ids.end());
+        if (record->completed_step_ids.empty() && record->skipped_step_ids.empty()) kingdom.turn_progress.erase(record);
+    }
+    validate(kingdom);
+}
+
+void skip_turn_checklist_step(Kingdom& kingdom, int turn, const std::string& step_id) {
+    if (turn < 1) throw std::invalid_argument("Checklist turn must be at least 1");
+    const auto& steps = turn_checklist_steps();
+    const auto step = std::find_if(steps.begin(), steps.end(),
+        [&step_id](const auto& candidate) { return candidate.id == step_id; });
+    if (step == steps.end()) throw std::invalid_argument("Turn checklist contains an unknown step id");
+    if (!step->optional) throw std::invalid_argument("Only optional checklist steps can be skipped");
+    auto record = std::find_if(kingdom.turn_progress.begin(), kingdom.turn_progress.end(),
+        [turn](const auto& progress) { return progress.turn == turn; });
+    if (record == kingdom.turn_progress.end()) {
+        kingdom.turn_progress.push_back({turn, {}, {step_id}});
+    } else {
+        record->completed_step_ids.erase(
+            std::remove(record->completed_step_ids.begin(), record->completed_step_ids.end(), step_id),
+            record->completed_step_ids.end());
+        if (std::find(record->skipped_step_ids.begin(), record->skipped_step_ids.end(), step_id)
+                == record->skipped_step_ids.end())
+            record->skipped_step_ids.push_back(step_id);
+    }
+    validate(kingdom);
 }
 
 StabilityFailureOutcome classify_stability_failure(int failure_by) {
@@ -640,6 +744,15 @@ UpkeepPreview preview_upkeep(const Kingdom& kingdom, bool stability_success,
     return preview;
 }
 
+const char* turn_action_checklist_step(TurnAction action) {
+    switch (action) {
+        case TurnAction::ClaimHex: return "edicts.claim_hexes";
+        case TurnAction::AbandonHex: return "edicts.abandon_hexes";
+        case TurnAction::AbandonCity: return "edicts.city";
+    }
+    return "";
+}
+
 TurnActionOutcome resolve_turn_action(TurnAction action) {
     switch (action) {
         case TurnAction::ClaimHex: return {-1, 1, 0};
@@ -690,6 +803,17 @@ void apply_turn_resolution(Kingdom& kingdom, const TurnResolutionRequest& reques
     ++candidate.turn;
     validate(candidate);
     kingdom = std::move(candidate);
+}
+
+std::size_t record_kingdom_event(Kingdom& kingdom, int d100_roll) {
+    validate(kingdom);
+    const auto& definition = kingdom_event_from_d100(d100_roll);
+    Kingdom candidate = kingdom;
+    candidate.kingdom_events.push_back({candidate.turn, d100_roll, definition.kind, false,
+        definition.continuous, {}, {}, {}, {}, {}, 0, 0, 0, false, false, false});
+    validate(candidate);
+    kingdom = std::move(candidate);
+    return kingdom.kingdom_events.size() - 1;
 }
 
 void apply_manual_event_consequence(Kingdom& kingdom, std::size_t event_index) {
@@ -1785,6 +1909,55 @@ RuleProfile rule_profile_from_name(const std::string& name) {
     throw std::invalid_argument("Unknown rule profile: " + name);
 }
 
+void apply_army_creation(Kingdom& kingdom, const ArmyCreationRequest& request) {
+    validate(kingdom);
+    if (request.name.empty() || request.unit_description.empty())
+        throw std::invalid_argument("Army requires a name and unit description");
+    if (request.individual_cr < 1 || request.hd_average_tenths <= 0 || request.speed < 0
+        || request.leader_charisma < -20 || request.leader_charisma > 20
+        || request.mount_cr < 0 || request.improved_weapons < 0 || request.improved_weapons > 2
+        || request.improved_armor < 0 || request.improved_armor > 2
+        || request.healing_potions < 0 || request.ranged_weapons < 0 || request.siege_engines < 0)
+        throw std::invalid_argument("Army worksheet contains an invalid numeric input");
+    const std::map<std::string, std::pair<int, int>> sizes = {
+        {"fine", {1, -8}}, {"diminutive", {10, -6}}, {"tiny", {25, -4}},
+        {"small", {50, -2}}, {"medium", {100, 0}}, {"large", {200, 2}},
+        {"huge", {500, 4}}, {"gargantuan", {1000, 6}}, {"colossal", {2000, 8}}};
+    const auto size = sizes.find(request.size_category);
+    if (size == sizes.end()) throw std::invalid_argument("Army worksheet has an unsupported size category");
+    const int army_cr = request.individual_cr + size->second.second;
+    if (army_cr < 1) throw std::invalid_argument("Army size produces an invalid army CR");
+    const int soldiers = size->second.first;
+    const int hit_points = (army_cr * request.hd_average_tenths) / 10;
+    int bp_cost = request.mount_cr;
+    bp_cost += request.improved_weapons == 1 ? 5 : request.improved_weapons == 2 ? 50 : 0;
+    bp_cost += request.improved_armor == 1 ? 3 : request.improved_armor == 2 ? 15 : 0;
+    bp_cost += request.healing_potions * 10;
+    bp_cost += request.ranged_weapons * 2;
+    bp_cost += request.siege_engines * 15;
+    if (bp_cost < 0 || kingdom.treasury_bp < bp_cost)
+        throw std::invalid_argument("Army creation requires sufficient Treasury BP");
+    ArmyRecord record;
+    record.turn = kingdom.turn;
+    record.request = request;
+    record.soldiers = soldiers;
+    record.army_cr = army_cr;
+    record.hit_points = hit_points;
+    record.current_hit_points = hit_points;
+    record.defense_value = army_cr + 10 + (request.improved_armor == 1 ? 1 : request.improved_armor == 2 ? 2 : 0)
+        + (request.mount_cr > 0 ? 2 : 0);
+    record.offense_modifier = army_cr + (request.improved_weapons == 1 ? 1 : request.improved_weapons == 2 ? 2 : 0)
+        + (request.mount_cr > 0 ? 2 : 0) + (request.siege_engines > 0 ? 2 : 0);
+    record.morale = 0;
+    record.weekly_consumption = std::max(1, army_cr / 2);
+    record.bp_cost = bp_cost;
+    Kingdom candidate = kingdom;
+    candidate.treasury_bp -= bp_cost;
+    candidate.armies.push_back(std::move(record));
+    validate(candidate);
+    kingdom = std::move(candidate);
+}
+
 void save(const Kingdom& k, const std::string& path) {
     validate(k);
     const auto dest = std::filesystem::u8path(path);
@@ -1798,7 +1971,7 @@ void save(const Kingdom& k, const std::string& path) {
         {"settlements", Json::array()}, {"buildings", Json::array()},
         {"turn_progress", Json::array()}, {"turn_actions", Json::array()}, {"tax_actions", Json::array()},
                 {"stability_checks", Json::array()}, {"consumption_actions", Json::array()}, {"unrest_modifications", Json::array()}, {"gold_withdrawals", Json::array()}, {"gold_deposits", Json::array()}, {"item_deposits", Json::array()}, {"loyalty_checks", Json::array()}, {"commissions", Json::array()}, {"magic_item_outcomes", Json::array()}, {"valuable_item_sales", Json::array()}, {"calendar_notes", Json::array()},
-        {"kingdom_events", Json::array()}, {"construction_transactions", Json::array()},
+        {"kingdom_events", Json::array()}, {"construction_transactions", Json::array()}, {"armies", Json::array()},
         {"greenbelt_map", {{"asset_path", k.greenbelt_map.asset_path},
             {"image_width", k.greenbelt_map.image_width}, {"image_height", k.greenbelt_map.image_height},
             {"calibration", {{"origin_x", k.greenbelt_map.calibration.origin_x},
@@ -1814,7 +1987,7 @@ void save(const Kingdom& k, const std::string& path) {
     for (const auto& s : k.settlements) {
         Json item = {{"name", s.name}, {"id", s.id}, {"population", s.population}, {"districts", s.districts},
             {"economy", s.economy}, {"loyalty", s.loyalty}, {"stability", s.stability},
-            {"defense", s.defense}, {"building_inventory", Json::array()},
+            {"defense", s.defense}, {"building_inventory", Json::array()}, {"random_magic_item_stock", Json::array()},
             {"apply_catalog_stat_effects", s.apply_catalog_stat_effects},
             {"city_layout", {{"north", city_boundary_surface_name(s.city_layout.north)},
                 {"south", city_boundary_surface_name(s.city_layout.south)},
@@ -1825,6 +1998,12 @@ void save(const Kingdom& k, const std::string& path) {
                 {"placements", Json::array()}, {"labels", Json::array()}}}};
         for (const auto& building : s.building_inventory)
             item["building_inventory"].push_back({{"name", building.name}, {"count", building.count}});
+        for (const auto& stock : s.random_magic_item_stock)
+            item["random_magic_item_stock"].push_back({
+                {"tier", stock.tier}, {"slot_index", stock.slot_index}, {"state", stock.state},
+                {"item_name", stock.item_name}, {"price_gp", stock.price_gp},
+                {"source_table", stock.source_table}, {"source_url", stock.source_url},
+                {"generated_turn", stock.generated_turn}, {"last_changed_turn", stock.last_changed_turn}});
         for (const auto& placement : s.map.placements)
             item["map"]["placements"].push_back({{"building_name", placement.building_name},
                 {"row", placement.row}, {"column", placement.column},
@@ -1838,7 +2017,9 @@ void save(const Kingdom& k, const std::string& path) {
     }
     for (const auto& b : k.buildings) output["buildings"].push_back({{"name", b.name}, {"count", b.count}});
     for (const auto& progress : k.turn_progress)
-        output["turn_progress"].push_back({{"turn", progress.turn}, {"completed_step_ids", progress.completed_step_ids}});
+        output["turn_progress"].push_back({{"turn", progress.turn},
+            {"completed_step_ids", progress.completed_step_ids},
+            {"skipped_step_ids", progress.skipped_step_ids}});
     for (const auto& action : k.turn_actions)
         output["turn_actions"].push_back({{"turn", action.turn}, {"action", turn_action_name(action.action)},
             {"count", action.count}, {"treasury_delta", action.applied.treasury_delta},
@@ -1923,6 +2104,23 @@ void save(const Kingdom& k, const std::string& path) {
                 {"width", line.width}, {"height", line.height},
                 {"source_width", line.source_width}, {"source_height", line.source_height}});
         output["construction_transactions"].push_back(std::move(item));
+    }
+    for (const auto& army : k.armies) {
+        const auto& request = army.request;
+        output["armies"].push_back({
+            {"turn", army.turn}, {"name", request.name}, {"unit_description", request.unit_description},
+            {"size_category", request.size_category}, {"individual_cr", request.individual_cr},
+            {"hd_average_tenths", request.hd_average_tenths}, {"speed", request.speed},
+            {"leader", request.leader}, {"leader_charisma", request.leader_charisma}, {"ranged", request.ranged},
+            {"mount_cr", request.mount_cr}, {"improved_weapons", request.improved_weapons},
+            {"improved_armor", request.improved_armor}, {"healing_potions", request.healing_potions},
+            {"ranged_weapons", request.ranged_weapons}, {"siege_engines", request.siege_engines},
+            {"tactics", request.tactics}, {"special_abilities", request.special_abilities},
+            {"prerequisites", request.prerequisites}, {"notes", request.notes},
+            {"soldiers", army.soldiers}, {"army_cr", army.army_cr}, {"hit_points", army.hit_points},
+            {"current_hit_points", army.current_hit_points}, {"defense_value", army.defense_value},
+            {"offense_modifier", army.offense_modifier}, {"morale", army.morale},
+            {"weekly_consumption", army.weekly_consumption}, {"bp_cost", army.bp_cost}});
     }
     for (const auto& note : k.calendar_notes)
         output["calendar_notes"].push_back({{"entry_id", note.entry_id}, {"holiday", note.holiday},
@@ -2034,6 +2232,24 @@ Kingdom load(const std::string& path) {
                     {required_string(building, "name"), required_int(building, "count")});
             }
         }
+        if (item.contains("random_magic_item_stock")) {
+            const auto& stock_array = item.at("random_magic_item_stock");
+            if (!stock_array.is_array()) throw std::runtime_error("Settlement random_magic_item_stock must be an array");
+            for (const auto& stock : stock_array) {
+                if (!stock.is_object()) throw std::runtime_error("Invalid settlement random magic-item stock entry");
+                SettlementMagicItemStock entry;
+                entry.tier = required_string(stock, "tier");
+                entry.slot_index = required_int(stock, "slot_index");
+                entry.state = stock.contains("state") ? required_string(stock, "state") : "empty";
+                entry.item_name = stock.contains("item_name") ? required_string(stock, "item_name") : std::string{};
+                entry.price_gp = optional_int(stock, "price_gp", 0);
+                entry.source_table = stock.contains("source_table") ? required_string(stock, "source_table") : std::string{};
+                entry.source_url = stock.contains("source_url") ? required_string(stock, "source_url") : std::string{};
+                entry.generated_turn = optional_int(stock, "generated_turn", 0);
+                entry.last_changed_turn = optional_int(stock, "last_changed_turn", 0);
+                k.settlements.back().random_magic_item_stock.push_back(std::move(entry));
+            }
+        }
         if (document_version >= 6) {
             if (!item.contains("map") || !item.at("map").is_object())
                 throw std::runtime_error("Settlement map must be an object");
@@ -2074,6 +2290,14 @@ Kingdom load(const std::string& path) {
             for (const auto& step_id : item.at("completed_step_ids")) {
                 if (!step_id.is_string()) throw std::runtime_error("Turn checklist step id must be a string");
                 progress.completed_step_ids.push_back(step_id.get<std::string>());
+            }
+            if (item.contains("skipped_step_ids")) {
+                if (!item.at("skipped_step_ids").is_array())
+                    throw std::runtime_error("Turn checklist skipped step ids must be an array");
+                for (const auto& step_id : item.at("skipped_step_ids")) {
+                    if (!step_id.is_string()) throw std::runtime_error("Turn checklist skipped step id must be a string");
+                    progress.skipped_step_ids.push_back(step_id.get<std::string>());
+                }
             }
             k.turn_progress.push_back(std::move(progress));
         }
@@ -2271,6 +2495,43 @@ Kingdom load(const std::string& path) {
                 record.lines.back().upgrade_from = line.value("upgrade_from", std::string{});
             }
             k.construction_transactions.push_back(std::move(record));
+        }
+    }
+    if (root.contains("armies")) {
+        if (!root.at("armies").is_array()) throw std::runtime_error("armies must be an array");
+        for (const auto& item : root.at("armies")) {
+            if (!item.is_object()) throw std::runtime_error("Invalid army record");
+            ArmyRecord record;
+            record.turn = required_int(item, "turn");
+            record.request.name = required_string(item, "name");
+            record.request.unit_description = required_string(item, "unit_description");
+            record.request.size_category = required_string(item, "size_category");
+            record.request.individual_cr = required_int(item, "individual_cr");
+            record.request.hd_average_tenths = required_int(item, "hd_average_tenths");
+            record.request.speed = required_int(item, "speed");
+            record.request.leader = item.value("leader", std::string{});
+            record.request.leader_charisma = item.value("leader_charisma", 0);
+            record.request.ranged = item.value("ranged", false);
+            record.request.mount_cr = item.value("mount_cr", 0);
+            record.request.improved_weapons = item.value("improved_weapons", 0);
+            record.request.improved_armor = item.value("improved_armor", 0);
+            record.request.healing_potions = item.value("healing_potions", 0);
+            record.request.ranged_weapons = item.value("ranged_weapons", 0);
+            record.request.siege_engines = item.value("siege_engines", 0);
+            record.request.tactics = item.value("tactics", std::vector<std::string>{});
+            record.request.special_abilities = item.value("special_abilities", std::vector<std::string>{});
+            record.request.prerequisites = item.value("prerequisites", std::vector<std::string>{});
+            record.request.notes = item.value("notes", std::string{});
+            record.soldiers = required_int(item, "soldiers");
+            record.army_cr = required_int(item, "army_cr");
+            record.hit_points = required_int(item, "hit_points");
+            record.current_hit_points = required_int(item, "current_hit_points");
+            record.defense_value = required_int(item, "defense_value");
+            record.offense_modifier = required_int(item, "offense_modifier");
+            record.morale = required_int(item, "morale");
+            record.weekly_consumption = required_int(item, "weekly_consumption");
+            record.bp_cost = required_int(item, "bp_cost");
+            k.armies.push_back(std::move(record));
         }
     }
     if (document_version >= 9) {

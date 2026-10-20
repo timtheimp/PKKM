@@ -14,7 +14,7 @@ class PackageReleaseTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             build_dir = Path(directory) / "Release"
             build_dir.mkdir()
-            for name in ("pkkm_desktop.exe", "pkkm.exe", "building_catalog.json", "Kingmaker-Greenbelt-Map.jpg"):
+            for name in ("pkkm_desktop.exe", "pkkm.exe", "building_catalog.json", "Kingmaker-Greenbelt-Map.jpg", "random_magic_item_catalog.json"):
                 (build_dir / name).write_text(name, encoding="utf-8")
             (build_dir / "temporary-smoke.json").write_text("temporary", encoding="utf-8")
             output = Path(directory) / "PKKM-current-schema10.zip"
@@ -24,7 +24,7 @@ class PackageReleaseTests(unittest.TestCase):
             with zipfile.ZipFile(output) as archive:
                 self.assertEqual(
                     archive.namelist(),
-                    ["pkkm_desktop.exe", "pkkm.exe", "building_catalog.json", "Kingmaker-Greenbelt-Map.jpg"],
+                    ["pkkm_desktop.exe", "pkkm.exe", "building_catalog.json", "Kingmaker-Greenbelt-Map.jpg", "random_magic_item_catalog.json"],
                 )
                 self.assertEqual(archive.read("pkkm.exe"), b"pkkm.exe")
 
