@@ -550,6 +550,7 @@ int main(int argc, char** argv) {
  const auto& turn_steps=pkkm::turn_checklist_steps();
  must(turn_steps.size()==20 && turn_steps.front().id=="upkeep.stability"
       && turn_steps.front().phase=="Phase 1 Upkeep"
+      && turn_steps[5].phase=="Phase 2 Improvement"
       && turn_steps.front().marker=="Step 1"
       && turn_steps.back().id=="events.roll_d100"
       && turn_steps.back().label=="Roll d% for event",

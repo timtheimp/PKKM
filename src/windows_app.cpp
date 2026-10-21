@@ -139,6 +139,7 @@ constexpr int kChecklistOpenConstruction = 6228;
 constexpr int kChecklistOpenCity = 6229;
 constexpr int kChecklistOpenArmy = 6230;
 constexpr int kChecklistOpenInputs = 6231;
+constexpr int kChecklistTurnRules = 6232;
 constexpr int kChecklistControlBase = 6300;
 constexpr int kActionChoice = 6400;
 constexpr int kActionCount = 6401;
@@ -355,6 +356,7 @@ HWND settlement_window = nullptr;
 HWND construction_window = nullptr;
 HWND checklist_window = nullptr;
 HWND action_window = nullptr;
+HWND turn_rules_window = nullptr;
 HWND calendar_window = nullptr;
 HWND greenbelt_window = nullptr;
 HWND greenbelt_popout_window = nullptr;
@@ -407,10 +409,13 @@ std::vector<std::pair<HWND, RECT>> turn_actions_layout_rects;
 void open_greenbelt_popout(HWND owner);
 void open_army_worksheet_from_checklist(HWND window);
 void open_law_inputs_from_checklist(HWND window);
+void open_turn_rules_window(HWND owner);
+void apply_turn_checklist(HWND window);
 void create_army_worksheet_controls(HWND window);
 void apply_army_worksheet(HWND window);
 LRESULT CALLBACK army_worksheet_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
 LRESULT CALLBACK greenbelt_custom_popup_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
+LRESULT CALLBACK turn_rules_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
 
 void set_minimum_track_size(LPARAM lparam, int width, int height) {
     auto* info = reinterpret_cast<MINMAXINFO*>(lparam);
@@ -1647,6 +1652,11 @@ void command(HWND window, int id) {
             dirty = false;
             refresh(GetDlgItem(window, kDisplay));
         } else if (id == kAdvanceTurn) {
+            if (kingdom.turn == std::numeric_limits<int>::max()) {
+                MessageBoxW(window, L"The current turn is already at the maximum supported value.",
+                    L"Advance Turn", MB_OK | MB_ICONERROR);
+                return;
+            }
             const auto prompt = L"Advance from Turn " + std::to_wstring(kingdom.turn)
                 + L" to Turn " + std::to_wstring(kingdom.turn + 1)
                 + L"? Previous checklist history will be preserved. No event outcomes or automatic rules will be resolved.";
@@ -1749,6 +1759,123 @@ void command(HWND window, int id) {
     }
 }
 
+std::wstring turn_rules_text() {
+    std::wstring text = LR"RULES(
+HOW TO CONDUCT A KINGDOM TURN
+
+A kingdom's growth and fortunes are resolved once each month in four phases. Resolve them in order: Upkeep, Improvement, Income, then Event. The PDF recommends choosing a consistent day each month, commonly the last day, so the month's accomplishments are included. The group may decide who rolls kingdom checks; the rules give the example of the Ruler, Treasurer, or Warden, but the choice is yours.
+
+PHASE 1 - UPKEEP
+If the kingdom controls no hexes, skip Upkeep and proceed to Improvement. Otherwise:
+Step 1 - Determine Kingdom Stability: Make a Stability check against the Command DC. On a success, reduce Unrest by 1; if Unrest is already 0, gain 1 BP instead. On a failure by 5 or more, increase Unrest by 2.
+Step 2 - Pay Consumption: Deduct the kingdom's Consumption from Treasury BP. The Treasury may become negative. Each Upkeep that ends with negative BP increases Unrest by 2.
+Step 3 - Fill Vacant Magic Item Slots: Randomly fill vacant magic-item slots in the kingdom's cities.
+Step 4 - Unrest: If Unrest is 11 or higher, the kingdom loses one hex selected by its leaders. Improvements in that hex, including farmland and roads, are lost and must be rebuilt after reclamation. Settlements in the lost hex become towns and must be annexed again. If the kingdom employs a Royal Assassin, reduce total Unrest by 1 at the end of Upkeep.
+
+PHASE 2 - IMPROVEMENT
+The number of improvements allowed during one Improvement phase is limited by kingdom size. Resolve the following actions:
+Step 1 - Select Leadership: Assign leaders to vacant roles. Leaders must be PCs or closely allied NPCs. Leaders may be changed without directly changing kingdom statistics, except for the bonuses supplied by the new leaders' abilities.
+Step 2 - Claim Hexes: Each Stolen Lands hex is 12 miles across. Explore and clear a hex of monsters or dangerous hazards, and ensure it is adjacent to an existing kingdom hex unless it is the first hex. Spend 1 BP to claim it, increasing kingdom Size and Consumption by 1. A hex may be abandoned; this reduces Size and increases Unrest by 1, or by 4 if the abandoned hex contained a city.
+Step 3 - Establish and Improve Cities: Prepare land for city districts and purchase buildings for the kingdom's cities. Building adjustments apply immediately. Buildings may be destroyed to clear space, but their kingdom-statistic benefits must also be removed.
+Step 4 - Build Roads: A road costs 1 BP through ordinary terrain, 2 BP in forests, and 4 BP in swamps or mountains. A river crossing requires a bridge and doubles the road cost.
+Step 5 - Establish Farmlands: A grassland or hill hex with roads may become farmland. Grassland farmland costs 2 BP; hill farmland costs 4 BP. A farmland hex cannot contain a city, and each farmland hex reduces Consumption by 2 BP.
+Step 6 - Edicts: Select or adjust the kingdom's edict levels.
+
+PHASE 3 - INCOME
+Step 1 - Deposits: The kingdom may receive coins, gems, jewelry, weapons, armor, magic items, and other valuables. Each full 4,000 gp deposited increases Treasury by 1 BP. An individual item worth more than 4,000 gp is handled through the sale procedure instead.
+Step 2 - Withdrawals: A withdrawal increases Unrest by 1 and requires a Loyalty check against Command DC plus the BP withdrawn. On a failed check, add Unrest equal to the total BP withdrawn. Each BP withdrawn converts to 2,000 gp.
+Step 3 - Sell Valuable Items: Items worth more than 4,000 gp may be sold through city markets. Make one Economy check per city district during the phase: DC 20 for minor items, DC 35 for moderate items, and DC 50 for major items. A failure means the item does not sell. A success adds 2 BP for a minor item, 8 BP for a moderate item, or 15 BP for a major item.
+Step 4 - Generate Income: At the end of Income, make an Economy check against Command DC. On a success, divide the result by 5, dropping fractions, and add that many BP to the Treasury.
+
+PHASE 4 - EVENT
+Roll once on the Kingdom Events table to determine whether an event occurs. Adventure-specific kingdom events also occur during this phase. After identifying the event, follow its rules to determine its effect on the kingdom or its cities.
+Chance of an Event: A random event occurs on a 25% chance. If no event occurred during the previous Event phase, the chance increases to 75%.
+Continuous events continue to affect the kingdom during later Event phases until resolved with the appropriate check. Harmful events may be reduced or negated by a successful Economy, Loyalty, or Stability check when the event specifies one. Those checks use the kingdom Command DC, equal to 20 plus kingdom Size.
+
+CHECKLIST AND MANUAL BOUNDARY
+Use the checklist in the same phase order. Complete each represented step after recording its source-defined result, or explicitly skip an optional step. PKKM preserves caller-supplied rolls, map choices, city placement, purchases, commissions, event interpretation, and unresolved branches instead of inventing unsupported outcomes. PKKM applies each completed checklist step in memory; Next Turn finalizes the current turn and advances the month. Save the kingdom separately when you are ready to persist it.
+)RULES";
+    std::wstring wrapped;
+    wrapped.reserve(text.size() + 128);
+    for (const wchar_t character : text) {
+        if (character == L'\n') { wrapped += wchar_t(13); wrapped += wchar_t(10); }
+        else wrapped += character;
+    }
+    return wrapped;
+}
+
+void open_turn_rules_window(HWND owner) {
+    if (turn_rules_window && IsWindow(turn_rules_window)) {
+        SetForegroundWindow(turn_rules_window);
+        return;
+    }
+    WNDCLASSW rules_class{};
+    if (!GetClassInfoW(app_instance, L"PKKMTurnRules", &rules_class)) {
+        rules_class.lpfnWndProc = turn_rules_proc;
+        rules_class.hInstance = app_instance;
+        rules_class.lpszClassName = L"PKKMTurnRules";
+        rules_class.hCursor = LoadCursor(nullptr, IDC_ARROW);
+        rules_class.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+        if (!RegisterClassW(&rules_class) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS)
+            throw std::runtime_error("Could not register the turn rules window class");
+    }
+    turn_rules_window = CreateWindowExW(0, L"PKKMTurnRules", L"Turn Rules",
+        WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
+        kWindowOriginX + 80, kWindowOriginY + 40, 780, 700,
+        owner, nullptr, app_instance, nullptr);
+    if (!turn_rules_window) throw std::runtime_error("Could not open the turn rules window");
+    ShowWindow(turn_rules_window, SW_SHOW);
+    UpdateWindow(turn_rules_window);
+}
+
+LRESULT CALLBACK turn_rules_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
+    if (message == WM_GETMINMAXINFO) {
+        set_minimum_track_size(lparam, 560, 480);
+        return 0;
+    }
+    switch (message) {
+        case WM_CREATE:
+            CreateWindowExW(0, L"STATIC", L"Turn Rules - conduct the phases in source order",
+                WS_CHILD | WS_VISIBLE | SS_LEFT, 18, 14, 700, 24,
+                window, nullptr, app_instance, nullptr);
+            CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", turn_rules_text().c_str(),
+                WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY
+                    | WS_VSCROLL | ES_WANTRETURN,
+                18, 44, 728, 570, window,
+                reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistTurnRules)), app_instance, nullptr);
+            CreateWindowExW(0, L"BUTTON", L"Close", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+                658, 626, 88, 30, window,
+                reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistClose)), app_instance, nullptr);
+            return 0;
+        case WM_SIZE: {
+            RECT client{};
+            GetClientRect(window, &client);
+            const int width = std::max(1L, client.right - client.left);
+            const int height = std::max(1L, client.bottom - client.top);
+            HWND text = GetDlgItem(window, kChecklistTurnRules);
+            HWND close = GetDlgItem(window, kChecklistClose);
+            SetWindowPos(text, nullptr, 18, 44, std::max(1, width - 36),
+                std::max(1, height - 92), SWP_NOZORDER | SWP_NOACTIVATE);
+            SetWindowPos(close, nullptr, std::max(18, width - 106),
+                std::max(44, height - 74), 88, 30, SWP_NOZORDER | SWP_NOACTIVATE);
+            return 0;
+        }
+        case WM_COMMAND:
+            if (LOWORD(wparam) == kChecklistClose) {
+                DestroyWindow(window);
+                return 0;
+            }
+            return 0;
+        case WM_CLOSE:
+            DestroyWindow(window);
+            return 0;
+        case WM_DESTROY:
+            turn_rules_window = nullptr;
+            return 0;
+    }
+    return DefWindowProcW(window, message, wparam, lparam);
+}
+
 void create_turn_checklist_controls(HWND window) {
     const auto record = std::find_if(kingdom.turn_progress.begin(), kingdom.turn_progress.end(),
         [](const auto& progress) { return progress.turn == kingdom.turn; });
@@ -1757,7 +1884,7 @@ void create_turn_checklist_controls(HWND window) {
     checklist_skipped_step_ids = record == kingdom.turn_progress.end()
         ? std::vector<std::string>{} : record->skipped_step_ids;
     CreateWindowExW(0, L"STATIC",
-        L"Manual checklist only; PKKM does not resolve checks or turn outcomes.\r\nApply updates this file in memory; use File > Save to persist. Stability failure by exactly 4 is not used by this rule set.",
+        L"Manual checklist only; PKKM does not resolve checks or turn outcomes.\r\nComplete Step records the current step; Next Turn advances the month. Use File > Save to persist. Stability failure by exactly 4 is not used by this rule set.",
         WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 12, 950, 40, window, nullptr, app_instance, nullptr);
     const auto& steps = pkkm::turn_checklist_steps();
     std::vector<std::string> phase_names;
@@ -1859,16 +1986,19 @@ void create_turn_checklist_controls(HWND window) {
     CreateWindowExW(0, L"BUTTON", L"Open Law Inputs...", WS_CHILD | WS_VISIBLE,
         604, 680, 180, 30, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistOpenInputs)), app_instance, nullptr);
-    CreateWindowExW(0, L"STATIC", L"Guided step: use Complete Current Step after recording the source-defined result. Details remain manual.",
+    CreateWindowExW(0, L"BUTTON", L"Turn Rules", WS_CHILD | WS_VISIBLE,
+        500, 420, 150, 30, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistTurnRules)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Guided step: use Complete Step after recording the source-defined result. Details remain manual.",
         WS_CHILD | WS_VISIBLE | SS_LEFT | SS_NOPREFIX, 24, 720, 950, 45, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistCurrentStep)), app_instance, nullptr);
-    CreateWindowExW(0, L"BUTTON", L"Complete Current Step", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+    CreateWindowExW(0, L"BUTTON", L"Complete Step", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
         24, 780, 180, 30, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistCompleteCurrent)), app_instance, nullptr);
     CreateWindowExW(0, L"BUTTON", L"Skip Optional Step", WS_CHILD | WS_VISIBLE,
         214, 780, 160, 30, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistSkipCurrent)), app_instance, nullptr);
-    CreateWindowExW(0, L"BUTTON", L"Return to Previous Step", WS_CHILD | WS_VISIBLE,
+    CreateWindowExW(0, L"BUTTON", L"Previous Step", WS_CHILD | WS_VISIBLE,
         384, 780, 175, 30, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistBack)), app_instance, nullptr);
     CreateWindowExW(0, L"BUTTON", L"Open Turn Actions...", WS_CHILD | WS_VISIBLE,
@@ -1886,7 +2016,7 @@ void create_turn_checklist_controls(HWND window) {
     CreateWindowExW(0, L"STATIC", L"", WS_CHILD | WS_VISIBLE | SS_LEFT,
         250, 625, 420, 24, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistTransitionStatus)), app_instance, nullptr);
-    CreateWindowExW(0, L"BUTTON", L"Apply", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+    CreateWindowExW(0, L"BUTTON", L"Next Turn", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
         692, 860, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistApply)), app_instance, nullptr);
     CreateWindowExW(0, L"BUTTON", L"Cancel", WS_CHILD | WS_VISIBLE,
         790, 860, 88, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistCancel)), app_instance, nullptr);
@@ -2479,14 +2609,19 @@ void refresh_turn_checklist_phase_summary(HWND window) {
 
 void complete_current_turn_checklist_step(HWND window) {
     checklist_review_index = -1;
-    for (std::size_t index = 0; index < checklist_controls.size(); ++index) {
-        if (SendMessageW(checklist_controls[index], BM_GETCHECK, 0, 0) != BST_CHECKED) {
+    const auto& steps = pkkm::turn_checklist_steps();
+    for (std::size_t index = 0; index < checklist_controls.size() && index < steps.size(); ++index) {
+        const bool checked = SendMessageW(checklist_controls[index], BM_GETCHECK, 0, 0) == BST_CHECKED;
+        const bool skipped = std::find(checklist_skipped_step_ids.begin(), checklist_skipped_step_ids.end(), steps[index].id)
+            != checklist_skipped_step_ids.end();
+        if (!checked && !skipped) {
             SendMessageW(checklist_controls[index], BM_SETCHECK, BST_CHECKED, 0);
             checklist_skipped_step_ids.erase(
                 std::remove(checklist_skipped_step_ids.begin(), checklist_skipped_step_ids.end(), checklist_step_ids[index]),
                 checklist_skipped_step_ids.end());
             refresh_turn_checklist_guidance(window);
                 refresh_turn_checklist_phase_summary(window);
+            apply_turn_checklist(window);
             return;
         }
     }
@@ -2534,8 +2669,51 @@ void return_to_previous_turn_checklist_step(HWND window) {
         MessageBoxW(window, L"There is no previous checklist step to revisit.", L"Turn checklist", MB_OK | MB_ICONINFORMATION);
         return;
     }
+    SendMessageW(checklist_controls[previous_index], BM_SETCHECK, BST_UNCHECKED, 0);
+    checklist_skipped_step_ids.erase(
+        std::remove(checklist_skipped_step_ids.begin(), checklist_skipped_step_ids.end(), steps[previous_index].id),
+        checklist_skipped_step_ids.end());
     checklist_review_index = static_cast<int>(previous_index);
     SetFocus(checklist_controls[previous_index]);
+    apply_turn_checklist(window);
+    refresh_turn_checklist_guidance(window);
+    refresh_turn_checklist_phase_summary(window);
+}
+
+bool turn_checklist_has_unresolved_required_steps() {
+    const auto& steps = pkkm::turn_checklist_steps();
+    for (std::size_t index = 0; index < steps.size() && index < checklist_controls.size(); ++index) {
+        const bool completed = SendMessageW(checklist_controls[index], BM_GETCHECK, 0, 0) == BST_CHECKED;
+        const bool skipped = std::find(checklist_skipped_step_ids.begin(), checklist_skipped_step_ids.end(), steps[index].id)
+            != checklist_skipped_step_ids.end();
+        if (!steps[index].optional && !completed && !skipped) return true;
+    }
+    return false;
+}
+
+void advance_to_next_turn_from_checklist(HWND window) {
+    if (kingdom.turn == std::numeric_limits<int>::max()) {
+        MessageBoxW(window, L"The current turn is already at the maximum supported value.",
+            L"Next Turn", MB_OK | MB_ICONERROR);
+        return;
+    }
+    if (turn_checklist_has_unresolved_required_steps()) {
+        const int answer = MessageBoxW(window,
+            L"One or more required checklist steps are incomplete. Continue to the next turn anyway?",
+            L"Incomplete turn checklist", MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2);
+        if (answer != IDYES) return;
+    }
+    apply_turn_checklist(window);
+    pkkm::advance_turn(kingdom);
+    dirty = true;
+    checklist_review_index = -1;
+    checklist_skipped_step_ids.clear();
+    for (HWND control : checklist_controls)
+        SendMessageW(control, BM_SETCHECK, BST_UNCHECKED, 0);
+    CheckDlgButton(window, kChecklistEventLastTurn, BST_UNCHECKED);
+    SetWindowTextW(window, (L"Turn Checklist - Turn " + std::to_wstring(kingdom.turn)).c_str());
+    refresh(GetDlgItem(GetParent(window), kDisplay));
+    refresh_turn_transition_preview(window);
     refresh_turn_checklist_guidance(window);
     refresh_turn_checklist_phase_summary(window);
 }
@@ -2604,6 +2782,9 @@ void create_turn_action_controls(HWND window) {
         390, 150, 90, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kActionCancel)), app_instance, nullptr);
     CreateWindowExW(0, L"BUTTON", L"Close", WS_CHILD | WS_VISIBLE,
         490, 150, 60, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kActionClose)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Turn Rules", WS_CHILD | WS_VISIBLE,
+        560, 150, 100, 30, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChecklistTurnRules)), app_instance, nullptr);
     CreateWindowExW(0, L"STATIC", L"Recorded actions", WS_CHILD | WS_VISIBLE | SS_LEFT,
         20, 205, 200, 22, window, nullptr, app_instance, nullptr);
     CreateWindowExW(0, L"STATIC", L"Filter", WS_CHILD | WS_VISIBLE | SS_LEFT,
@@ -3857,6 +4038,8 @@ LRESULT CALLBACK turn_actions_proc(HWND window, UINT message, WPARAM wparam, LPA
                 else if (LOWORD(wparam) == kCommissionApply) apply_commission_dialog(window);
                 else if (LOWORD(wparam) == kMagicItemApply) apply_magic_item_dialog(window);
                 else if (LOWORD(wparam) == kSaleApply) apply_valuable_item_sale_dialog(window);
+                else if (LOWORD(wparam) == kChecklistTurnRules)
+                    open_turn_rules_window(window);
                 else if (LOWORD(wparam) == kActionFilter ||
                          LOWORD(wparam) == kActionFilterOriginal ||
                          LOWORD(wparam) == kActionFilterReversal) {
@@ -6054,7 +6237,9 @@ LRESULT CALLBACK turn_checklist_proc(HWND window, UINT message, WPARAM wparam, L
                 open_army_worksheet_from_checklist(window);
             else if (LOWORD(wparam) == kChecklistOpenInputs)
                 open_law_inputs_from_checklist(window);
-            else if (LOWORD(wparam) == kChecklistApply) apply_turn_checklist(window);
+            else if (LOWORD(wparam) == kChecklistTurnRules)
+                open_turn_rules_window(window);
+            else if (LOWORD(wparam) == kChecklistApply) advance_to_next_turn_from_checklist(window);
             else if (LOWORD(wparam) == kChecklistCancel) {
                 checklist_review_index = -1;
                 refresh_turn_checklist_controls();
@@ -6157,6 +6342,7 @@ LRESULT CALLBACK main_proc(HWND window, UINT message, WPARAM wparam, LPARAM lpar
             if (settlement_window && IsWindow(settlement_window)) DestroyWindow(settlement_window);
             if (checklist_window && IsWindow(checklist_window)) DestroyWindow(checklist_window);
             if (action_window && IsWindow(action_window)) DestroyWindow(action_window);
+            if (turn_rules_window && IsWindow(turn_rules_window)) DestroyWindow(turn_rules_window);
             if (calendar_window && IsWindow(calendar_window)) DestroyWindow(calendar_window);
             if (greenbelt_window && IsWindow(greenbelt_window)) DestroyWindow(greenbelt_window);
             if (army_window && IsWindow(army_window)) DestroyWindow(army_window);

@@ -16,12 +16,8 @@
 ```text
 55
 Of Cities and KingsOf Cities and Kings
-C
-r e a t i n g
 
-a
- K
-i n g d o m
+Creating a Kingdom
 A major part of the Kingmaker Adventure Path is the
 PCs’ creation of a kingdom and the cities within
 its borders. This article presents rules for creating
@@ -105,8 +101,8 @@ resources (see below), record them here.
 Leadership : Write in the names of the PCs or NPCs
 filling each of the 11 leadership roles here, along with their
 appropriate modifiers.
-e
-d iCt s
+
+Edicts
 Edicts (promotions, taxes, and festivals) increase your
 kingdom’s Stability, Economy, and Loyalty scores.
 Promotions can include recruitments, advertisements, and
@@ -114,10 +110,8 @@ even propaganda campaigns. Taxes are payments gathered
 from a kingdom’s citizens to help pay for Consumption.
 Festivals, which can also include parades and other public
 events, can increase the kingdom’s happiness and loyalty.
-s
-p eCi a l
- r
-e s o u rCe s
+
+Special Resources
 Some hexes do more than just add size to a kingdom—
 they also add resources and impact a kingdom’s Stability,
 Economy, Loyalty, and other elements.
@@ -136,15 +130,7 @@ as a free building—the encounter indicates what type of
 
 ```text
 56
-P
-a r t
- 2
-o f
- 6P
-a r t
- 2
-o f
- 6
+Part 2 of 6
 building it counts as. See page 58 for a list of building
 types.
 Cave: Caves can be used as defensive fallback points,
@@ -174,10 +160,8 @@ score by 2d4.
 Resources : Resources include particularly valuable
 sources of lumber, metal, gems, food, or the like. A resource
 hex increases a kingdom’s Economy by 1.
-l
-e a d e r s h i p
- r
-o l e s
+
+Leadership Roles
 A healthy kingdom has leaders filling a number of different
 roles. Each leader grants the kingdom different benefits;
 leaving a role unfilled can penalize the kingdom.
@@ -310,10 +294,8 @@ The Warden leads the kingdom’s defense and city guards.
 Benefit Increase Loyalty by a value equal to the Warden’s Strength
 or Constitution modifier.
 Vacancy Penalty  Reduce Loyalty by 4 and Stability by 2.
-B
-u i l d i n g
- C
-i t i e s
+
+Building Cities
 The greatest asset of any kingdom are its cities, for it is
 here that the bulk of a kingdom’s citizens live, its armies
 train, its culture develops, and its future is forged. The
@@ -321,12 +303,8 @@ rules presented here are designed to support the rules for
 kingdom building presented in the first portion of this
 article and to give players a visual representation of a city
 (the city grid) they helped to build up from scratch.
-r
-e a d i n g
 
-t h e
- g
-r i d
+Reading the grid
 The city grid consists of 36 city blocks, each arranged
 into nine larger squares. Each block is separated by alleys,
 while each square is separated by streets. The nine squares
@@ -340,12 +318,8 @@ As the PCs build structures and locations, they can place
 cut-out representations of their buildings into these city
 blocks, eventually creating a visual representation of their
 completed city.
-p
-r e p a r i n g
 
-t h e
- s
-i t e
+Preparing The Site
 Once you select a location for your city (which must be in
 a hex you have explored and cleared), you must pay to have
 the site cleared and prepared to support the city’s roads
@@ -356,16 +330,8 @@ district’s borders are water (in the form of riverbanks,
 lakeshores, or seashores) or land. Record these choices at
 each border on your city grid. In addition, adding a city
 district to a kingdom increases its Consumption by 1.
-t
-h e
- C
-i t y
- g
-r i d
 
-i n
- p
-l a y
+The City Grid in Play
 You can use your city grid to aid in resolving encounters or
 adjusting kingdom or city statistics.
 Destroyed Blocks : If an event destroys one or more
@@ -386,31 +352,20 @@ determine how long it takes for someone to travel from
 
 ```text
 58
-P
-a r t
- 2
-o f
- 6P
-a r t
- 2
-o f
- 6
+Part 2 of 6
+
 one location to another in the city in the case of multiple
 encounters. In this case, treat each city block as if it were a
 750-foot square—this means that an entire city district is
 about 1 square mile in size.
-B
-a s e
- V
-a l u e
+
+Base Value
 When using these rules to build a settlement, the city’s
 base value (see Pathfinder RPG Core Rulebook , pages 460–
 461) starts at 200 gp. It increases as you construct certain
 buildings, like shops and marketplaces.
-B
-u i l d i n g
- a C
-i t y
+
+Building a City
 Once you’ve prepared your city district, you can start to
 build. The placement of buildings in your district is left
 to you, but two-block and four-block structures cannot be
@@ -470,10 +425,8 @@ until it is purchased. Alternatively, once per Income phase,
 a kingdom can make Economy checks to try to sell items;
 once the item is sold, its slot remains empty until the next
 Upkeep phase (see page 61).
-B
-u i l d i n g
- t
-y p e s
+
+Building Types
 Adding buildings to a city is one of the most efficient ways
 to enhance your kingdom’s statistics, as each block of
 buildings added to a city in your kingdom grants a specific
@@ -518,27 +471,7 @@ medium item, 1 major item;  Economy +2, Stability +1; Unrest +1.
 ```text
 59
 Of Cities and KingsOf Cities and Kings
-© 2010 P
-a i z o
- P
-u b l i s h i n g
-, llC. P
-e r m i s s i o n
-
-g r a n t e d
-
-t o
-
-Ph o t oCoPy
-
-f o r
-
-Pe r s o n a l
-
-u s e
-
-o n l y
-.
+© 2010 Paizo Publishing, llC. Permission granted to PhotoCopy for Personal use only.
 g
 g
 s
@@ -563,10 +496,8 @@ Campaign
 economy
 edicts
 Bonuses
-K
-i n g d o m
- S
-h e e t
+
+Kingdom Sheet
 Penalties
 leadership
 loyalty
@@ -705,15 +636,8 @@ creator of potions. 1 minor item; Loyalty +1, Stability +1.
 
 ```text
 60
-P
-a r t
- 2
-o f
- 6P
-a r t
- 2
-o f
- 6
+
+Part 2 of 6
 House (3 BP): A number of mid-sized houses for citizens.
 Houses serve as prerequisites for many other buildings.
 The first house you build during any Improvement Phase
@@ -782,7 +706,7 @@ entertainment such as plays, operas,
 concerts, and the like. Halves cost of Brothel, Park, and
 Tavern in same city; Economy +2, Stability +2.
 Town Hall (22 BP) : A public venue for town meetings
-and repository for town records.  H a l v e s  c o s t  o f  B a r r a c k s ,
+and repository for town records.  Halves cost of Barracks,
 Dump, and Watchtower in same city; Economy +1, Loyalty +1,
 Stability +1.
 Tradesman (10 BP; must be adjacent to 1 house) : A
@@ -809,10 +733,8 @@ facilities for building ships, and a center of commerce.  City
 base value +4,000 gp; 3 minor items, 2 medium items, 1 major
 item; halves cost of Guildhall and Market in same city, halves
 Loyalty penalty for tax edicts; Economy +4; limit one per city.
-g
-a i n i n g
- e
-x p e r i e nCe
+
+Gaining Experience
 As their kingdom grows, the PCs gain experience points.
 Use the following guidelines to determine when and how
 much XP should be awarded. These XP awards should only
@@ -830,12 +752,8 @@ Reaching a kingdom size of 200 : 76,800 XP
 Filling a square with four blocks of buildings : 1,600 XP
 Filling three city squares with buildings : 4,800 XP
 Filling an entire city grid with buildings : 12,800 XP
-r
-u l i n g
 
-a
- K
-i n g d o m
+Ruling A Kingdom
 Like a player character’s stat block, a kingdom’s stat block
 continues to evolve and grow as the kingdom expands,
 gathers more resources, purchases upgrades, and suffers
@@ -859,10 +777,8 @@ events under her command. Ultimately, since a kingdom
 is shared by all the players, it doesn’t matter who makes
 the kingdom’s Economy, Loyalty, and Stability checks, but
 assigning them can be fun nonetheless.
-u
-pKe e p
- p
-h a s e
+
+Upkeep Phase
 During a kingdom’s Upkeep phase, take the following
 actions. If your kingdom currently controls 0 hexes, skip
 this phase and proceed to the Improvement phase.
@@ -890,10 +806,8 @@ in that hex become towns that must be annexed if they are
 to be reclaimed into the kingdom (see page 56). Finally, if
 the kingdom employs a Royal Assassin, reduce your total
 Unrest by 1 at the end of this phase.
-i
-m p r oVe m e n t
- p
-h a s e
+
+Improvement Phase
 During a kingdom’s Improvement phase, take the following
 actions. The number of improvements you can make during
 a single phase is limited by your kingdom’s size; see the
@@ -927,15 +841,9 @@ the abandoned hex contained a city).
 
 ```text
 62
-P
-a r t
- 2
-o f
- 6P
-a r t
- 2
-o f
- 6
+
+Part 2 of 6
+
 Alchemist
 Exotic
 Craftsman
@@ -982,27 +890,7 @@ Arena
 Castle
 Cathedral
 Waterfront
-© 2010 P
-a i z o
- P
-u b l i s h i n g
-, llC. P
-e r m i s s i o n
-
-g r a n t e d
-
-t o
-
-Ph o t oCoPy
-
-f o r
-
-Pe r s o n a l
-
-u s e
-
-o n l y
-.
+© 2010 Paizo Publishing, llC. Permission granted to PhotoCopy for Personal use only.
 ```
 
 
@@ -1052,27 +940,7 @@ MAJOR
 ❑
 ❑
 ❑
-© 2010 P
-a i z o
- P
-u b l i s h i n g
-, llC. P
-e r m i s s i o n
-
-g r a n t e d
-
-t o
-
-Ph o t oCoPy
-
-f o r
-
-Pe r s o n a l
-
-u s e
-
-o n l y
-.
+© 2010 Paizo Publishing, llC. Permission granted to PhotoCopy for Personal use only.
 ```
 
 
@@ -1083,15 +951,8 @@ o n l y
 
 ```text
 64
-P
-a r t
- 2
-o f
- 6P
-a r t
- 2
-o f
- 6
+Part 2 of 6
+
 Step 3—Establish and Improve Cities : Prepare land for
 city districts and then purchase new buildings for your
 kingdom’s cities. The building’s adjustments to your nation
@@ -1114,10 +975,8 @@ on a farmland hex. Every farmland hex in your kingdom
 reduces your Consumption by 2 BP.
 Step 6: Edicts : Pick or adjust your edict levels (see page
 55) as you wish.
-i
-nCo m e
- p
-h a s e
+
+Income Phase
 During a kingdom’s Income phase, take the following
 actions.
 Step 1—Deposits : You can add funds to a kingdom’s
@@ -1152,10 +1011,8 @@ against your Command DC at the end of your Income
 phase. If you’re successful, divide your result by 5
 (dropping any fractions) and increase your Treasury’s BP
 by that amount.
-e
-Ve n t
- p
-h a s e
+
+Event Phase
 During a kingdom’s Event phase, roll once on the Kingdom
 Events table to determine if an event occurs. Adventure-
 specific kingdom events occur during this phase. Once
@@ -1165,10 +1022,8 @@ the event impacts the PCs’ kingdom or cities.
 Chance of an Event : There’s a 25% chance that a random
 event occurs during an Event phase. This chance increases
 to 75% if no event occurred in the previous Event phase.
-K
-i n g d o m
- e
-Ve n t s
+
+Kingdom Events
 Listed below are numerous events that can occur during
 an Event phase. Some events are listed as “continuous”
 events—their effects continue through every Event phase
