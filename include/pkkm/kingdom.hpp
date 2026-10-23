@@ -5,19 +5,27 @@
 namespace pkkm {
 struct BuildingCatalogEntry;
 struct Building { std::string name; int count = 0; };
-// Placement coordinates are zero-based; footprint is explicit, never inferred from catalog lots.
+// Placement coordinates are zero-based; saved dimensions are explicit, while the editor may seed editable defaults from catalog lot counts.
 struct MapPlacement { std::string building_name; int row = 0; int column = 0; int width = 1; int height = 1; };
+struct MapFootprint { int width = 1; int height = 1; };
+MapFootprint rotate_map_footprint(MapFootprint footprint);
+MapFootprint default_map_footprint_for_lots(int lots);
 // Labels are visual annotations (terrain, gate, corridor text), not rule-bearing effects.
 struct MapLabel { std::string text; int row = 0; int column = 0; int width = 1; int height = 1; };
 struct SettlementMap {
  int rows = 0; int columns = 0;
  std::vector<MapPlacement> placements;
  std::vector<MapLabel> labels;
+ // Empty for a generic grid. Workbook/PDF templates persist an explicit identity.
+ std::string template_id;
 };
 enum class WorkbookMapTemplate { Capital, City, Example, MultiDistrict, CityLayout };
 const char* workbook_map_template_name(WorkbookMapTemplate preset);
 SettlementMap workbook_map_template(WorkbookMapTemplate preset);
 int city_layout_district_index(const SettlementMap& map, int row, int column);
+// Counts occupied six-by-six city districts for the supported workbook map geometries.
+// The PDF City Layout is one district containing nine visual two-by-two city squares.
+int map_occupied_district_count(const SettlementMap& map);
 enum class CityBoundarySurface { Land, Water };
 const char* city_boundary_surface_name(CityBoundarySurface surface);
 CityBoundarySurface city_boundary_surface_from_name(const std::string& name);
@@ -181,6 +189,7 @@ struct TurnProgress {
  std::vector<std::string> skipped_step_ids;
 };
 const std::vector<TurnChecklistStep>& turn_checklist_steps();
+const TurnChecklistStep* find_turn_checklist_step(const std::string& step_id);
 enum class RuleProfile { Pdf, Workbook, CityInfo };
 enum class StabilityFailureOutcome { FailByLessThanFour, FailByAtLeastFive };
 StabilityFailureOutcome classify_stability_failure(int failure_by);
@@ -601,6 +610,8 @@ struct TurnChecklistStatus {
  std::string next_step_id;
 };
 TurnChecklistStatus turn_checklist_status(const Kingdom& kingdom, int turn);
+bool complete_current_turn_checklist_step(Kingdom& kingdom, int turn, const std::string& step_id);
+bool skip_current_turn_checklist_step(Kingdom& kingdom, int turn, const std::string& step_id);
 void set_turn_checklist_step(Kingdom& kingdom, int turn, const std::string& step_id, bool completed);
 void skip_turn_checklist_step(Kingdom& kingdom, int turn, const std::string& step_id);
 void advance_turn(Kingdom& kingdom);

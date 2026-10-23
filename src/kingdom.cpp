@@ -43,6 +43,35 @@ std::string required_string(const Json& object, const char* key) {
     return field.get<std::string>();
 }
 
+bool is_known_map_template_id(const std::string& value) {
+    return value.empty() || value == "workbook.capital" || value == "workbook.city"
+        || value == "workbook.example" || value == "workbook.multi_district"
+        || value == "pdf.city_layout";
+}
+
+bool has_canonical_template_geometry(const SettlementMap& map) {
+    if (map.template_id.empty()) return true;
+    if (map.template_id == "pdf.city_layout") return map.rows == 6 && map.columns == 6;
+    if (map.template_id == "workbook.multi_district") return map.rows == 15 && map.columns == 15;
+    return map.rows == 8 && map.columns == 8;
+}
+
+bool is_map_template(const SettlementMap& map, const char* template_id, int rows, int columns) {
+    return map.template_id == template_id && map.rows == rows && map.columns == columns;
+}
+
+bool is_template_chrome_cell(const SettlementMap& map, int row, int column) {
+    if (is_map_template(map, "workbook.capital", 8, 8)
+        || is_map_template(map, "workbook.city", 8, 8)
+        || is_map_template(map, "workbook.example", 8, 8)) {
+        return row == 0 || row == 7 || column == 0 || column == 7;
+    }
+    if (is_map_template(map, "workbook.multi_district", 15, 15)) {
+        return row == 0 || row == 7 || row == 14 || column == 0 || column == 7 || column == 14;
+    }
+    return false;
+}
+
 void reject_spreadsheet_destination(const std::filesystem::path& destination) {
     auto extension = destination.extension().string();
     std::transform(extension.begin(), extension.end(), extension.begin(),
@@ -191,6 +220,10 @@ void validate(const Kingdom& k) {
                 throw std::invalid_argument("Generated random magic-item stock requires an item name");
         }
         const auto& map = s.map;
+        if (!is_known_map_template_id(map.template_id))
+            throw std::invalid_argument("Settlement map has an unsupported template identity");
+        if (!has_canonical_template_geometry(map))
+            throw std::invalid_argument("Settlement map dimensions do not match its template identity");
         if (map.rows == 0 && map.columns == 0 && map.placements.empty() && map.labels.empty()) continue;
         if (map.rows <= 0 || map.columns <= 0)
             throw std::invalid_argument("Settlement map must have positive row and column counts");
@@ -203,6 +236,10 @@ void validate(const Kingdom& k) {
             const long long column_end = static_cast<long long>(placement.column) + placement.width;
             if (row_end > map.rows || column_end > map.columns)
                 throw std::invalid_argument("Map placement extends beyond the grid");
+            for (int row = placement.row; row < row_end; ++row)
+                for (int column = placement.column; column < column_end; ++column)
+                    if (is_template_chrome_cell(map, row, column))
+                        throw std::invalid_argument("Map placement intersects a template terrain border or district divider");
             for (size_t j = 0; j < i; ++j) {
                 const auto& other = map.placements[j];
                 const long long other_row_end = static_cast<long long>(other.row) + other.height;
@@ -542,6 +579,14 @@ const std::vector<TurnChecklistStep>& turn_checklist_steps() {
     return steps;
 }
 
+const TurnChecklistStep* find_turn_checklist_step(const std::string& step_id) {
+    const auto& steps = turn_checklist_steps();
+    const auto found = std::find_if(steps.begin(), steps.end(), [&step_id](const TurnChecklistStep& step) {
+        return step.id == step_id;
+    });
+    return found == steps.end() ? nullptr : &*found;
+}
+
 TurnChecklistStatus turn_checklist_status(const Kingdom& kingdom, int turn) {
     if (turn < 1) throw std::invalid_argument("Checklist turn must be at least 1");
     TurnChecklistStatus status;
@@ -564,6 +609,23 @@ TurnChecklistStatus turn_checklist_status(const Kingdom& kingdom, int turn) {
             status.next_step_id = step.id;
     }
     return status;
+}
+
+bool complete_current_turn_checklist_step(Kingdom& kingdom, int turn, const std::string& step_id) {
+    if (find_turn_checklist_step(step_id) == nullptr)
+        throw std::invalid_argument("Turn checklist contains an unknown step id");
+    if (turn_checklist_status(kingdom, turn).next_step_id != step_id) return false;
+    set_turn_checklist_step(kingdom, turn, step_id, true);
+    return true;
+}
+
+bool skip_current_turn_checklist_step(Kingdom& kingdom, int turn, const std::string& step_id) {
+    const auto* step = find_turn_checklist_step(step_id);
+    if (step == nullptr) throw std::invalid_argument("Turn checklist contains an unknown step id");
+    if (!step->optional) return false;
+    if (turn_checklist_status(kingdom, turn).next_step_id != step_id) return false;
+    skip_turn_checklist_step(kingdom, turn, step_id);
+    return true;
 }
 
 void set_turn_checklist_step(Kingdom& kingdom, int turn, const std::string& step_id, bool completed) {
@@ -1626,7 +1688,7 @@ const char* workbook_map_template_name(WorkbookMapTemplate preset) {
         case WorkbookMapTemplate::City: return "City # Map";
         case WorkbookMapTemplate::Example: return "Example Map";
         case WorkbookMapTemplate::MultiDistrict: return "Multi-District Map";
-        case WorkbookMapTemplate::CityLayout: return "PDF City Layout (6x6 / 3x3 districts)";
+        case WorkbookMapTemplate::CityLayout: return "PDF City Layout (6x6 / 3x3 city squares)";
         default: return "Unknown map template";
     }
 }
@@ -1644,23 +1706,28 @@ SettlementMap workbook_map_template(WorkbookMapTemplate preset) {
 
     switch (preset) {
         case WorkbookMapTemplate::Capital:
+            map.template_id = "workbook.capital";
             map.placements.push_back({"Castle", 5, 5, 2, 2});
             break;
         case WorkbookMapTemplate::City:
+            map.template_id = "workbook.city";
             break;
         case WorkbookMapTemplate::Example:
+            map.template_id = "workbook.example";
             map.labels.push_back({"2x lots", 5, 1, 1, 2});
             map.labels.push_back({"To be built", 5, 2, 1, 1});
             map.labels.push_back({"4x lots eg. castle", 5, 5, 2, 2});
             break;
         case WorkbookMapTemplate::CityLayout:
-            // The PDF worksheet shows three districts across and three down,
-            // with each district divided into a 2x2 block: six cells per side.
+            map.template_id = "pdf.city_layout";
+            // The PDF worksheet shows one six-by-six city district divided
+            // into nine visual two-by-two city squares.
             map.rows = 6;
             map.columns = 6;
             map.labels.clear();
             break;
         case WorkbookMapTemplate::MultiDistrict:
+            map.template_id = "workbook.multi_district";
             map.rows = 15;
             map.columns = 15;
             map.labels = {
@@ -1694,9 +1761,52 @@ SettlementMap workbook_map_template(WorkbookMapTemplate preset) {
 }
 
 int city_layout_district_index(const SettlementMap& map, int row, int column) {
-    if (map.rows != 6 || map.columns != 6 || row < 0 || column < 0 || row >= map.rows || column >= map.columns)
+    if (!is_map_template(map, "pdf.city_layout", 6, 6)
+        || row < 0 || column < 0 || row >= map.rows || column >= map.columns)
         return 0;
     return (row / 2) * 3 + (column / 2) + 1;
+}
+
+MapFootprint rotate_map_footprint(MapFootprint footprint) {
+    if (footprint.width < 1 || footprint.height < 1)
+        throw std::invalid_argument("Map footprint dimensions must be positive");
+    std::swap(footprint.width, footprint.height);
+    return footprint;
+}
+
+MapFootprint default_map_footprint_for_lots(int lots) {
+    if (lots < 0) throw std::invalid_argument("Building lot count cannot be negative");
+    if (lots == 2) return {2, 1};
+    if (lots == 4) return {2, 2};
+    return {1, 1};
+}
+
+int map_occupied_district_count(const SettlementMap& map) {
+    struct DistrictBounds { int row; int column; int height; int width; };
+    std::vector<DistrictBounds> districts;
+    if (is_map_template(map, "pdf.city_layout", 6, 6)) {
+        districts.push_back({0, 0, 6, 6});
+    } else if (is_map_template(map, "workbook.capital", 8, 8)
+               || is_map_template(map, "workbook.city", 8, 8)
+               || is_map_template(map, "workbook.example", 8, 8)) {
+        districts.push_back({1, 1, 6, 6});
+    } else if (is_map_template(map, "workbook.multi_district", 15, 15)) {
+        districts = {{1, 1, 6, 6}, {1, 8, 6, 6}, {8, 1, 6, 6}, {8, 8, 6, 6}};
+    } else {
+        return 0;
+    }
+    int occupied = 0;
+    for (const auto& district : districts) {
+        const int row_end = district.row + district.height;
+        const int column_end = district.column + district.width;
+        const bool has_building = std::any_of(map.placements.begin(), map.placements.end(),
+            [district, row_end, column_end](const MapPlacement& placement) {
+                return placement.row < row_end && district.row < placement.row + placement.height
+                    && placement.column < column_end && district.column < placement.column + placement.width;
+            });
+        if (has_building) ++occupied;
+    }
+    return occupied;
 }
 
 KingdomStatResult calculate_stat(const KingdomStatInput& input, int control_dc) {
@@ -1788,7 +1898,7 @@ SettlementTotals aggregate_settlements(const std::vector<Settlement>& settlement
         if (settlement.apply_catalog_stat_effects)
             throw std::invalid_argument("Building catalog is required when catalog stat effects are enabled");
         population += settlement.population;
-        districts += settlement.districts;
+        districts += std::max(settlement.districts, map_occupied_district_count(settlement.map));
         economy += settlement.economy;
         loyalty += settlement.loyalty;
         stability += settlement.stability;
@@ -1994,7 +2104,7 @@ void save(const Kingdom& k, const std::string& path) {
                 {"west", city_boundary_surface_name(s.city_layout.west)},
                 {"east", city_boundary_surface_name(s.city_layout.east)},
                 {"base_value", s.city_layout.base_value}, {"item_columns", Json::array()}}},
-            {"map", {{"rows", s.map.rows}, {"columns", s.map.columns},
+            {"map", {{"rows", s.map.rows}, {"columns", s.map.columns}, {"template_id", s.map.template_id},
                 {"placements", Json::array()}, {"labels", Json::array()}}}};
         for (const auto& building : s.building_inventory)
             item["building_inventory"].push_back({{"name", building.name}, {"count", building.count}});
@@ -2259,6 +2369,7 @@ Kingdom load(const std::string& path) {
             auto& map = k.settlements.back().map;
             map.rows = required_int(map_json, "rows");
             map.columns = required_int(map_json, "columns");
+            map.template_id = map_json.contains("template_id") ? required_string(map_json, "template_id") : std::string{};
             for (const auto& placement : map_json.at("placements")) {
                 if (!placement.is_object()) throw std::runtime_error("Invalid map placement");
                 map.placements.push_back({required_string(placement, "building_name"),

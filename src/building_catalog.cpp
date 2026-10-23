@@ -177,8 +177,9 @@ SettlementSize calculate_settlement_size(
     };
     const int total_lots = to_int(lots, "lots");
     const long long minimum_districts = lots == 0 ? 1 : (lots + 35) / 36;
-    const long long districts = 36LL * settlement.districts > lots
-        ? settlement.districts : minimum_districts;
+    const long long occupied_map_districts = map_occupied_district_count(settlement.map);
+    const long long districts = std::max({minimum_districts,
+        static_cast<long long>(settlement.districts), occupied_map_districts});
     const long long minimum_population = lots * 250;
     const long long population = settlement.population >= minimum_population
         ? settlement.population : minimum_population;

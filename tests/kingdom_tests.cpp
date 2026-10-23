@@ -108,6 +108,25 @@ int main(int argc, char** argv) {
        && std::string(pkkm::turn_action_checklist_step(pkkm::TurnAction::AbandonHex)) == "edicts.abandon_hexes"
        && std::string(pkkm::turn_action_checklist_step(pkkm::TurnAction::AbandonCity)) == "edicts.city",
        "turn actions map to their source checklist steps");
+  const auto* optional_loyalty = pkkm::find_turn_checklist_step("upkeep.loyalty_check");
+  const auto* required_taxes = pkkm::find_turn_checklist_step("income.taxes");
+  must(optional_loyalty != nullptr && optional_loyalty->optional
+       && required_taxes != nullptr && !required_taxes->optional
+       && pkkm::find_turn_checklist_step("missing.step") == nullptr,
+       "turn action workflow can resolve checklist steps by stable ID and preserve optionality");
+  auto guarded_workflow = r;
+  must(pkkm::complete_current_turn_checklist_step(guarded_workflow, 6, "upkeep.stability"),
+       "current checklist step can be completed through the guarded workflow helper");
+  must(!pkkm::complete_current_turn_checklist_step(guarded_workflow, 6, "income.taxes"),
+       "guarded workflow rejects completion of a non-current checklist step");
+  must(pkkm::complete_current_turn_checklist_step(guarded_workflow, 6, "upkeep.consumption")
+       && pkkm::complete_current_turn_checklist_step(guarded_workflow, 6, "upkeep.magic_items")
+       && pkkm::complete_current_turn_checklist_step(guarded_workflow, 6, "upkeep.modify_unrest"),
+       "guarded workflow advances required steps in source order");
+  must(pkkm::skip_current_turn_checklist_step(guarded_workflow, 6, "upkeep.loyalty_check"),
+       "guarded workflow can skip the current optional checklist step");
+  must(!pkkm::skip_current_turn_checklist_step(guarded_workflow, 6, "income.taxes"),
+       "guarded workflow rejects skipping a required checklist step");
  auto empty_checklist_status = pkkm::turn_checklist_status(r, 6);
  must(empty_checklist_status.completed_step_ids.empty()
        && empty_checklist_status.next_step_id == "upkeep.stability",
@@ -1186,12 +1205,29 @@ int main(int argc, char** argv) {
  const auto example_map=pkkm::workbook_map_template(pkkm::WorkbookMapTemplate::Example);
  const auto multi_district_map=pkkm::workbook_map_template(pkkm::WorkbookMapTemplate::MultiDistrict);
  const auto city_layout_map=pkkm::workbook_map_template(pkkm::WorkbookMapTemplate::CityLayout);
+ const pkkm::SettlementMap generic_six_by_six{6, 6};
  must(pkkm::city_layout_district_index(city_layout_map,0,0)==1
       && pkkm::city_layout_district_index(city_layout_map,1,1)==1
       && pkkm::city_layout_district_index(city_layout_map,0,2)==2
       && pkkm::city_layout_district_index(city_layout_map,4,4)==9
-      && pkkm::city_layout_district_index(city_layout_map,6,0)==0,
-      "PDF city layout groups cells into nine visual 2x2 districts");
+      && pkkm::city_layout_district_index(city_layout_map,6,0)==0
+      && pkkm::city_layout_district_index(generic_six_by_six,0,0)==0,
+      "PDF city layout groups cells into nine visual 2x2 city squares");
+ const auto rotated_footprint=pkkm::rotate_map_footprint({2,1});
+ const auto rotated_back=pkkm::rotate_map_footprint(rotated_footprint);
+ must(rotated_footprint.width==1 && rotated_footprint.height==2
+      && rotated_back.width==2 && rotated_back.height==1,
+      "rotating a building footprint swaps width and height and rotates back cleanly");
+ must_reject([] { (void)pkkm::rotate_map_footprint({0,1}); });
+ must(pkkm::default_map_footprint_for_lots(0).width==1
+      && pkkm::default_map_footprint_for_lots(0).height==1
+      && pkkm::default_map_footprint_for_lots(1).width==1
+      && pkkm::default_map_footprint_for_lots(2).width==2
+      && pkkm::default_map_footprint_for_lots(2).height==1
+      && pkkm::default_map_footprint_for_lots(4).width==2
+      && pkkm::default_map_footprint_for_lots(4).height==2
+      && pkkm::default_map_footprint_for_lots(3).width==1,
+      "default placement dimensions follow explicit one-, two-, four-, and fallback lot categories");
  const auto matches_label=[](const pkkm::MapLabel& label,const std::string& text,
      int row,int column,int width,int height){
      return label.text==text && label.row==row && label.column==column
@@ -1219,8 +1255,9 @@ int main(int argc, char** argv) {
       && matches_label(example_map.labels[6],"4x lots eg. castle",5,5,2,2),
       "Example Map preset keeps lot captions as visual annotations with exact merged ranges");
  must(city_layout_map.rows==6 && city_layout_map.columns==6
+      && city_layout_map.template_id=="pdf.city_layout"
       && city_layout_map.placements.empty() && city_layout_map.labels.empty(),
-      "PDF City Layout preset provides a blank 6x6 worksheet for three 2x2 districts per side");
+      "PDF City Layout preset provides one blank 6x6 district with nine visual 2x2 city squares");
  must(multi_district_map.rows==15 && multi_district_map.columns==15
       && multi_district_map.placements.empty() && multi_district_map.labels.size()==14
       && matches_label(multi_district_map.labels[0],"Hill",0,1,6,1)
@@ -1238,6 +1275,43 @@ int main(int argc, char** argv) {
       && matches_label(multi_district_map.labels[12],"Water",14,1,6,1)
       && matches_label(multi_district_map.labels[13],"Water",14,8,6,1),
       "Multi-District Map preset preserves all 14 merged annotations without mechanics");
+ must(pkkm::map_occupied_district_count(city_layout_map)==0
+      && pkkm::map_occupied_district_count(capital_map)==1,
+      "a populated single-district template contributes one occupied district");
+ pkkm::SettlementMap custom_six_by_six{6, 6, {{"Custom Hall", 0, 0, 1, 1}}};
+ auto occupied_city_layout = city_layout_map;
+ occupied_city_layout.placements.push_back({"Hall", 0, 0, 1, 1});
+ must(pkkm::map_occupied_district_count(custom_six_by_six)==0
+      && pkkm::map_occupied_district_count(occupied_city_layout)==1,
+      "only an explicit PDF city-layout template contributes its occupied district");
+ auto multi_district_occupancy = multi_district_map;
+ multi_district_occupancy.placements = {{"Hall", 1, 1, 1, 1}, {"Shop", 8, 8, 1, 1}};
+ must(pkkm::map_occupied_district_count(multi_district_occupancy)==2,
+      "multi-district maps count each occupied six-by-six district once");
+ auto template_border_placement = k;
+ template_border_placement.settlements[0].map = multi_district_map;
+ template_border_placement.settlements[0].map.placements.push_back({"Fence", 0, 0, 1, 1});
+ must_reject([&] { pkkm::validate(template_border_placement); });
+ auto mismatched_template_geometry = k;
+ mismatched_template_geometry.settlements[0].map = {8, 8, {{"Hall", 0, 0, 1, 1}}, {}, "workbook.multi_district"};
+ must_reject([&] { pkkm::validate(mismatched_template_geometry); });
+ auto unknown_empty_template = k;
+ unknown_empty_template.settlements[0].map = {0, 0, {}, {}, "not.a.template"};
+ must_reject([&] { pkkm::validate(unknown_empty_template); });
+ auto template_roundtrip = k;
+ template_roundtrip.settlements[0].map = multi_district_occupancy;
+ const std::string template_map_path="pkkm_template_map_roundtrip_test.json";
+ pkkm::save(template_roundtrip,template_map_path);
+ const auto loaded_template_map=pkkm::load(template_map_path);
+ must(loaded_template_map.settlements[0].map.template_id=="workbook.multi_district"
+      && pkkm::map_occupied_district_count(loaded_template_map.settlements[0].map)==2,
+      "workbook map template identity roundtrips before deriving district totals");
+ std::remove(template_map_path.c_str());
+ pkkm::Settlement map_sized_settlement;
+ map_sized_settlement.name = "Mapped Town";
+ map_sized_settlement.map = multi_district_occupancy;
+ must(pkkm::aggregate_settlements({map_sized_settlement}).districts == 2,
+      "occupied map districts raise settlement district totals automatically");
  must(r.rule_inputs.alignment=="CE" && r.rule_inputs.economy.events==1
       && r.rule_inputs.leadership.spymaster.bonus==4 && r.rule_inputs.kingdom_size==24,
       "roundtrip workbook-derived rule inputs");
@@ -1426,6 +1500,10 @@ int main(int argc, char** argv) {
      {"New Town",0,0,0,0,0,0,{{"Academy",2}}},catalog);
  must(derived_size.lots==4 && derived_size.districts==1 && derived_size.population==1000,
       "settlement size derives lots, minimum districts, and population from building inventory");
+ const auto mapped_size=pkkm::calculate_settlement_size(map_sized_settlement,catalog);
+ must(mapped_size.lots==0 && mapped_size.districts==2
+      && pkkm::aggregate_settlements({map_sized_settlement},catalog).districts==2,
+      "occupied map districts also raise catalog-aware settlement totals automatically");
  pkkm::KingdomRuleInputs size_rules;
  size_rules.kingdom_size=1;
  const auto building_summary=pkkm::calculate_kingdom_summary(0,size_rules,
