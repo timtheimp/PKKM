@@ -73,6 +73,43 @@ struct SettlementMagicItemPreview {
     int qualifying_buildings = 0;
     std::vector<std::string> sources;
 };
+enum class RandomMagicItemTier { Minor, Medium, Major };
+struct SettlementRandomMagicItemCandidate {
+    RandomMagicItemTier tier = RandomMagicItemTier::Minor;
+    int slot_index = 0;
+    int category_roll = 0;
+    std::string category;
+    std::string variant;
+    std::string resolution_status;
+};
+struct SettlementRandomMagicItemPreview {
+    std::uint64_t seed = 0;
+    std::string source_profile = "d20pfsrd-all-captured";
+    std::vector<SettlementRandomMagicItemCandidate> candidates;
+};
+struct RandomMagicItemCatalogReference {
+    std::string source_profile;
+    int record_count = 0;
+    struct Record {
+        std::string category;
+        std::string tier;
+        std::string variant;
+        std::string table;
+        int low = 0;
+        int high = 0;
+        std::string name;
+        int price_gp = 0;
+        std::string source_url;
+    };
+    std::vector<Record> records;
+};
+struct RandomMagicItemAvailability {
+    std::string tier;
+    int slot_index = 0;
+    int roll = 0;
+    bool available = false;
+    std::string status;
+};
 struct SettlementBuildingDiscountPreview {
     bool stacking_enabled = true;
     std::vector<std::string> source_buildings;
@@ -91,6 +128,17 @@ SettlementMarketReference calculate_settlement_market_reference(
     const Settlement& settlement, const std::vector<BuildingCatalogEntry>& catalog);
 SettlementMagicItemPreview preview_settlement_magic_items(
     const Settlement& settlement, const std::vector<BuildingCatalogEntry>& catalog);
+SettlementRandomMagicItemPreview preview_settlement_random_magic_items(
+    const SettlementMagicItemPreview& slots, std::uint64_t seed);
+RandomMagicItemCatalogReference load_random_magic_item_catalog(const std::string& path);
+int apply_random_magic_item_upkeep(Settlement& settlement,
+    const SettlementMagicItemPreview& slots,
+    const RandomMagicItemCatalogReference& catalog,
+    std::uint64_t seed, int turn);
+void remove_random_magic_item_stock(Settlement& settlement,
+    const std::string& tier, int slot_index, int turn);
+std::vector<RandomMagicItemAvailability> preview_random_magic_item_availability(
+    const Settlement& settlement, int base_value, std::uint64_t seed);
 SettlementBuildingDiscountPreview preview_settlement_building_discounts(
     const Settlement& settlement, const std::string& target_name,
     const std::vector<BuildingCatalogEntry>& catalog, bool stacking_enabled);

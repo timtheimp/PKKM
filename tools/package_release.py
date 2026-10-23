@@ -10,6 +10,7 @@ RELEASE_PAYLOAD = (
     "pkkm.exe",
     "building_catalog.json",
     "Kingmaker-Greenbelt-Map.jpg",
+    "random_magic_item_catalog.json",
 )
 
 

@@ -22,7 +22,7 @@ int main(int argc, char** argv) {
  must(pkkm::resolve_item_deposit_bp(k.rule_profile, 8000)==2,
       "PDF item deposits use 4,000 gp per BP");
  k.turn_progress = {{4,{"upkeep.stability","income.deposit_gold"}},
-                    {5,{"events.roll_d100"}}};
+                     {5,{"events.roll_d100"}, {"upkeep.loyalty_check"}}};
  k.calendar_notes = {{"calendar.row.2", "", "", "", "Opening month"},
                      {"calendar.row.14", "Founding festival", "Build the bridge", "Dragon sighting", ""}};
  k.settlements.push_back({"Oak", 1200, 2, 3, -1, 4, 7});
@@ -33,6 +33,9 @@ int main(int argc, char** argv) {
  k.settlements[0].city_layout.north = pkkm::CityBoundarySurface::Water;
  k.settlements[0].city_layout.east = pkkm::CityBoundarySurface::Water;
  k.settlements[0].city_layout.base_value = 500;
+ k.settlements[0].random_magic_item_stock.push_back({"minor", 1, "generated",
+     "Ring of counterspells", 4000, "Greater Minor Rings",
+     "https://www.d20pfsrd.com/magic-items/rings", 7, 7});
  k.settlements[0].city_layout.item_columns[0] = {"Cloak of Resistance +1"};
  k.settlements[0].city_layout.item_columns[2] = {"Wand of Cure Light Wounds", "Ring of Protection +1"};
  k.greenbelt_map.asset_path="Kingmaker-Greenbelt-Map.jpg";
@@ -59,6 +62,93 @@ int main(int argc, char** argv) {
  k.rule_inputs.city_count = 3; k.rule_inputs.total_city_population = 3250;
  pkkm::save(k,path); const auto r=pkkm::load(path);
  must(r.name==k.name && r.turn==4 && r.treasury_bp==120 && r.unrest==2,"roundtrip scalar fields");
+ pkkm::ArmyCreationRequest army_request;
+ army_request.name = "Regular Army";
+ army_request.unit_description = "Humans (fighter 2)";
+ army_request.size_category = "gargantuan";
+ army_request.individual_cr = 1;
+ army_request.hd_average_tenths = 55;
+ army_request.improved_weapons = 1;
+ army_request.improved_armor = 1;
+ army_request.ranged_weapons = 1;
+ army_request.mount_cr = 2;
+ army_request.tactics = {"Hold the line", "Protect the banner"};
+ army_request.special_abilities = {"Shield wall"};
+ army_request.prerequisites = {"GM approval"};
+ army_request.notes = "Manual source note";
+ auto army_kingdom = k;
+ pkkm::apply_army_creation(army_kingdom, army_request);
+ must(army_kingdom.armies.size() == 1 && army_kingdom.armies[0].soldiers == 1000
+      && army_kingdom.armies[0].army_cr == 7 && army_kingdom.armies[0].hit_points == 38
+      && army_kingdom.armies[0].defense_value == 20 && army_kingdom.armies[0].offense_modifier == 10
+      && army_kingdom.armies[0].weekly_consumption == 3 && army_kingdom.armies[0].bp_cost == 12,
+      "army creation derives source-defined statistics and resource cost");
+ pkkm::save(army_kingdom,path);
+ const auto army_roundtrip = pkkm::load(path);
+ must(army_roundtrip.armies.size() == 1 && army_roundtrip.armies[0].request.name == "Regular Army"
+      && army_roundtrip.armies[0].army_cr == 7 && army_roundtrip.armies[0].bp_cost == 12
+      && army_roundtrip.armies[0].request.mount_cr == 2
+      && army_roundtrip.armies[0].request.tactics.size() == 2
+      && army_roundtrip.armies[0].request.special_abilities.front() == "Shield wall"
+      && army_roundtrip.armies[0].request.prerequisites.front() == "GM approval"
+      && army_roundtrip.armies[0].request.notes == "Manual source note",
+      "army worksheet record round-trips through JSON");
+ must(r.turn_progress.size() == 2 && r.turn_progress[1].skipped_step_ids.size() == 1
+      && r.turn_progress[1].skipped_step_ids.front() == "upkeep.loyalty_check",
+      "turn checklist skipped-step state round-trips through JSON");
+ auto checklist_status = pkkm::turn_checklist_status(r, 4);
+ must(checklist_status.turn == 4 && checklist_status.steps.size() == pkkm::turn_checklist_steps().size(),
+      "turn checklist status preserves source step order");
+ must(checklist_status.completed_step_ids.size() == 2
+       && checklist_status.completed_step_ids[0] == "upkeep.stability"
+       && checklist_status.completed_step_ids[1] == "income.deposit_gold"
+       && checklist_status.next_step_id == "upkeep.consumption",
+       "turn checklist status canonicalizes completed steps and finds the next step");
+  must(std::string(pkkm::turn_action_checklist_step(pkkm::TurnAction::ClaimHex)) == "edicts.claim_hexes"
+       && std::string(pkkm::turn_action_checklist_step(pkkm::TurnAction::AbandonHex)) == "edicts.abandon_hexes"
+       && std::string(pkkm::turn_action_checklist_step(pkkm::TurnAction::AbandonCity)) == "edicts.city",
+       "turn actions map to their source checklist steps");
+  const auto* optional_loyalty = pkkm::find_turn_checklist_step("upkeep.loyalty_check");
+  const auto* required_taxes = pkkm::find_turn_checklist_step("income.taxes");
+  must(optional_loyalty != nullptr && optional_loyalty->optional
+       && required_taxes != nullptr && !required_taxes->optional
+       && pkkm::find_turn_checklist_step("missing.step") == nullptr,
+       "turn action workflow can resolve checklist steps by stable ID and preserve optionality");
+  auto guarded_workflow = r;
+  must(pkkm::complete_current_turn_checklist_step(guarded_workflow, 6, "upkeep.stability"),
+       "current checklist step can be completed through the guarded workflow helper");
+  must(!pkkm::complete_current_turn_checklist_step(guarded_workflow, 6, "income.taxes"),
+       "guarded workflow rejects completion of a non-current checklist step");
+  must(pkkm::complete_current_turn_checklist_step(guarded_workflow, 6, "upkeep.consumption")
+       && pkkm::complete_current_turn_checklist_step(guarded_workflow, 6, "upkeep.magic_items")
+       && pkkm::complete_current_turn_checklist_step(guarded_workflow, 6, "upkeep.modify_unrest"),
+       "guarded workflow advances required steps in source order");
+  must(pkkm::skip_current_turn_checklist_step(guarded_workflow, 6, "upkeep.loyalty_check"),
+       "guarded workflow can skip the current optional checklist step");
+  must(!pkkm::skip_current_turn_checklist_step(guarded_workflow, 6, "income.taxes"),
+       "guarded workflow rejects skipping a required checklist step");
+ auto empty_checklist_status = pkkm::turn_checklist_status(r, 6);
+ must(empty_checklist_status.completed_step_ids.empty()
+       && empty_checklist_status.next_step_id == "upkeep.stability",
+       "turn checklist status starts an untracked turn at the first step");
+  auto wizard_state = r;
+  pkkm::set_turn_checklist_step(wizard_state, 6, "upkeep.stability", true);
+  auto marked_checklist_status = pkkm::turn_checklist_status(wizard_state, 6);
+  must(marked_checklist_status.completed_step_ids.size() == 1
+       && marked_checklist_status.completed_step_ids.front() == "upkeep.stability"
+       && marked_checklist_status.next_step_id == "upkeep.consumption",
+       "turn checklist step completion persists in the turn workflow state");
+  pkkm::set_turn_checklist_step(wizard_state, 6, "upkeep.stability", false);
+  must(pkkm::turn_checklist_status(wizard_state, 6).completed_step_ids.empty(),
+         "turn checklist step completion can be explicitly cleared");
+    for (const char* step_id : {"upkeep.stability", "upkeep.consumption", "upkeep.magic_items", "upkeep.modify_unrest"})
+        pkkm::set_turn_checklist_step(wizard_state, 6, step_id, true);
+    pkkm::skip_turn_checklist_step(wizard_state, 6, "upkeep.loyalty_check");
+    auto skipped_checklist_status = pkkm::turn_checklist_status(wizard_state, 6);
+    must(skipped_checklist_status.skipped_step_ids.size() == 1
+         && skipped_checklist_status.skipped_step_ids.front() == "upkeep.loyalty_check"
+         && skipped_checklist_status.next_step_id == "edicts.assign_leadership",
+         "optional checklist steps require an explicit skip before the wizard advances");
  auto legacy_root_profile=nlohmann::json::parse(contents(path));
  legacy_root_profile.erase("rule_profile");
  const std::string legacy_root_profile_path="pkkm_test_legacy_root_profile.json";
@@ -81,6 +171,9 @@ int main(int argc, char** argv) {
  must(r.settlements[0].city_layout.north==pkkm::CityBoundarySurface::Water
       && r.settlements[0].city_layout.east==pkkm::CityBoundarySurface::Water
       && r.settlements[0].city_layout.base_value==500
+      && r.settlements[0].random_magic_item_stock.size()==1
+      && r.settlements[0].random_magic_item_stock[0].item_name=="Ring of counterspells"
+      && r.settlements[0].random_magic_item_stock[0].price_gp==4000
       && r.settlements[0].city_layout.item_columns[0].size()==1
       && r.settlements[0].city_layout.item_columns[2].size()==2,
       "schema 10 roundtrips manual PDF city worksheet fields");
@@ -476,6 +569,7 @@ int main(int argc, char** argv) {
  const auto& turn_steps=pkkm::turn_checklist_steps();
  must(turn_steps.size()==20 && turn_steps.front().id=="upkeep.stability"
       && turn_steps.front().phase=="Phase 1 Upkeep"
+      && turn_steps[5].phase=="Phase 2 Improvement"
       && turn_steps.front().marker=="Step 1"
       && turn_steps.back().id=="events.roll_d100"
       && turn_steps.back().label=="Roll d% for event",
@@ -524,6 +618,15 @@ int main(int argc, char** argv) {
       "Kingmaker event table exposes all d100 ranges and continuous events");
       must_reject([&]{ (void)pkkm::kingdom_event_from_d100(0); });
       must_reject([&]{ (void)pkkm::kingdom_event_from_d100(101); });
+      auto generated_event = k;
+      const auto generated_event_index = pkkm::record_kingdom_event(generated_event, 42);
+      must(generated_event_index == 0 && generated_event.kingdom_events.size() == 1
+           && generated_event.kingdom_events[0].turn == generated_event.turn
+           && generated_event.kingdom_events[0].kind == pkkm::KingdomEventKind::GoodWeather
+           && !generated_event.kingdom_events[0].continuous_active
+           && !generated_event.kingdom_events[0].consequences_applied,
+           "recording an event roll creates an unresolved source-faithful event record");
+      must_reject([&]{ (void)pkkm::record_kingdom_event(generated_event, 0); });
   k.kingdom_events.push_back({4, 45, pkkm::KingdomEventKind::MonsterAttack,
       false, true, "Warden", "Oak", "Block 3", "q0,r0",
       "GM applied the source consequence manually", -2, 1, -1, true, false});
@@ -1102,12 +1205,29 @@ int main(int argc, char** argv) {
  const auto example_map=pkkm::workbook_map_template(pkkm::WorkbookMapTemplate::Example);
  const auto multi_district_map=pkkm::workbook_map_template(pkkm::WorkbookMapTemplate::MultiDistrict);
  const auto city_layout_map=pkkm::workbook_map_template(pkkm::WorkbookMapTemplate::CityLayout);
+ const pkkm::SettlementMap generic_six_by_six{6, 6};
  must(pkkm::city_layout_district_index(city_layout_map,0,0)==1
       && pkkm::city_layout_district_index(city_layout_map,1,1)==1
       && pkkm::city_layout_district_index(city_layout_map,0,2)==2
       && pkkm::city_layout_district_index(city_layout_map,4,4)==9
-      && pkkm::city_layout_district_index(city_layout_map,6,0)==0,
-      "PDF city layout groups cells into nine visual 2x2 districts");
+      && pkkm::city_layout_district_index(city_layout_map,6,0)==0
+      && pkkm::city_layout_district_index(generic_six_by_six,0,0)==0,
+      "PDF city layout groups cells into nine visual 2x2 city squares");
+ const auto rotated_footprint=pkkm::rotate_map_footprint({2,1});
+ const auto rotated_back=pkkm::rotate_map_footprint(rotated_footprint);
+ must(rotated_footprint.width==1 && rotated_footprint.height==2
+      && rotated_back.width==2 && rotated_back.height==1,
+      "rotating a building footprint swaps width and height and rotates back cleanly");
+ must_reject([] { (void)pkkm::rotate_map_footprint({0,1}); });
+ must(pkkm::default_map_footprint_for_lots(0).width==1
+      && pkkm::default_map_footprint_for_lots(0).height==1
+      && pkkm::default_map_footprint_for_lots(1).width==1
+      && pkkm::default_map_footprint_for_lots(2).width==2
+      && pkkm::default_map_footprint_for_lots(2).height==1
+      && pkkm::default_map_footprint_for_lots(4).width==2
+      && pkkm::default_map_footprint_for_lots(4).height==2
+      && pkkm::default_map_footprint_for_lots(3).width==1,
+      "default placement dimensions follow explicit one-, two-, four-, and fallback lot categories");
  const auto matches_label=[](const pkkm::MapLabel& label,const std::string& text,
      int row,int column,int width,int height){
      return label.text==text && label.row==row && label.column==column
@@ -1135,8 +1255,9 @@ int main(int argc, char** argv) {
       && matches_label(example_map.labels[6],"4x lots eg. castle",5,5,2,2),
       "Example Map preset keeps lot captions as visual annotations with exact merged ranges");
  must(city_layout_map.rows==6 && city_layout_map.columns==6
+      && city_layout_map.template_id=="pdf.city_layout"
       && city_layout_map.placements.empty() && city_layout_map.labels.empty(),
-      "PDF City Layout preset provides a blank 6x6 worksheet for three 2x2 districts per side");
+      "PDF City Layout preset provides one blank 6x6 district with nine visual 2x2 city squares");
  must(multi_district_map.rows==15 && multi_district_map.columns==15
       && multi_district_map.placements.empty() && multi_district_map.labels.size()==14
       && matches_label(multi_district_map.labels[0],"Hill",0,1,6,1)
@@ -1154,6 +1275,43 @@ int main(int argc, char** argv) {
       && matches_label(multi_district_map.labels[12],"Water",14,1,6,1)
       && matches_label(multi_district_map.labels[13],"Water",14,8,6,1),
       "Multi-District Map preset preserves all 14 merged annotations without mechanics");
+ must(pkkm::map_occupied_district_count(city_layout_map)==0
+      && pkkm::map_occupied_district_count(capital_map)==1,
+      "a populated single-district template contributes one occupied district");
+ pkkm::SettlementMap custom_six_by_six{6, 6, {{"Custom Hall", 0, 0, 1, 1}}};
+ auto occupied_city_layout = city_layout_map;
+ occupied_city_layout.placements.push_back({"Hall", 0, 0, 1, 1});
+ must(pkkm::map_occupied_district_count(custom_six_by_six)==0
+      && pkkm::map_occupied_district_count(occupied_city_layout)==1,
+      "only an explicit PDF city-layout template contributes its occupied district");
+ auto multi_district_occupancy = multi_district_map;
+ multi_district_occupancy.placements = {{"Hall", 1, 1, 1, 1}, {"Shop", 8, 8, 1, 1}};
+ must(pkkm::map_occupied_district_count(multi_district_occupancy)==2,
+      "multi-district maps count each occupied six-by-six district once");
+ auto template_border_placement = k;
+ template_border_placement.settlements[0].map = multi_district_map;
+ template_border_placement.settlements[0].map.placements.push_back({"Fence", 0, 0, 1, 1});
+ must_reject([&] { pkkm::validate(template_border_placement); });
+ auto mismatched_template_geometry = k;
+ mismatched_template_geometry.settlements[0].map = {8, 8, {{"Hall", 0, 0, 1, 1}}, {}, "workbook.multi_district"};
+ must_reject([&] { pkkm::validate(mismatched_template_geometry); });
+ auto unknown_empty_template = k;
+ unknown_empty_template.settlements[0].map = {0, 0, {}, {}, "not.a.template"};
+ must_reject([&] { pkkm::validate(unknown_empty_template); });
+ auto template_roundtrip = k;
+ template_roundtrip.settlements[0].map = multi_district_occupancy;
+ const std::string template_map_path="pkkm_template_map_roundtrip_test.json";
+ pkkm::save(template_roundtrip,template_map_path);
+ const auto loaded_template_map=pkkm::load(template_map_path);
+ must(loaded_template_map.settlements[0].map.template_id=="workbook.multi_district"
+      && pkkm::map_occupied_district_count(loaded_template_map.settlements[0].map)==2,
+      "workbook map template identity roundtrips before deriving district totals");
+ std::remove(template_map_path.c_str());
+ pkkm::Settlement map_sized_settlement;
+ map_sized_settlement.name = "Mapped Town";
+ map_sized_settlement.map = multi_district_occupancy;
+ must(pkkm::aggregate_settlements({map_sized_settlement}).districts == 2,
+      "occupied map districts raise settlement district totals automatically");
  must(r.rule_inputs.alignment=="CE" && r.rule_inputs.economy.events==1
       && r.rule_inputs.leadership.spymaster.bonus==4 && r.rule_inputs.kingdom_size==24,
       "roundtrip workbook-derived rule inputs");
@@ -1228,6 +1386,65 @@ int main(int argc, char** argv) {
  must(tiered_preview.minor_slots==4 && tiered_preview.medium_slots==2
       && tiered_preview.major_slots==2,
       "magic-item preview parses and scales minor, medium, and major source tiers");
+ const auto random_preview=pkkm::preview_settlement_random_magic_items(tiered_preview,42);
+ must(random_preview.seed==42 && random_preview.source_profile=="d20pfsrd-all-captured"
+      && random_preview.candidates.size()==8,
+      "random magic-item preview creates one candidate per available slot");
+ must(random_preview.candidates[0].tier==pkkm::RandomMagicItemTier::Minor
+      && random_preview.candidates[4].tier==pkkm::RandomMagicItemTier::Medium
+      && random_preview.candidates[6].tier==pkkm::RandomMagicItemTier::Major,
+      "random magic-item preview preserves slot tiers and order");
+ must(random_preview.candidates[0].category_roll>=1
+      && random_preview.candidates[0].category_roll<=100
+      && !random_preview.candidates[0].category.empty()
+      && (random_preview.candidates[0].variant=="lesser"
+          || random_preview.candidates[0].variant=="greater")
+      && !random_preview.candidates[0].resolution_status.empty(),
+      "random magic-item preview records auditable category rolls and resolution status");
+ const auto repeated_random_preview=pkkm::preview_settlement_random_magic_items(tiered_preview,42);
+ must(repeated_random_preview.candidates[0].category_roll==random_preview.candidates[0].category_roll
+      && repeated_random_preview.candidates[0].category==random_preview.candidates[0].category
+      && repeated_random_preview.candidates[0].variant==random_preview.candidates[0].variant,
+      "random magic-item preview is reproducible for a supplied seed");
+ pkkm::RandomMagicItemCatalogReference upkeep_catalog;
+ upkeep_catalog.source_profile="d20pfsrd-all-captured";
+ upkeep_catalog.record_count=1;
+ upkeep_catalog.records.push_back({"rings", "minor", "lesser", "Lesser Minor Rings",
+     1, 100, "Ring of counterspells", 4000, "https://www.d20pfsrd.com/magic-items/rings"});
+ pkkm::Settlement upkeep_settlement=tiered_magic;
+ const int populated_slots=pkkm::apply_random_magic_item_upkeep(
+     upkeep_settlement, tiered_preview, upkeep_catalog, 42, 7);
+ must(populated_slots==8 && upkeep_settlement.random_magic_item_stock.size()==8,
+      "random magic-item upkeep populates each empty settlement slot");
+ const int repeated_population=pkkm::apply_random_magic_item_upkeep(
+     upkeep_settlement, tiered_preview, upkeep_catalog, 42, 8);
+ must(repeated_population==0,
+      "random magic-item upkeep preserves generated and manual-resolution stock");
+ auto generated_stock=std::find_if(upkeep_settlement.random_magic_item_stock.begin(),
+     upkeep_settlement.random_magic_item_stock.end(), [](const auto& stock) {
+         return stock.state=="generated";
+     });
+ if (generated_stock!=upkeep_settlement.random_magic_item_stock.end()) {
+     pkkm::remove_random_magic_item_stock(upkeep_settlement,
+         generated_stock->tier, generated_stock->slot_index, 9);
+     must(generated_stock->state=="empty" && generated_stock->item_name.empty(),
+          "random magic-item purchase or sale removes generated stock until next upkeep");
+ }
+ pkkm::Settlement availability_settlement;
+ availability_settlement.name="Availability";
+ availability_settlement.random_magic_item_stock.push_back({"minor",1,"generated",
+     "Affordable Ring",4000,"Table","source",1,1});
+ availability_settlement.random_magic_item_stock.push_back({"medium",1,"generated",
+     "Expensive Ring",5000,"Table","source",1,1});
+ const auto availability=pkkm::preview_random_magic_item_availability(
+     availability_settlement,4000,42);
+ must(availability.size()==2 && availability[1].available
+      && availability[1].status=="above_base_value_always_available"
+      && availability[0].roll>=1 && availability[0].roll<=100,
+      "random magic-item availability applies the 75 percent base-value rule as a pure preview");
+ pkkm::SettlementMagicItemPreview negative_random_slots;
+ negative_random_slots.minor_slots=-1;
+ must_reject([&] { (void)pkkm::preview_settlement_random_magic_items(negative_random_slots,42); });
  pkkm::Settlement unknown_magic{"Unknown Magic",0,0,0,0,0,0,{{"Not A Building",1}}};
  must_reject([&] { (void)pkkm::preview_settlement_magic_items(unknown_magic,catalog); });
  pkkm::Settlement negative_magic{"Negative Magic",0,0,0,0,0,0,{{magic_entry->name,-1}}};
@@ -1283,6 +1500,10 @@ int main(int argc, char** argv) {
      {"New Town",0,0,0,0,0,0,{{"Academy",2}}},catalog);
  must(derived_size.lots==4 && derived_size.districts==1 && derived_size.population==1000,
       "settlement size derives lots, minimum districts, and population from building inventory");
+ const auto mapped_size=pkkm::calculate_settlement_size(map_sized_settlement,catalog);
+ must(mapped_size.lots==0 && mapped_size.districts==2
+      && pkkm::aggregate_settlements({map_sized_settlement},catalog).districts==2,
+      "occupied map districts also raise catalog-aware settlement totals automatically");
  pkkm::KingdomRuleInputs size_rules;
  size_rules.kingdom_size=1;
  const auto building_summary=pkkm::calculate_kingdom_summary(0,size_rules,

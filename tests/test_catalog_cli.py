@@ -11,7 +11,7 @@ if len(sys.argv) == 3:
     CATALOG = Path(sys.argv[2])
 else:
     executable_candidates = [
-        PROJECT_ROOT / "build" / "release-0.1.11-rc" / "Release" / "pkkm.exe",
+        PROJECT_ROOT / "build" / "release-0.1.12-rc" / "Release" / "pkkm.exe",
         PROJECT_ROOT / "build" / "ci" / "Release" / "pkkm.exe",
         PROJECT_ROOT / "build" / "asset-copy-verify" / "Release" / "pkkm.exe",
         PROJECT_ROOT / "build" / "Release" / "pkkm.exe",
@@ -66,14 +66,14 @@ class CatalogCliTests(unittest.TestCase):
             capture_output=True,
             text=True,
         )
-        self.assertEqual(result.stdout.strip(), "PKKM 0.1.11")
+        self.assertEqual(result.stdout.strip(), "PKKM 0.1.12")
         alias_result = subprocess.run(
             [str(EXECUTABLE), "version"],
             check=True,
             capture_output=True,
             text=True,
         )
-        self.assertEqual(alias_result.stdout.strip(), "PKKM 0.1.11")
+        self.assertEqual(alias_result.stdout.strip(), "PKKM 0.1.12")
         version_flag = subprocess.run(
             [str(EXECUTABLE), "--version"],
             check=True,
@@ -136,6 +136,75 @@ class CatalogCliTests(unittest.TestCase):
         self.assertIn("Economy +4 | Loyalty +4 | Stability 0", output)
         self.assertIn("Defense/Unrest preview only", output)
         self.assertIn("Improvements +4", output)
+
+    def test_random_magic_item_preview_is_seeded_and_non_mutating(self):
+        kingdom = json.loads((PROJECT_ROOT / "examples" / "starter.json").read_text(encoding="utf-8"))
+        kingdom["schema_version"] = 6
+        kingdom["settlements"] = [{
+            "name": "Random Item Settlement",
+            "population": 0,
+            "districts": 0,
+            "economy": 0,
+            "loyalty": 0,
+            "stability": 0,
+            "defense": 0,
+            "building_inventory": [{"name": "Black Market (2H)", "count": 2}],
+            "apply_catalog_stat_effects": False,
+            "map": {"rows": 0, "columns": 0, "placements": []},
+        }]
+        with tempfile.TemporaryDirectory() as directory:
+            save_path = Path(directory) / "random-items.json"
+            save_path.write_text(json.dumps(kingdom), encoding="utf-8")
+            before = save_path.read_bytes()
+            result = subprocess.run(
+                [str(EXECUTABLE), "random-items", str(save_path), "42"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(save_path.read_bytes(), before)
+        self.assertIn("Random Item Settlement | seed 42 | source profile d20pfsrd-all-captured | catalog records 1014 | slots minor 4 medium 2 major 2", result.stdout)
+        self.assertEqual(result.stdout.count("random item |"), 8)
+        self.assertIn("category roll", result.stdout)
+        self.assertIn("variant ", result.stdout)
+        self.assertIn("lesser/greater variant selected 50/50", result.stdout)
+
+    def test_random_magic_item_upkeep_populates_and_persists_stock(self):
+        kingdom = json.loads((PROJECT_ROOT / "examples" / "starter.json").read_text(encoding="utf-8"))
+        kingdom["schema_version"] = 6
+        kingdom["settlements"] = [{
+            "name": "Upkeep Settlement",
+            "population": 0,
+            "districts": 0,
+            "economy": 0,
+            "loyalty": 0,
+            "stability": 0,
+            "defense": 0,
+            "building_inventory": [{"name": "Black Market (2H)", "count": 2}],
+            "apply_catalog_stat_effects": False,
+            "map": {"rows": 0, "columns": 0, "placements": []},
+        }]
+        with tempfile.TemporaryDirectory() as directory:
+            save_path = Path(directory) / "upkeep.json"
+            save_path.write_text(json.dumps(kingdom), encoding="utf-8")
+            applied = subprocess.run(
+                [str(EXECUTABLE), "random-items-apply", str(save_path), "42"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.assertIn("Applied random magic-item upkeep | seed 42 | populated 8 | catalog records 1014", applied.stdout)
+            persisted = json.loads(save_path.read_text(encoding="utf-8"))
+            stock = persisted["settlements"][0]["random_magic_item_stock"]
+            self.assertEqual(len(stock), 8)
+            self.assertTrue(all(entry["state"] in {"generated", "manual_resolution"} for entry in stock))
+            repeated = subprocess.run(
+                [str(EXECUTABLE), "random-items-apply", str(save_path), "99"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.assertIn("populated 0", repeated.stdout)
 
 
 if __name__ == "__main__":
