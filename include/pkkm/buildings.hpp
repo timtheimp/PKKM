@@ -51,6 +51,7 @@ struct SettlementBuildingTotals {
     int stability = 0;
     int defense = 0;
     int unrest = 0;
+    int consumption = 0;
     int corruption = 0;
     int crime = 0;
     int law = 0;
@@ -122,6 +123,7 @@ SettlementSize calculate_settlement_size(
     const Settlement& settlement, const std::vector<BuildingCatalogEntry>& catalog);
 SettlementBuildingTotals calculate_settlement_building_totals(
     const Settlement& settlement, const std::vector<BuildingCatalogEntry>& catalog);
+SettlementBuildingTotals calculate_custom_settlement_building_totals(const Settlement& settlement);
 int calculate_settlement_catalog_cost(
     const Settlement& settlement, const std::vector<BuildingCatalogEntry>& catalog);
 SettlementMarketReference calculate_settlement_market_reference(

@@ -28,7 +28,7 @@ int main(int argc, char** argv) {
  k.settlements.push_back({"Oak", 1200, 2, 3, -1, 4, 7});
  k.settlements[0].id="settlement.oak";
  k.settlements[0].apply_catalog_stat_effects=true;
- k.settlements[0].building_inventory.push_back({"Academy", 2});
+ k.settlements[0].building_inventory.push_back({"Academy", 2, "Oak's scholarly center"});
  k.settlements[0].map = {8, 8, {{"Castle", 5, 5, 2, 2}}};
  k.settlements[0].city_layout.north = pkkm::CityBoundarySurface::Water;
  k.settlements[0].city_layout.east = pkkm::CityBoundarySurface::Water;
@@ -48,6 +48,22 @@ int main(int argc, char** argv) {
      "Manual effect preview", "Manual cost", true,
      {"Provides a sheltered growing area.", "Adds a manual seasonal bonus."},
      {"Reduced by an adjacent Farm.", "Requires a river crossing."}});
+ k.greenbelt_map.custom_improvements[0].bp_cost=3;
+ k.greenbelt_map.custom_improvements[0].stat_effects={{"Consumption", -1}, {"Economy", 2}};
+ const std::string structured_effects_path="pkkm_test_structured_effects.json";
+ pkkm::save(k, structured_effects_path);
+ const auto structured_effects_roundtrip = pkkm::load(structured_effects_path);
+ must(structured_effects_roundtrip.greenbelt_map.custom_improvements[0].stat_effects.size() == 2
+      && structured_effects_roundtrip.greenbelt_map.custom_improvements[0].stat_effects[0].stat == "Consumption"
+      && structured_effects_roundtrip.greenbelt_map.custom_improvements[0].stat_effects[0].delta == -1,
+      "structured custom stat effects roundtrip through JSON");
+ std::remove(structured_effects_path.c_str());
+ auto invalid_structured_effect = k;
+ invalid_structured_effect.greenbelt_map.custom_improvements[0].stat_effects={{"Economy", 0}};
+ must_reject([&]{ pkkm::validate(invalid_structured_effect); });
+ auto too_many_custom_effects=k;
+ too_many_custom_effects.greenbelt_map.custom_improvements[0].effects={"1","2","3","4","5","6"};
+ must_reject([&]{ pkkm::validate(too_many_custom_effects); });
  k.buildings.push_back({"Granary", 2});
  const std::string path="pkkm_test_roundtrip.json";
  k.rule_inputs.alignment = "CE";
@@ -60,6 +76,64 @@ int main(int argc, char** argv) {
  k.rule_inputs.economy = {1, 2, 3};
  k.rule_inputs.kingdom_size = 24; k.rule_inputs.total_city_districts = 7;
  k.rule_inputs.city_count = 3; k.rule_inputs.total_city_population = 3250;
+ must(pkkm::calculate_leadership({}).economy_vacancy == 16,
+      "Economy vacancy penalty includes a vacant Spymaster");
+ pkkm::GreenbeltMap economy_map;
+ economy_map.hexes = {{0, 0, "resource", true, 1, "", {"mine"}},
+                      {1, 0, "plains", true, 1, "", {}},
+                      {2, 0, "plains", true, 1, "", {}},
+                      {3, 0, "plains", true, 1, "", {"farm"}},
+                      {4, 0, "resource", false, 0, "", {"mine"}}};
+ economy_map.special_terrain = {{0, 0, "river", "River 1", ""},
+                                {1, 0, "road", "Road 2", ""},
+                                {2, 0, "highway", "Highway 3", ""},
+                                {3, 0, "river", "River 4", ""}};
+ const auto economy_without_terrain = pkkm::calculate_kingdom_summary(
+     0, k.rule_inputs, {}, nullptr);
+ const auto economy_with_terrain = pkkm::calculate_kingdom_summary(
+     0, k.rule_inputs, {}, nullptr, &economy_map);
+ must(economy_with_terrain.economy_terrain == 4
+      && economy_with_terrain.economy.total == economy_without_terrain.economy.total + 4,
+      "Economy score includes Mine, Resource, and four qualifying River/Road/Highway hexes");
+ auto income_kingdom = k;
+ income_kingdom.settlements[0].apply_catalog_stat_effects = false;
+ std::vector<std::string> economy_preceding_completed;
+ std::vector<std::string> economy_preceding_skipped;
+ for (const auto& step : pkkm::turn_checklist_steps()) {
+     if (step.id == "income.economy_check") break;
+     if (step.optional) economy_preceding_skipped.push_back(step.id);
+     else economy_preceding_completed.push_back(step.id);
+ }
+ income_kingdom.turn_progress = {{income_kingdom.turn, economy_preceding_completed,
+     economy_preceding_skipped}};
+ const auto summary_before_income = pkkm::calculate_kingdom_summary(
+     income_kingdom.unrest, income_kingdom.rule_inputs, income_kingdom.settlements, nullptr);
+ const auto economy_preview = pkkm::preview_economy_check(income_kingdom, 20, 8);
+ const auto economy_failure_preview = pkkm::preview_economy_check(income_kingdom, 1, 0);
+ must(economy_preview.economy_score == summary_before_income.economy.total + k.unrest
+      && economy_preview.check_modifier == economy_preview.economy_score - k.unrest + 8
+      && economy_preview.roll_total == 20 + economy_preview.check_modifier
+      && economy_preview.command_dc == summary_before_income.control_dc
+      && economy_preview.success,
+      "Economy Check uses the stated score-minus-Unrest formula and caller modifiers");
+ must(!economy_failure_preview.success && economy_failure_preview.treasury_delta == 0,
+      "Economy Check failure records no generated BP");
+ pkkm::apply_economy_check(income_kingdom, 20, 8);
+ must(income_kingdom.economy_checks.size() == 1
+      && income_kingdom.economy_checks[0].economy_score == economy_preview.economy_score
+      && income_kingdom.economy_checks[0].treasury_delta == economy_preview.treasury_delta
+      && income_kingdom.treasury_bp == k.treasury_bp + economy_preview.treasury_delta
+      && pkkm::turn_checklist_status(income_kingdom, income_kingdom.turn).next_step_id
+          == "income.taxes",
+      "Economy Check records and applies generated BP income");
+ const std::string economy_path="pkkm_test_economy_check.json";
+ pkkm::save(income_kingdom, economy_path);
+ const auto income_roundtrip = pkkm::load(economy_path);
+ must(income_roundtrip.economy_checks.size() == 1
+      && income_roundtrip.economy_checks[0].roll_total == economy_preview.roll_total
+      && income_roundtrip.economy_checks[0].treasury_delta == economy_preview.treasury_delta,
+      "Economy Check history roundtrips through JSON persistence");
+ std::remove(economy_path.c_str());
  pkkm::save(k,path); const auto r=pkkm::load(path);
  must(r.name==k.name && r.turn==4 && r.treasury_bp==120 && r.unrest==2,"roundtrip scalar fields");
  pkkm::ArmyCreationRequest army_request;
@@ -158,6 +232,12 @@ int main(int argc, char** argv) {
       "legacy kingdoms without a root rule profile preserve Workbook semantics");
  std::remove(legacy_root_profile_path.c_str());
  must(r.settlements.size()==1 && r.settlements[0].population==1200 && r.buildings[0].count==2,"roundtrip collections");
+ must(r.settlements[0].building_inventory.size()==1
+      && r.settlements[0].building_inventory[0].description=="Oak's scholarly center",
+      "settlement building descriptions roundtrip through JSON persistence");
+ must(r.greenbelt_map.custom_improvements.size()==1
+      && r.greenbelt_map.custom_improvements[0].bp_cost==3,
+      "custom improvement BP cost roundtrips through JSON persistence");
  must(r.settlements[0].districts==2 && r.settlements[0].economy==3 && r.settlements[0].loyalty==-1
       && r.settlements[0].stability==4 && r.settlements[0].defense==7,
       "roundtrip settlement workbook totals");
@@ -571,11 +651,23 @@ int main(int argc, char** argv) {
       && turn_steps.front().phase=="Phase 1 Upkeep"
       && turn_steps[5].phase=="Phase 2 Improvement"
       && turn_steps.front().marker=="Step 1"
+      && turn_steps[12].id=="income.withdraw_gold"
+      && turn_steps[12].marker=="Step 1"
+      && turn_steps[15].id=="income.economy_check"
+      && turn_steps[15].marker=="Step 4"
+      && !turn_steps[15].optional
+      && turn_steps[16].id=="income.taxes"
+      && turn_steps[16].marker=="Step 5"
+      && !turn_steps[16].optional
+      && turn_steps[17].id=="income.buy_magic_item"
+      && turn_steps[17].marker=="Optional 1"
+      && turn_steps[18].id=="income.buy_for_kingdom"
+      && turn_steps[18].marker=="Optional 2"
       && turn_steps.back().id=="events.roll_d100"
       && turn_steps.back().label=="Roll d% for event",
       "manual checklist exposes the 20 source procedure items in phase order");
- must(std::count_if(turn_steps.begin(),turn_steps.end(),[](const auto& step){return step.optional;})==4,
-      "manual checklist preserves all four source optional tasks");
+ must(std::count_if(turn_steps.begin(),turn_steps.end(),[](const auto& step){return step.optional;})==3,
+      "manual checklist excludes the redundant optional Economy Check");
  must(pkkm::classify_stability_failure(3)==pkkm::StabilityFailureOutcome::FailByLessThanFour
       && pkkm::classify_stability_failure(5)==pkkm::StabilityFailureOutcome::FailByAtLeastFive,
       "stability failure uses only the supported branches");
@@ -1360,6 +1452,28 @@ int main(int argc, char** argv) {
       && aggregated_summary.stability.improvements==5,
       "settlement totals feed territory, population, and kingdom statistic summaries");
  const auto catalog=pkkm::load_building_catalog(argc>1 ? argv[1] : "assets/building_catalog.json");
+ auto custom_building_kingdom = k;
+ custom_building_kingdom.settlements[0].building_inventory.clear();
+ custom_building_kingdom.settlements[0].building_inventory.push_back({
+     "Custom Foundry", 2, "A forge built to the gamemaster's specification.", 4, true,
+     {{"Economy", 2}, {"Consumption", -1}}});
+ const auto custom_building_totals = pkkm::calculate_settlement_building_totals(
+     custom_building_kingdom.settlements[0], catalog);
+ must(custom_building_totals.lots == 2 && custom_building_totals.economy == 4
+      && custom_building_totals.consumption == -2,
+      "custom settlement buildings contribute their automatic structured effects");
+ custom_building_kingdom.settlements[0].apply_catalog_stat_effects = false;
+ const auto custom_aggregate = pkkm::aggregate_settlements(custom_building_kingdom.settlements, catalog);
+ must(custom_aggregate.economy == custom_building_kingdom.settlements[0].economy + 4,
+      "custom building effects remain automatic when catalog effects are opt-in and disabled");
+ const std::string custom_building_path="pkkm_test_custom_building.json";
+ pkkm::save(custom_building_kingdom, custom_building_path);
+ const auto custom_building_roundtrip = pkkm::load(custom_building_path);
+ must(custom_building_roundtrip.settlements[0].building_inventory.back().custom
+      && custom_building_roundtrip.settlements[0].building_inventory.back().bp_cost == 4
+      && custom_building_roundtrip.settlements[0].building_inventory.back().stat_effects.size() == 2,
+      "custom settlement building fields roundtrip through JSON persistence");
+ std::remove(custom_building_path.c_str());
  int improvement_count=0;
  const pkkm::BuildingCatalogEntry* academy=nullptr;
  for (const auto& entry : catalog) {
@@ -1885,7 +1999,7 @@ int main(int argc, char** argv) {
  must_reject([] { (void)pkkm::alignment_bonuses("bad"); });
  pkkm::KingdomLeadershipInput vacant_leadership;
  auto vacancies = pkkm::calculate_leadership(vacant_leadership);
- must(vacancies.economy_vacancy == 12 && vacancies.loyalty_vacancy == 8 && vacancies.stability_vacancy == 4,
+ must(vacancies.economy_vacancy == 16 && vacancies.loyalty_vacancy == 8 && vacancies.stability_vacancy == 4,
       "leadership vacancies use source-specific per-role penalties");
  pkkm::KingdomLeadershipInput staffed;
  staffed.baron_bonus = 3; staffed.baron_benefits = {true, true, false};

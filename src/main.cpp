@@ -79,7 +79,7 @@ int main(int argc, char** argv) {
             const auto catalog_path = (executable.parent_path() / "building_catalog.json").string();
             const auto catalog = pkkm::load_building_catalog(catalog_path);
             const auto summary = pkkm::calculate_kingdom_summary(
-                kingdom.unrest, kingdom.rule_inputs, kingdom.settlements, &catalog);
+                kingdom.unrest, kingdom.rule_inputs, kingdom.settlements, &catalog, &kingdom.greenbelt_map);
             std::cout << kingdom.name << " | turn " << kingdom.turn
                       << " | rule profile " << pkkm::rule_profile_name(kingdom.rule_profile)
                       << " | treasury " << kingdom.treasury_bp

@@ -141,6 +141,27 @@ SettlementBuildingTotals calculate_settlement_building_totals(
     for (const auto& item : settlement.building_inventory) {
         if (item.name.empty() || item.count < 0)
             throw std::invalid_argument("Building inventory requires a name and nonnegative count");
+        if (item.custom) {
+            if (item.bp_cost < 0)
+                throw std::invalid_argument("Custom building BP cost cannot be negative: " + item.name);
+            if (item.stat_effects.size() > 5)
+                throw std::invalid_argument("Custom building cannot have more than five stat effects: " + item.name);
+            add_scaled(totals.lots, 1, item.count, "lots");
+            for (const auto& effect : item.stat_effects) {
+                if (effect.delta == 0)
+                    throw std::invalid_argument("Custom building stat effects cannot be zero: " + item.name);
+                int* target = nullptr;
+                if (effect.stat == "Economy") target = &totals.economy;
+                else if (effect.stat == "Loyalty") target = &totals.loyalty;
+                else if (effect.stat == "Stability") target = &totals.stability;
+                else if (effect.stat == "Defense") target = &totals.defense;
+                else if (effect.stat == "Unrest") target = &totals.unrest;
+                else if (effect.stat == "Consumption") target = &totals.consumption;
+                else throw std::invalid_argument("Unsupported custom building stat: " + effect.stat);
+                add_scaled(*target, effect.delta, item.count, effect.stat.c_str());
+            }
+            continue;
+        }
         const auto found = std::find_if(catalog.begin(), catalog.end(), [&item](const BuildingCatalogEntry& entry) {
             return entry.kind == CatalogRowKind::Improvement && entry.name == item.name;
         });
@@ -161,6 +182,41 @@ SettlementBuildingTotals calculate_settlement_building_totals(
         add_scaled(totals.society, found->society, item.count, "society");
         add_scaled(totals.productivity, found->productivity, item.count, "productivity");
         add_scaled(totals.fame, found->fame, item.count, "fame");
+    }
+    return totals;
+}
+
+SettlementBuildingTotals calculate_custom_settlement_building_totals(const Settlement& settlement) {
+    if (settlement.name.empty() || settlement.population < 0 || settlement.districts < 0)
+        throw std::invalid_argument("Settlement must have a name and nonnegative population/district overrides");
+    SettlementBuildingTotals totals;
+    const auto add_scaled = [](int& total, int per_building, int count, const char* field) {
+        const long long next = static_cast<long long>(total)
+            + static_cast<long long>(per_building) * count;
+        if (next < std::numeric_limits<int>::min() || next > std::numeric_limits<int>::max())
+            throw std::overflow_error(std::string("Derived custom settlement building ") + field + " exceeds supported range");
+        total = static_cast<int>(next);
+    };
+    for (const auto& item : settlement.building_inventory) {
+        if (!item.custom) continue;
+        if (item.name.empty() || item.count < 0 || item.bp_cost < 0)
+            throw std::invalid_argument("Custom building has invalid name, count, or BP cost");
+        if (item.stat_effects.size() > 5)
+            throw std::invalid_argument("Custom building cannot have more than five stat effects: " + item.name);
+        add_scaled(totals.lots, 1, item.count, "lots");
+        for (const auto& effect : item.stat_effects) {
+            if (effect.delta == 0)
+                throw std::invalid_argument("Custom building stat effects cannot be zero: " + item.name);
+            int* target = nullptr;
+            if (effect.stat == "Economy") target = &totals.economy;
+            else if (effect.stat == "Loyalty") target = &totals.loyalty;
+            else if (effect.stat == "Stability") target = &totals.stability;
+            else if (effect.stat == "Defense") target = &totals.defense;
+            else if (effect.stat == "Unrest") target = &totals.unrest;
+            else if (effect.stat == "Consumption") target = &totals.consumption;
+            else throw std::invalid_argument("Unsupported custom building stat: " + effect.stat);
+            add_scaled(*target, effect.delta, item.count, effect.stat.c_str());
+        }
     }
     return totals;
 }
@@ -192,6 +248,14 @@ int calculate_settlement_catalog_cost(
     for (const auto& item : settlement.building_inventory) {
         if (item.name.empty() || item.count < 0)
             throw std::invalid_argument("Building inventory requires a name and nonnegative count");
+        if (item.custom) {
+            if (item.bp_cost < 0)
+                throw std::invalid_argument("Custom building BP cost cannot be negative: " + item.name);
+            total += static_cast<long long>(item.bp_cost) * item.count;
+            if (total > std::numeric_limits<int>::max())
+                throw std::overflow_error("Settlement catalog cost exceeds supported range");
+            continue;
+        }
         const auto found = std::find_if(catalog.begin(), catalog.end(), [&item](const BuildingCatalogEntry& entry) {
             return entry.kind == CatalogRowKind::Improvement && entry.name == item.name;
         });

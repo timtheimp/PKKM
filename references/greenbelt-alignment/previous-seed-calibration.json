@@ -1,0 +1,36 @@
+{
+  "purpose": "Backup of the pre-reference-image Greenbelt calibration seed.",
+  "status": "Restore manually only if the new reference-derived seed is not desired.",
+  "source_file": "src/windows_app.cpp",
+  "previous_seed": {
+    "origin_x": 132.0,
+    "origin_y": 93.0,
+    "hex_width": 279.0,
+    "hex_height": 322.0,
+    "scale": 1.0
+  },
+  "current_reference": {
+    "image_path": "Greenbelt map with darkened hex grid.jpg",
+    "image_width": 2048,
+    "image_height": 679,
+    "origin_x": 142.90,
+    "origin_y": 85.20,
+    "hex_width": 72.6833,
+    "hex_height": 84.1467,
+    "scale": 1.0
+  },
+  "bundled_asset": {
+    "image_path": "assets/Kingmaker-Greenbelt-Map.jpg",
+    "image_width": 7865,
+    "image_height": 2610,
+    "x_conversion": 3.84033203125,
+    "y_conversion": 3.8438880706921944,
+    "converted_calibration": {
+      "origin_x": 548.783447265625,
+      "origin_y": 327.499263622975,
+      "hex_width": 279.128005126953,
+      "hex_height": 323.450496318115,
+      "scale": 1.0
+    }
+  }
+}

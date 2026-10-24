@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <set>
 #include <stdexcept>
 #ifdef _WIN32
 #define NOMINMAX
@@ -205,6 +206,19 @@ void validate(const Kingdom& k) {
         for (const auto& building : s.building_inventory) {
             if (building.name.empty() || building.count < 0)
                 throw std::invalid_argument("Settlement building must have a name and nonnegative count");
+            if (building.bp_cost < 0)
+                throw std::invalid_argument("Settlement building BP cost cannot be negative");
+            if (building.stat_effects.size() > 5)
+                throw std::invalid_argument("Settlement building supports at most five structured stat effects");
+            if (!building.custom && (!building.stat_effects.empty() || building.bp_cost != 0))
+                throw std::invalid_argument("Non-custom settlement buildings cannot define custom cost or stat effects");
+            for (const auto& effect : building.stat_effects) {
+                static const std::vector<std::string> supported_stats{
+                    "Economy", "Loyalty", "Stability", "Defense", "Unrest", "Consumption"};
+                if (std::find(supported_stats.begin(), supported_stats.end(), effect.stat) == supported_stats.end()
+                    || effect.delta == 0)
+                    throw std::invalid_argument("Settlement custom building effects need a supported nonzero stat delta");
+            }
         }
         for (const auto& stock : s.random_magic_item_stock) {
             if (stock.tier != "minor" && stock.tier != "medium" && stock.tier != "major")
@@ -275,7 +289,20 @@ void validate(const Kingdom& k) {
             }
         }
     }
-    for (const auto& b : k.buildings) if (b.name.empty() || b.count < 0) throw std::invalid_argument("Building must have a name and nonnegative count");
+    for (const auto& b : k.buildings) {
+        if (b.name.empty() || b.count < 0) throw std::invalid_argument("Building must have a name and nonnegative count");
+        if (b.bp_cost < 0 || b.stat_effects.size() > 5)
+            throw std::invalid_argument("Building custom cost/effect fields are invalid");
+        if (!b.custom && (!b.stat_effects.empty() || b.bp_cost != 0))
+            throw std::invalid_argument("Non-custom buildings cannot define custom cost or stat effects");
+        for (const auto& effect : b.stat_effects) {
+            static const std::vector<std::string> supported_stats{
+                "Economy", "Loyalty", "Stability", "Defense", "Unrest", "Consumption"};
+            if (std::find(supported_stats.begin(), supported_stats.end(), effect.stat) == supported_stats.end()
+                || effect.delta == 0)
+                throw std::invalid_argument("Building custom effects need a supported nonzero stat delta");
+        }
+    }
     std::vector<std::string> settlement_ids;
     for (const auto& settlement : k.settlements) {
         if (settlement.id.empty()) continue;
@@ -315,11 +342,24 @@ void validate(const Kingdom& k) {
         if (std::find(custom_improvement_ids.begin(), custom_improvement_ids.end(), improvement.id)
             != custom_improvement_ids.end())
             throw std::invalid_argument("Greenbelt custom improvement IDs must be unique");
+        if (improvement.effects.size() > 5)
+            throw std::invalid_argument("Greenbelt custom improvements support at most five effect entries");
+        if (improvement.stat_effects.size() > 5)
+            throw std::invalid_argument("Greenbelt custom improvements support at most five structured stat effects");
+        if (improvement.bp_cost < 0)
+            throw std::invalid_argument("Greenbelt custom improvement BP cost cannot be negative");
         if (std::any_of(improvement.effects.begin(), improvement.effects.end(),
                 [](const auto& effect) { return effect.empty(); })
             || std::any_of(improvement.costs.begin(), improvement.costs.end(),
                 [](const auto& cost) { return cost.empty(); }))
             throw std::invalid_argument("Greenbelt custom improvement effect and cost entries must not be empty");
+        for (const auto& effect : improvement.stat_effects) {
+            static const std::vector<std::string> supported_stats{
+                "Economy", "Loyalty", "Stability", "Defense", "Unrest", "Consumption"};
+            if (std::find(supported_stats.begin(), supported_stats.end(), effect.stat) == supported_stats.end()
+                || effect.delta == 0)
+                throw std::invalid_argument("Greenbelt custom structured stat effects need a supported nonzero stat delta");
+        }
         custom_improvement_ids.push_back(improvement.id);
     }
     std::vector<int> seen_turns;
@@ -388,6 +428,16 @@ void validate(const Kingdom& k) {
         if (record.treasury_delta != resolve_tax_bp_delta(record.rule_profile, record.economy_check_success,
                 record.result_input, record.other_bp_gained))
             throw std::invalid_argument("Tax record has an inconsistent treasury delta");
+    }
+    for (const auto& record : k.economy_checks) {
+        if (record.turn < 1 || record.d20_roll < 1 || record.d20_roll > 20
+            || record.unrest < 0 || record.command_dc < 0)
+            throw std::invalid_argument("Economy Check records have invalid inputs");
+        if (record.check_modifier != record.economy_score - record.unrest + record.check_specific_modifiers
+            || record.roll_total != record.d20_roll + record.check_modifier
+            || record.success != (record.roll_total >= record.command_dc)
+            || record.treasury_delta != (record.success ? record.roll_total / 5 : 0))
+            throw std::invalid_argument("Economy Check record has inconsistent results");
     }
     for (const auto& record : k.gold_withdrawals) {
         const long long expected_gold = static_cast<long long>(record.bp_withdrawn) * 2000;
@@ -570,10 +620,10 @@ const std::vector<TurnChecklistStep>& turn_checklist_steps() {
         {"income.withdraw_gold", "Phase 3 Income", "Step 1", "Withdrawal Gold", false},
         {"income.deposit_gold", "Phase 3 Income", "Step 2", "Deposit Gold", false},
         {"income.deposit_items", "Phase 3 Income", "Step 3", "Deposit Items", false},
+        {"income.economy_check", "Phase 3 Income", "Step 4", "Economy Check / Generate Income", false},
+        {"income.taxes", "Phase 3 Income", "Step 5", "Taxes: Econ Check", false},
         {"income.buy_magic_item", "Phase 3 Income", "Optional 1", "Buy Magic Item", true},
-        {"income.economy_check", "Phase 3 Income", "Optional 2", "Economy Check", true},
-        {"income.buy_for_kingdom", "Phase 3 Income", "Optional 3", "Buy for kingdom", true},
-        {"income.taxes", "Phase 3 Income", "Step 4", "Taxes: Econ Check", false},
+        {"income.buy_for_kingdom", "Phase 3 Income", "Optional 2", "Buy for kingdom", true},
         {"events.roll_d100", "Phase 4 Events", "Step 1", "Roll d% for event", false}
     };
     return steps;
@@ -1334,6 +1384,47 @@ int resolve_tax_bp_delta(bool economy_check_success, int result_input, int other
         result_input, other_bp_gained);
 }
 
+EconomyCheckPreview preview_economy_check(const Kingdom& kingdom, int d20_roll,
+                                           int check_specific_modifiers,
+                                           const std::vector<BuildingCatalogEntry>* catalog) {
+    if (d20_roll < 1 || d20_roll > 20)
+        throw std::invalid_argument("Economy Check d20 roll must be between 1 and 20");
+    const auto summary = calculate_kingdom_summary(kingdom.unrest, kingdom.rule_inputs,
+        kingdom.settlements, catalog, &kingdom.greenbelt_map);
+    const long long economy_score = static_cast<long long>(summary.economy.total) + kingdom.unrest;
+    const long long check_modifier = economy_score - kingdom.unrest + check_specific_modifiers;
+    const long long roll_total = d20_roll + check_modifier;
+    const bool success = roll_total >= summary.control_dc;
+    const long long treasury_delta = success ? roll_total / 5 : 0;
+    if (economy_score < std::numeric_limits<int>::min() || economy_score > std::numeric_limits<int>::max()
+        || check_modifier < std::numeric_limits<int>::min() || check_modifier > std::numeric_limits<int>::max()
+        || roll_total < std::numeric_limits<int>::min() || roll_total > std::numeric_limits<int>::max()
+        || treasury_delta < 0 || treasury_delta > std::numeric_limits<int>::max())
+        throw std::overflow_error("Economy Check result exceeds supported kingdom state");
+    return {static_cast<int>(economy_score), kingdom.unrest, check_specific_modifiers,
+        static_cast<int>(check_modifier), d20_roll, static_cast<int>(roll_total),
+        summary.control_dc, success, static_cast<int>(treasury_delta)};
+}
+
+void apply_economy_check(Kingdom& kingdom, int d20_roll, int check_specific_modifiers,
+                         const std::vector<BuildingCatalogEntry>* catalog) {
+    validate(kingdom);
+    const auto workflow = turn_checklist_status(kingdom, kingdom.turn);
+    if (workflow.next_step_id != "income.economy_check")
+        throw std::invalid_argument("Economy Check is not the current Turn Checklist step");
+    const auto preview = preview_economy_check(kingdom, d20_roll, check_specific_modifiers, catalog);
+    if (preview.treasury_delta > 0
+        && kingdom.treasury_bp > std::numeric_limits<int>::max() - preview.treasury_delta)
+        throw std::overflow_error("Economy Check would overflow treasury");
+    kingdom.treasury_bp += preview.treasury_delta;
+    kingdom.economy_checks.push_back({kingdom.turn, preview.economy_score, preview.unrest,
+        preview.check_specific_modifiers, preview.check_modifier, preview.d20_roll,
+        preview.roll_total, preview.command_dc, preview.success, preview.treasury_delta});
+    if (!complete_current_turn_checklist_step(kingdom, kingdom.turn, "income.economy_check"))
+        throw std::logic_error("Economy Check could not complete its checklist step");
+    validate(kingdom);
+}
+
 int resolve_tax_bp_delta(RuleProfile profile, bool economy_check_success,
                          int result_input, int other_bp_gained) {
     if (result_input < 0 || other_bp_gained < 0)
@@ -1917,8 +2008,24 @@ SettlementTotals aggregate_settlements(const std::vector<Settlement>& settlement
         const auto size = calculate_settlement_size(settlement, catalog);
         population += size.population;
         districts += size.districts;
-        const auto effects = settlement.apply_catalog_stat_effects
+        const auto custom_effects = calculate_custom_settlement_building_totals(settlement);
+        const auto catalog_effects = settlement.apply_catalog_stat_effects
             ? calculate_settlement_building_totals(settlement, catalog) : SettlementBuildingTotals{};
+        const auto effects = SettlementBuildingTotals{
+            catalog_effects.lots + (settlement.apply_catalog_stat_effects ? 0 : custom_effects.lots),
+            catalog_effects.economy + (settlement.apply_catalog_stat_effects ? 0 : custom_effects.economy),
+            catalog_effects.loyalty + (settlement.apply_catalog_stat_effects ? 0 : custom_effects.loyalty),
+            catalog_effects.stability + (settlement.apply_catalog_stat_effects ? 0 : custom_effects.stability),
+            catalog_effects.defense + (settlement.apply_catalog_stat_effects ? 0 : custom_effects.defense),
+            catalog_effects.unrest + (settlement.apply_catalog_stat_effects ? 0 : custom_effects.unrest),
+            catalog_effects.consumption + (settlement.apply_catalog_stat_effects ? 0 : custom_effects.consumption),
+            catalog_effects.corruption + (settlement.apply_catalog_stat_effects ? 0 : custom_effects.corruption),
+            catalog_effects.crime + (settlement.apply_catalog_stat_effects ? 0 : custom_effects.crime),
+            catalog_effects.law + (settlement.apply_catalog_stat_effects ? 0 : custom_effects.law),
+            catalog_effects.lore + (settlement.apply_catalog_stat_effects ? 0 : custom_effects.lore),
+            catalog_effects.society + (settlement.apply_catalog_stat_effects ? 0 : custom_effects.society),
+            catalog_effects.productivity + (settlement.apply_catalog_stat_effects ? 0 : custom_effects.productivity),
+            catalog_effects.fame + (settlement.apply_catalog_stat_effects ? 0 : custom_effects.fame)};
         economy += static_cast<long long>(settlement.economy) + effects.economy;
         loyalty += static_cast<long long>(settlement.loyalty) + effects.loyalty;
         stability += static_cast<long long>(settlement.stability) + effects.stability;
@@ -1953,7 +2060,8 @@ KingdomLeadershipResult calculate_leadership(const KingdomLeadershipInput& input
         case KingdomStatFocus::Stability: stability += input.spymaster.bonus; break;
         default: throw std::invalid_argument("Unsupported Spymaster benefit");
     }
-    const int economy_vacancy = (input.magister.filled ? 0 : 4) + (input.marshal.filled ? 0 : 4) + (input.treasurer.filled ? 0 : 4);
+    const int economy_vacancy = (input.magister.filled ? 0 : 4) + (input.marshal.filled ? 0 : 4)
+        + (input.spymaster.filled ? 0 : 4) + (input.treasurer.filled ? 0 : 4);
     const int loyalty_vacancy = (input.general.filled ? 0 : 4) + (input.high_priest.filled ? 0 : 2) + (input.warden.filled ? 0 : 2);
     const int stability_vacancy = (input.grand_diplomat.filled ? 0 : 2) + (input.warden.filled ? 0 : 2);
     return {checked_int(economy, "Economy leadership bonus"), checked_int(loyalty, "Loyalty leadership bonus"),
@@ -1969,9 +2077,62 @@ int population_total(int kingdom_size, int city_count, int total_city_population
         "Kingdom population");
 }
 
+namespace {
+std::string lowercase(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char character) {
+        return static_cast<char>(std::tolower(character));
+    });
+    return value;
+}
+
+bool is_mine_improvement(const std::string& name) {
+    const auto normalized = lowercase(name);
+    return normalized == "mine" || normalized.find("mine") != std::string::npos;
+}
+
+bool is_resource_terrain(const std::string& terrain) {
+    const auto normalized = lowercase(terrain);
+    return normalized == "resource" || normalized.find("resource") != std::string::npos;
+}
+
+bool is_qualifying_corridor(const std::string& type) {
+    const auto normalized = lowercase(type);
+    return normalized == "river" || normalized == "road" || normalized == "highway"
+        || normalized.find("river") != std::string::npos
+        || normalized.find("road") != std::string::npos
+        || normalized.find("highway") != std::string::npos;
+}
+
+int greenbelt_economy_bonus(const GreenbeltMap& map) {
+    std::set<std::pair<int, int>> claimed_hexes;
+    std::set<std::pair<int, int>> corridor_hexes;
+    int bonus = 0;
+    for (const auto& hex : map.hexes) {
+        if (!hex.claimed) continue;
+        const std::pair<int, int> coordinate{hex.q, hex.r};
+        claimed_hexes.insert(coordinate);
+        const bool resource = is_resource_terrain(hex.terrain);
+        if (resource) ++bonus;
+        if (is_qualifying_corridor(hex.terrain)) corridor_hexes.insert(coordinate);
+        for (const auto& improvement : hex.improvements) {
+            if (is_mine_improvement(improvement)) bonus += resource ? 2 : 1;
+            if (is_qualifying_corridor(improvement)) corridor_hexes.insert(coordinate);
+        }
+    }
+    for (const auto& terrain : map.special_terrain) {
+        const std::pair<int, int> coordinate{terrain.q, terrain.r};
+        if (claimed_hexes.count(coordinate) != 0 && is_qualifying_corridor(terrain.type))
+            corridor_hexes.insert(coordinate);
+    }
+    bonus += static_cast<int>(corridor_hexes.size() / 4);
+    return bonus;
+}
+}
+
 KingdomSummary calculate_kingdom_summary(int unrest, const KingdomRuleInputs& input,
                                          const std::vector<Settlement>& settlements,
-                                         const std::vector<BuildingCatalogEntry>* catalog) {
+                                         const std::vector<BuildingCatalogEntry>* catalog,
+                                         const GreenbeltMap* greenbelt_map) {
     const auto alignment = alignment_bonuses(input.alignment);
     const auto laws = calculate_laws(input.laws);
     const auto leadership = calculate_leadership(input.leadership);
@@ -1982,19 +2143,21 @@ KingdomSummary calculate_kingdom_summary(int unrest, const KingdomRuleInputs& in
     const int city_count = has_settlements ? totals.count : input.city_count;
     const int city_population = has_settlements ? totals.population : input.total_city_population;
     const int dc = control_dc(input.kingdom_size, district_count, input.control_dc_other);
+    const int economy_terrain = greenbelt_map ? greenbelt_economy_bonus(*greenbelt_map) : 0;
     const auto make_stat = [unrest, dc](const KingdomStatBaseInput& base, int settlement_bonus, int alignment_bonus,
-                                        int leadership_bonus, int law_bonus, int vacancy) {
+                                        int leadership_bonus, int law_bonus, int vacancy, int terrain_bonus = 0) {
         const int improvements = checked_int(static_cast<long long>(base.improvements) + settlement_bonus,
                                              "Kingdom improvement modifier");
         return calculate_stat_breakdown({base.events, alignment_bonus, improvements, leadership_bonus,
-                                         law_bonus, unrest, vacancy, base.other}, dc);
+                                         law_bonus, unrest, vacancy, checked_int(static_cast<long long>(base.other) + terrain_bonus,
+                                                                                  "Kingdom other modifier")}, dc);
     };
     return {dc,
-        make_stat(input.economy, totals.economy, alignment.economy, leadership.economy_bonus, laws.economy, leadership.economy_vacancy),
+        make_stat(input.economy, totals.economy, alignment.economy, leadership.economy_bonus, laws.economy, leadership.economy_vacancy, economy_terrain),
         make_stat(input.loyalty, totals.loyalty, alignment.loyalty, leadership.loyalty_bonus, laws.loyalty, leadership.loyalty_vacancy),
         make_stat(input.stability, totals.stability, alignment.stability, leadership.stability_bonus, laws.stability, leadership.stability_vacancy),
         laws, leadership, totals,
-        population_total(input.kingdom_size, city_count, city_population)};
+        population_total(input.kingdom_size, city_count, city_population), economy_terrain};
 }
 
 const char* rule_profile_name(RuleProfile profile) {
@@ -2079,7 +2242,7 @@ void save(const Kingdom& k, const std::string& path) {
         {"treasury_bp", k.treasury_bp}, {"unrest", k.unrest}, {"rule_profile", rule_profile_name(k.rule_profile)},
         {"use_optional_mine_rule", k.use_optional_mine_rule},
         {"settlements", Json::array()}, {"buildings", Json::array()},
-        {"turn_progress", Json::array()}, {"turn_actions", Json::array()}, {"tax_actions", Json::array()},
+        {"turn_progress", Json::array()}, {"turn_actions", Json::array()}, {"tax_actions", Json::array()}, {"economy_checks", Json::array()},
                 {"stability_checks", Json::array()}, {"consumption_actions", Json::array()}, {"unrest_modifications", Json::array()}, {"gold_withdrawals", Json::array()}, {"gold_deposits", Json::array()}, {"item_deposits", Json::array()}, {"loyalty_checks", Json::array()}, {"commissions", Json::array()}, {"magic_item_outcomes", Json::array()}, {"valuable_item_sales", Json::array()}, {"calendar_notes", Json::array()},
         {"kingdom_events", Json::array()}, {"construction_transactions", Json::array()}, {"armies", Json::array()},
         {"greenbelt_map", {{"asset_path", k.greenbelt_map.asset_path},
@@ -2106,8 +2269,14 @@ void save(const Kingdom& k, const std::string& path) {
                 {"base_value", s.city_layout.base_value}, {"item_columns", Json::array()}}},
             {"map", {{"rows", s.map.rows}, {"columns", s.map.columns}, {"template_id", s.map.template_id},
                 {"placements", Json::array()}, {"labels", Json::array()}}}};
-        for (const auto& building : s.building_inventory)
-            item["building_inventory"].push_back({{"name", building.name}, {"count", building.count}});
+        for (const auto& building : s.building_inventory) {
+            Json building_json = {{"name", building.name}, {"count", building.count},
+                {"description", building.description}, {"bp_cost", building.bp_cost},
+                {"custom", building.custom}, {"stat_effects", Json::array()}};
+            for (const auto& effect : building.stat_effects)
+                building_json["stat_effects"].push_back({{"stat", effect.stat}, {"delta", effect.delta}});
+            item["building_inventory"].push_back(std::move(building_json));
+        }
         for (const auto& stock : s.random_magic_item_stock)
             item["random_magic_item_stock"].push_back({
                 {"tier", stock.tier}, {"slot_index", stock.slot_index}, {"state", stock.state},
@@ -2125,7 +2294,13 @@ void save(const Kingdom& k, const std::string& path) {
             item["city_layout"]["item_columns"].push_back(column);
         output["settlements"].push_back(std::move(item));
     }
-    for (const auto& b : k.buildings) output["buildings"].push_back({{"name", b.name}, {"count", b.count}});
+    for (const auto& b : k.buildings) {
+        Json building_json = {{"name", b.name}, {"count", b.count}, {"description", b.description},
+            {"bp_cost", b.bp_cost}, {"custom", b.custom}, {"stat_effects", Json::array()}};
+        for (const auto& effect : b.stat_effects)
+            building_json["stat_effects"].push_back({{"stat", effect.stat}, {"delta", effect.delta}});
+        output["buildings"].push_back(std::move(building_json));
+    }
     for (const auto& progress : k.turn_progress)
         output["turn_progress"].push_back({{"turn", progress.turn},
             {"completed_step_ids", progress.completed_step_ids},
@@ -2141,6 +2316,13 @@ void save(const Kingdom& k, const std::string& path) {
             {"result_input", tax.result_input},
             {"other_bp_gained", tax.other_bp_gained}, {"treasury_delta", tax.treasury_delta},
             {"rule_profile", rule_profile_name(tax.rule_profile)}});
+    for (const auto& check : k.economy_checks)
+        output["economy_checks"].push_back({{"turn", check.turn},
+            {"economy_score", check.economy_score}, {"unrest", check.unrest},
+            {"check_specific_modifiers", check.check_specific_modifiers},
+            {"check_modifier", check.check_modifier}, {"d20_roll", check.d20_roll},
+            {"roll_total", check.roll_total}, {"command_dc", check.command_dc},
+            {"success", check.success}, {"treasury_delta", check.treasury_delta}});
     for (const auto& withdrawal : k.gold_withdrawals)
         output["gold_withdrawals"].push_back({{"turn", withdrawal.turn},
             {"bp_withdrawn", withdrawal.bp_withdrawn}, {"gold_received", withdrawal.gold_received},
@@ -2242,11 +2424,15 @@ void save(const Kingdom& k, const std::string& path) {
     for (const auto& terrain : k.greenbelt_map.special_terrain)
         output["greenbelt_map"]["special_terrain"].push_back({{"q", terrain.q}, {"r", terrain.r},
             {"type", terrain.type}, {"name", terrain.name}, {"notes", terrain.notes}});
-    for (const auto& improvement : k.greenbelt_map.custom_improvements)
-        output["greenbelt_map"]["custom_improvements"].push_back({{"id", improvement.id},
-            {"name", improvement.name}, {"effect_preview", improvement.effect_preview},
-            {"cost_description", improvement.cost_description}, {"manual_only", improvement.manual_only},
-            {"effects", improvement.effects}, {"costs", improvement.costs}});
+    for (const auto& improvement : k.greenbelt_map.custom_improvements) {
+        Json item = {{"id", improvement.id}, {"name", improvement.name},
+            {"effect_preview", improvement.effect_preview}, {"cost_description", improvement.cost_description},
+            {"manual_only", improvement.manual_only}, {"effects", improvement.effects},
+            {"costs", improvement.costs}, {"bp_cost", improvement.bp_cost}, {"stat_effects", Json::array()}};
+        for (const auto& effect : improvement.stat_effects)
+            item["stat_effects"].push_back({{"stat", effect.stat}, {"delta", effect.delta}});
+        output["greenbelt_map"]["custom_improvements"].push_back(std::move(item));
+    }
     {
         std::ofstream file(temp, std::ios::binary | std::ios::trunc);
         if (!file) throw std::runtime_error("Cannot create temporary save file");
@@ -2297,6 +2483,20 @@ Kingdom load(const std::string& path) {
     else k.rule_profile = RuleProfile::Workbook;
     if (root.contains("use_optional_mine_rule")) k.use_optional_mine_rule = required_bool(root, "use_optional_mine_rule");
     if (root.contains("rules")) k.rule_inputs = read_rule_inputs(root.at("rules"));
+    const auto read_building = [](const Json& building) {
+        Building result{required_string(building, "name"), required_int(building, "count"),
+            building.contains("description") ? required_string(building, "description") : std::string{}};
+        result.bp_cost = optional_int(building, "bp_cost", 0);
+        result.custom = building.contains("custom") ? required_bool(building, "custom") : false;
+        if (building.contains("stat_effects")) {
+            if (!building.at("stat_effects").is_array()) throw std::runtime_error("Building stat_effects must be an array");
+            for (const auto& effect : building.at("stat_effects")) {
+                if (!effect.is_object()) throw std::runtime_error("Building stat effect must be an object");
+                result.stat_effects.push_back({required_string(effect, "stat"), required_int(effect, "delta")});
+            }
+        }
+        return result;
+    };
     for (const auto& item : root.at("settlements")) {
         if (!item.is_object() || !item.contains("name") || !item.contains("population")) throw std::runtime_error("Invalid settlement entry");
         const auto read_settlement_int = [document_version, &item](const char* key) {
@@ -2338,8 +2538,7 @@ Kingdom load(const std::string& path) {
             for (const auto& building : item.at("building_inventory")) {
                 if (!building.is_object() || !building.contains("name") || !building.contains("count"))
                     throw std::runtime_error("Invalid settlement building entry");
-                k.settlements.back().building_inventory.push_back(
-                    {required_string(building, "name"), required_int(building, "count")});
+                k.settlements.back().building_inventory.push_back(read_building(building));
             }
         }
         if (item.contains("random_magic_item_stock")) {
@@ -2389,7 +2588,7 @@ Kingdom load(const std::string& path) {
     }
     for (const auto& item : root.at("buildings")) {
         if (!item.is_object() || !item.contains("name") || !item.contains("count")) throw std::runtime_error("Invalid building entry");
-        k.buildings.push_back({required_string(item, "name"), required_int(item, "count")});
+        k.buildings.push_back(read_building(item));
     }
     if (document_version >= 8) {
         for (const auto& item : root.at("turn_progress")) {
@@ -2441,6 +2640,17 @@ Kingdom load(const std::string& path) {
             k.tax_actions.push_back({required_int(item, "turn"), required_bool(item, "economy_check_success"),
                 result_input, required_int(item, "other_bp_gained"),
                 required_int(item, "treasury_delta"), profile});
+        }
+    }
+    if (root.contains("economy_checks")) {
+        if (!root.at("economy_checks").is_array()) throw std::runtime_error("economy_checks must be an array");
+        for (const auto& item : root.at("economy_checks")) {
+            if (!item.is_object()) throw std::runtime_error("Invalid Economy Check record");
+            k.economy_checks.push_back({required_int(item, "turn"), required_int(item, "economy_score"),
+                required_int(item, "unrest"), optional_int(item, "check_specific_modifiers", 0),
+                required_int(item, "check_modifier"), required_int(item, "d20_roll"),
+                required_int(item, "roll_total"), required_int(item, "command_dc"),
+                required_bool(item, "success"), required_int(item, "treasury_delta")});
         }
     }
     if (root.contains("gold_withdrawals")) {
@@ -2699,6 +2909,7 @@ Kingdom load(const std::string& path) {
                     required_string(item, "id"), required_string(item, "name"),
                     required_string(item, "effect_preview"), required_string(item, "cost_description"),
                     required_bool(item, "manual_only")};
+                improvement.bp_cost = optional_int(item, "bp_cost", 0);
                 if (item.contains("effects")) {
                     if (!item.at("effects").is_array()) throw std::runtime_error("Greenbelt custom improvement effects must be an array");
                     for (const auto& effect : item.at("effects")) {
@@ -2716,6 +2927,13 @@ Kingdom load(const std::string& path) {
                     }
                 } else if (!improvement.cost_description.empty()) {
                     improvement.costs.push_back(improvement.cost_description);
+                }
+                if (item.contains("stat_effects")) {
+                    if (!item.at("stat_effects").is_array()) throw std::runtime_error("Greenbelt custom improvement stat_effects must be an array");
+                    for (const auto& effect : item.at("stat_effects")) {
+                        if (!effect.is_object()) throw std::runtime_error("Greenbelt custom improvement stat effect must be an object");
+                        improvement.stat_effects.push_back({required_string(effect, "stat"), required_int(effect, "delta")});
+                    }
                 }
                 k.greenbelt_map.custom_improvements.push_back(std::move(improvement));
             }

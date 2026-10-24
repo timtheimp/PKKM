@@ -4,7 +4,18 @@
 #include <vector>
 namespace pkkm {
 struct BuildingCatalogEntry;
-struct Building { std::string name; int count = 0; };
+struct CustomStatEffect {
+ std::string stat;
+ int delta = 0;
+};
+struct Building {
+ std::string name;
+ int count = 0;
+ std::string description;
+ int bp_cost = 0;
+ bool custom = false;
+ std::vector<CustomStatEffect> stat_effects;
+};
 // Placement coordinates are zero-based; saved dimensions are explicit, while the editor may seed editable defaults from catalog lot counts.
 struct MapPlacement { std::string building_name; int row = 0; int column = 0; int width = 1; int height = 1; };
 struct MapFootprint { int width = 1; int height = 1; };
@@ -86,6 +97,8 @@ struct GreenbeltCustomImprovement {
  bool manual_only = true;
  std::vector<std::string> effects;
  std::vector<std::string> costs;
+ int bp_cost = 0;
+ std::vector<CustomStatEffect> stat_effects;
 };
 struct GreenbeltMap {
  std::string asset_path;
@@ -172,10 +185,12 @@ struct KingdomSummary {
  KingdomLeadershipResult leadership;
  SettlementTotals settlement_totals;
  int population = 0;
+ int economy_terrain = 0;
 };
 KingdomSummary calculate_kingdom_summary(int unrest, const KingdomRuleInputs& input,
  const std::vector<Settlement>& settlements = std::vector<Settlement>{},
- const std::vector<BuildingCatalogEntry>* catalog = nullptr);
+ const std::vector<BuildingCatalogEntry>* catalog = nullptr,
+ const GreenbeltMap* greenbelt_map = nullptr);
 struct TurnChecklistStep {
  std::string id;
  std::string phase;
@@ -256,6 +271,35 @@ struct TaxCollectionRecord {
  int treasury_delta = 0;
  RuleProfile rule_profile = RuleProfile::Pdf;
 };
+struct EconomyCheckPreview {
+ int economy_score = 0;
+ int unrest = 0;
+ int check_specific_modifiers = 0;
+ int check_modifier = 0;
+ int d20_roll = 0;
+ int roll_total = 0;
+ int command_dc = 0;
+ bool success = false;
+ int treasury_delta = 0;
+};
+struct EconomyCheckRecord {
+ int turn = 1;
+ int economy_score = 0;
+ int unrest = 0;
+ int check_specific_modifiers = 0;
+ int check_modifier = 0;
+ int d20_roll = 0;
+ int roll_total = 0;
+ int command_dc = 0;
+ bool success = false;
+ int treasury_delta = 0;
+};
+EconomyCheckPreview preview_economy_check(const Kingdom& kingdom,
+ int d20_roll, int check_specific_modifiers = 0,
+ const std::vector<BuildingCatalogEntry>* catalog = nullptr);
+void apply_economy_check(Kingdom& kingdom, int d20_roll,
+ int check_specific_modifiers = 0,
+ const std::vector<BuildingCatalogEntry>* catalog = nullptr);
 void apply_tax_action(Kingdom& kingdom, bool economy_check_success,
  int result_input, int other_bp_gained);
 void apply_stability_check(Kingdom& kingdom, bool success, int failure_by = 0, int rolled_unrest = 0);
@@ -586,6 +630,7 @@ struct Kingdom {
  std::vector<TurnProgress> turn_progress;
  std::vector<TurnActionRecord> turn_actions;
  std::vector<TaxCollectionRecord> tax_actions;
+ std::vector<EconomyCheckRecord> economy_checks;
  std::vector<StabilityCheckRecord> stability_checks;
  std::vector<ConsumptionRecord> consumption_actions;
  std::vector<UnrestModificationRecord> unrest_modifications;

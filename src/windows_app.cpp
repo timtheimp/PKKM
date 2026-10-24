@@ -61,6 +61,19 @@ constexpr int kCancelSettlements = 5118;
 constexpr int kCloseSettlements = 5121;
 constexpr int kConstruction = 5122;
 constexpr int kCityWorksheet = 5123;
+constexpr int kInventoryDescription = 5124;
+constexpr int kInventoryPromptDescription = 8300;
+constexpr int kInventoryPromptApply = 8301;
+constexpr int kInventoryPromptCancel = 8302;
+constexpr int kAddCustomBuilding = 8303;
+constexpr int kCustomBuildingName = 8310;
+constexpr int kCustomBuildingCount = 8311;
+constexpr int kCustomBuildingBpCost = 8312;
+constexpr int kCustomBuildingDescription = 8313;
+constexpr int kCustomBuildingEffectStatBase = 8320;
+constexpr int kCustomBuildingEffectDeltaBase = 8330;
+constexpr int kCustomBuildingApply = 8340;
+constexpr int kCustomBuildingCancel = 8341;
 constexpr int kArmyName = 7000;
 constexpr int kArmyUnit = 7001;
 constexpr int kArmySize = 7002;
@@ -161,6 +174,12 @@ constexpr int kTaxOther = 6413;
 constexpr int kTaxApply = 6414;
 constexpr int kTaxStatus = 6415;
 constexpr int kTaxHistory = 6416;
+constexpr int kEconomyRoll = 6460;
+constexpr int kEconomyModifier = 6461;
+constexpr int kEconomyApply = 6462;
+constexpr int kEconomyStatus = 6463;
+constexpr int kEconomyHistory = 6464;
+constexpr int kEconomyAutoRoll = 6465;
 constexpr int kWithdrawalBp = 6417;
 constexpr int kWithdrawalApply = 6418;
 constexpr int kWithdrawalStatus = 6419;
@@ -190,8 +209,8 @@ constexpr int kMagicItemCategory = 6456;
 constexpr int kMagicItemSold = 6457;
 constexpr int kMagicItemCommissioned = 6458;
 constexpr int kMagicItemApply = 6459;
-constexpr int kMagicItemStatus = 6460;
-constexpr int kMagicItemHistory = 6461;
+constexpr int kMagicItemStatus = 6700;
+constexpr int kMagicItemHistory = 6701;
 constexpr int kStabilitySuccess = 6425;
 constexpr int kStabilityFailureBy = 6426;
 constexpr int kStabilityRoll = 6427;
@@ -202,12 +221,12 @@ constexpr int kConsumptionBp = 6431;
 constexpr int kConsumptionApply = 6432;
 constexpr int kConsumptionStatus = 6433;
 constexpr int kConsumptionHistory = 6434;
-constexpr int kOptionalMineRule = 6462;
-constexpr int kRoyalAssassinEmployed = 6463;
-constexpr int kUpkeepPreview = 6464;
-constexpr int kUpkeepStatus = 6465;
+constexpr int kOptionalMineRule = 6702;
+constexpr int kRoyalAssassinEmployed = 6703;
+constexpr int kUpkeepPreview = 6704;
+constexpr int kUpkeepStatus = 6705;
 constexpr int kFoodStartingConsumption = 6466;
-constexpr int kTurnResolutionApply = 6470;
+constexpr int kTurnResolutionApply = 6706;
 constexpr int kFoodFarmCount = 6467;
 constexpr int kFoodExtraReduction = 6468;
 constexpr int kFoodPreview = 6469;
@@ -328,7 +347,14 @@ constexpr int kGreenbeltCustomPopupCostAdd = 8164;
 constexpr int kGreenbeltCustomPopupCostRemove = 8165;
 constexpr int kGreenbeltCustomPopupEffectUpdate = 8166;
 constexpr int kGreenbeltCustomPopupCostUpdate = 8167;
+constexpr int kGreenbeltCustomPopupBpCost = 8168;
 constexpr int kGreenbeltCustomPopupSaveAdd = 8180;
+constexpr int kGreenbeltApplyCalibration = 8181;
+constexpr int kGreenbeltCalibrationOriginXLabel = 8182;
+constexpr int kGreenbeltCalibrationOriginYLabel = 8183;
+constexpr int kGreenbeltCalibrationWidthLabel = 8184;
+constexpr int kGreenbeltCalibrationHeightLabel = 8185;
+constexpr int kGreenbeltCalibrationScaleLabel = 8186;
 constexpr int kGreenbeltFactWater = 8168;
 constexpr int kGreenbeltFactRiver = 8169;
 constexpr int kGreenbeltFactCanal = 8170;
@@ -364,6 +390,13 @@ HWND calendar_window = nullptr;
 HWND greenbelt_window = nullptr;
 HWND greenbelt_popout_window = nullptr;
 HWND greenbelt_custom_popup_window = nullptr;
+HWND inventory_description_prompt_window = nullptr;
+HWND inventory_description_prompt_owner = nullptr;
+std::string inventory_prompt_building_name;
+int inventory_prompt_building_count = 0;
+HWND custom_building_popup_window = nullptr;
+HWND custom_building_popup_owner = nullptr;
+int custom_building_popup_edit_index = -1;
 int greenbelt_custom_popup_edit_index = -1;
 double greenbelt_popout_zoom = 1.0;
 double greenbelt_popout_pan_x = 0.0;
@@ -392,6 +425,7 @@ int checklist_review_index = -1;
 std::vector<pkkm::CalendarNote> calendar_note_draft;
 int calendar_active_index = -1;
 int settlement_active_index = -1;
+int inventory_active_index = -1;
 std::vector<pkkm::ConstructionLine> construction_lines;
 std::string construction_settlement_id;
 int greenbelt_active_index = -1;
@@ -414,11 +448,16 @@ void open_greenbelt_from_turn_actions(HWND owner);
 void open_army_worksheet_from_checklist(HWND window);
 void open_law_inputs_from_checklist(HWND window);
 void open_turn_rules_window(HWND owner);
+void refresh_open_applied_views(HWND display);
 void apply_turn_checklist(HWND window);
 void create_army_worksheet_controls(HWND window);
 void apply_army_worksheet(HWND window);
 LRESULT CALLBACK army_worksheet_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
 LRESULT CALLBACK greenbelt_custom_popup_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
+LRESULT CALLBACK inventory_description_prompt_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
+LRESULT CALLBACK custom_building_popup_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
+void open_custom_building_popup(HWND owner, int edit_index = -1);
+bool parse_custom_stat_effect_text(const std::string& value, pkkm::CustomStatEffect& result);
 LRESULT CALLBACK turn_rules_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
 
 void set_minimum_track_size(LPARAM lparam, int width, int height) {
@@ -619,7 +658,7 @@ void prepare_editor_fields() {
 
 void refresh(HWND display) {
     const auto summary = pkkm::calculate_kingdom_summary(
-        kingdom.unrest, kingdom.rule_inputs, kingdom.settlements, &building_catalog);
+        kingdom.unrest, kingdom.rule_inputs, kingdom.settlements, &building_catalog, &kingdom.greenbelt_map);
     const auto signed_component = [](int value) {
         return value > 0 ? L"+" + std::to_wstring(value) : std::to_wstring(value);
     };
@@ -855,12 +894,12 @@ void apply_editor(HWND window) {
         }
         pkkm::validate(edit_draft);
         (void)pkkm::calculate_kingdom_summary(
-            edit_draft.unrest, edit_draft.rule_inputs, edit_draft.settlements, &building_catalog);
+            edit_draft.unrest, edit_draft.rule_inputs, edit_draft.settlements, &building_catalog, &edit_draft.greenbelt_map);
         kingdom = edit_draft;
         dirty = true;
         edit_draft = kingdom;
         refresh_editor_controls();
-        refresh(GetDlgItem(GetParent(window), kDisplay));
+        refresh_open_applied_views(GetDlgItem(GetParent(window), kDisplay));
     } catch (const std::exception& error) {
         MessageBoxW(window, widen(error.what()).c_str(), L"Invalid kingdom input", MB_OK | MB_ICONWARNING);
     }
@@ -974,12 +1013,19 @@ void create_settlement_controls(HWND window) {
         930, 434, 90, 26, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kAddBuilding)), app_instance, nullptr);
     CreateWindowExW(0, L"BUTTON", L"Remove Selected Building", WS_CHILD | WS_VISIBLE,
         540, 472, 190, 28, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kRemoveBuilding)), app_instance, nullptr);
-    manager_label(window, L"Settlement magic-item stock", 540, 510, 260);
+    CreateWindowExW(0, L"BUTTON", L"Custom Building...", WS_CHILD | WS_VISIBLE,
+        740, 472, 150, 28, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kAddCustomBuilding)), app_instance, nullptr);
+    manager_label(window, L"New or selected building description (Shop and custom notes)", 540, 510, 420);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+        WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL,
+        540, 532, 480, 48, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kInventoryDescription)), app_instance, nullptr);
+    manager_label(window, L"Settlement magic-item stock", 540, 590, 260);
     CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"",
-        WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY, 540, 532, 480, 42, window,
+        WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY, 540, 612, 480, 42, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kMagicStockList)), app_instance, nullptr);
     CreateWindowExW(0, L"BUTTON", L"Remove Selected Stock", WS_CHILD | WS_VISIBLE,
-        540, 578, 190, 26, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kRemoveMagicStock)), app_instance, nullptr);
+        540, 662, 190, 26, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kRemoveMagicStock)), app_instance, nullptr);
     manager_label(window, L"Base value gp", 20, 540, 125);
     manager_edit(window, kMagicAvailabilityBase, L"0", 150, 540, 75);
     manager_label(window, L"Seed", 240, 540, 45);
@@ -1019,12 +1065,36 @@ void refresh_inventory_list(HWND window) {
     const auto& inventory = settlement_draft[static_cast<size_t>(settlement_active_index)].building_inventory;
     for (const auto& building : inventory) {
         std::wstring label = widen(building.name) + L" x " + std::to_wstring(building.count);
+        if (!building.description.empty()) label += L" | " + widen(building.description);
         if (const auto* definition = catalog_entry(building.name)) {
             label += L" | " + std::to_wstring(definition->cost) + L" BP | "
                 + std::to_wstring(definition->lots) + L" lots each";
+        } else if (building.custom) {
+            label += L" | custom | " + std::to_wstring(building.bp_cost) + L" BP | 1 lot each";
         }
         SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label.c_str()));
     }
+}
+
+void refresh_inventory_description(HWND window) {
+    if (settlement_active_index < 0 || settlement_active_index >= static_cast<int>(settlement_draft.size())
+        || inventory_active_index < 0
+        || inventory_active_index >= static_cast<int>(settlement_draft[static_cast<size_t>(settlement_active_index)].building_inventory.size())) {
+        set_manager_text(window, kInventoryDescription, L"");
+        return;
+    }
+    set_manager_text(window, kInventoryDescription,
+        widen(settlement_draft[static_cast<size_t>(settlement_active_index)]
+            .building_inventory[static_cast<size_t>(inventory_active_index)].description));
+}
+
+void save_inventory_description(HWND window) {
+    if (settlement_active_index < 0 || settlement_active_index >= static_cast<int>(settlement_draft.size())
+        || inventory_active_index < 0
+        || inventory_active_index >= static_cast<int>(settlement_draft[static_cast<size_t>(settlement_active_index)].building_inventory.size())) return;
+    settlement_draft[static_cast<size_t>(settlement_active_index)]
+        .building_inventory[static_cast<size_t>(inventory_active_index)].description =
+        narrow(manager_text(window, kInventoryDescription));
 }
 
 void refresh_magic_stock_list(HWND window) {
@@ -1047,7 +1117,8 @@ void refresh_settlement_form(HWND window) {
         kSettlementEconomy, kSettlementLoyalty, kSettlementStability, kSettlementDefense,
         kSettlementApplyCatalogStats, kInventoryList, kCatalogChoice, kBuildingCount, kAddBuilding,
         kRemoveBuilding, kEditMap, kConstruction, kCityWorksheet, kMagicStockList, kRemoveMagicStock,
-        kMagicAvailabilityBase, kMagicAvailabilitySeed, kMagicAvailabilityPreview, kMagicAvailabilityStatus};
+        kInventoryDescription, kMagicAvailabilityBase, kMagicAvailabilitySeed,
+        kMagicAvailabilityPreview, kMagicAvailabilityStatus};
     for (const int id : field_ids) EnableWindow(GetDlgItem(window, id), has_selection);
     if (!has_selection) {
         for (const int id : {kSettlementName, kSettlementPopulation, kSettlementDistricts,
@@ -1055,6 +1126,8 @@ void refresh_settlement_form(HWND window) {
             set_manager_text(window, id, L"");
         SendMessageW(GetDlgItem(window, kSettlementApplyCatalogStats), BM_SETCHECK, BST_UNCHECKED, 0);
         set_manager_text(window, kMapSummary, L"Map: none");
+        inventory_active_index = -1;
+        refresh_inventory_description(window);
         refresh_inventory_list(window);
         refresh_magic_stock_list(window);
         return;
@@ -1074,12 +1147,16 @@ void refresh_settlement_form(HWND window) {
             + L" | B" + std::to_wstring(settlement.map.placements.size())
             + L" L" + std::to_wstring(settlement.map.labels.size())
         : L"Map: none");
+    inventory_active_index = -1;
     refresh_inventory_list(window);
+    SendMessageW(GetDlgItem(window, kInventoryList), LB_SETCURSEL, static_cast<WPARAM>(-1), 0);
+    refresh_inventory_description(window);
     refresh_magic_stock_list(window);
 }
 
 void save_active_settlement(HWND window) {
     if (settlement_active_index < 0 || settlement_active_index >= static_cast<int>(settlement_draft.size())) return;
+    save_inventory_description(window);
     auto& settlement = settlement_draft[static_cast<size_t>(settlement_active_index)];
     settlement.name = narrow(manager_text(window, kSettlementName));
     settlement.population = parse_integer(manager_text(window, kSettlementPopulation));
@@ -1092,6 +1169,19 @@ void save_active_settlement(HWND window) {
         SendMessageW(GetDlgItem(window, kSettlementApplyCatalogStats), BM_GETCHECK, 0, 0) == BST_CHECKED;
     if (settlement.name.empty() || settlement.population < 0 || settlement.districts < 0)
         throw std::invalid_argument("Settlement name must be set; population and districts cannot be negative.");
+}
+
+void handle_inventory_selection(HWND window, bool begin_edit) {
+    save_inventory_description(window);
+    inventory_active_index = static_cast<int>(SendMessageW(
+        GetDlgItem(window, kInventoryList), LB_GETCURSEL, 0, 0));
+    refresh_inventory_description(window);
+    if (begin_edit && inventory_active_index >= 0
+        && inventory_active_index < static_cast<int>(settlement_draft[static_cast<size_t>(settlement_active_index)].building_inventory.size())
+        && settlement_draft[static_cast<size_t>(settlement_active_index)]
+            .building_inventory[static_cast<size_t>(inventory_active_index)].custom) {
+        open_custom_building_popup(window, inventory_active_index);
+    } else if (begin_edit) SetFocus(GetDlgItem(window, kInventoryDescription));
 }
 
 void handle_settlement_selection(HWND window) {
@@ -1133,8 +1223,64 @@ void remove_settlement(HWND window) {
     refresh_settlement_form(window);
 }
 
+void commit_inventory_building(HWND window, const std::string& name, int count, const std::string& description) {
+    auto& inventory = settlement_draft[static_cast<size_t>(settlement_active_index)].building_inventory;
+    const auto found = std::find_if(inventory.begin(), inventory.end(), [&name](const pkkm::Building& item) {
+        return item.name == name;
+    });
+    if (found == inventory.end()) inventory.push_back({name, count, description});
+    else {
+        if (count > std::numeric_limits<int>::max() - found->count)
+            throw std::overflow_error("Building quantity exceeds the supported range.");
+        if (!description.empty()) found->description = description;
+        found->count += count;
+    }
+    set_manager_text(window, kBuildingCount, L"1");
+    refresh_inventory_list(window);
+    const auto active = std::find_if(inventory.begin(), inventory.end(), [&name](const pkkm::Building& item) {
+        return item.name == name;
+    });
+    inventory_active_index = active == inventory.end() ? -1
+        : static_cast<int>(active - inventory.begin());
+    SendMessageW(GetDlgItem(window, kInventoryList), LB_SETCURSEL, inventory_active_index, 0);
+    refresh_inventory_description(window);
+}
+
+void open_inventory_description_prompt(HWND owner, const std::string& name, int count,
+                                       const std::string& initial_description) {
+    if (inventory_description_prompt_window && IsWindow(inventory_description_prompt_window)) {
+        SetForegroundWindow(inventory_description_prompt_window);
+        return;
+    }
+    WNDCLASSW prompt_class{};
+    if (!GetClassInfoW(app_instance, L"PKKMInventoryDescriptionPrompt", &prompt_class)) {
+        prompt_class.lpfnWndProc = inventory_description_prompt_proc;
+        prompt_class.hInstance = app_instance;
+        prompt_class.lpszClassName = L"PKKMInventoryDescriptionPrompt";
+        prompt_class.hCursor = LoadCursor(nullptr, IDC_ARROW);
+        prompt_class.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+        if (!RegisterClassW(&prompt_class) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS)
+            throw std::runtime_error("Could not register the inventory description prompt class");
+    }
+    inventory_description_prompt_owner = owner;
+    inventory_prompt_building_name = name;
+    inventory_prompt_building_count = count;
+    inventory_description_prompt_window = CreateWindowExW(WS_EX_DLGMODALFRAME,
+        L"PKKMInventoryDescriptionPrompt", L"Building Description",
+        WS_CAPTION | WS_SYSMENU | WS_POPUP | WS_THICKFRAME,
+        kWindowOriginX + 80, kWindowOriginY + 80, 520, 300,
+        owner, nullptr, app_instance, nullptr);
+    if (!inventory_description_prompt_window)
+        throw std::runtime_error("Could not open the building description prompt");
+    set_manager_text(inventory_description_prompt_window, kInventoryPromptDescription, widen(initial_description));
+    EnableWindow(owner, FALSE);
+    ShowWindow(inventory_description_prompt_window, SW_SHOW);
+    UpdateWindow(inventory_description_prompt_window);
+}
+
 void add_inventory_building(HWND window) {
     if (settlement_active_index < 0) throw std::invalid_argument("Add or select a settlement first.");
+    const std::string description_for_new_building = narrow(manager_text(window, kInventoryDescription));
     save_active_settlement(window);
     const int selected = static_cast<int>(SendMessageW(GetDlgItem(window, kCatalogChoice), CB_GETCURSEL, 0, 0));
     if (selected < 0 || selected >= static_cast<int>(settlement_catalog.size()))
@@ -1142,18 +1288,11 @@ void add_inventory_building(HWND window) {
     const int count = parse_integer(manager_text(window, kBuildingCount));
     if (count < 1) throw std::invalid_argument("Building quantity must be at least 1.");
     const std::string& name = settlement_catalog[static_cast<size_t>(selected)].name;
-    auto& inventory = settlement_draft[static_cast<size_t>(settlement_active_index)].building_inventory;
-    const auto found = std::find_if(inventory.begin(), inventory.end(), [&name](const pkkm::Building& item) {
-        return item.name == name;
-    });
-    if (found == inventory.end()) inventory.push_back({name, count});
-    else {
-        if (count > std::numeric_limits<int>::max() - found->count)
-            throw std::overflow_error("Building quantity exceeds the supported range.");
-        found->count += count;
+    if (name.rfind("Shop", 0) == 0) {
+        open_inventory_description_prompt(window, name, count, description_for_new_building);
+        return;
     }
-    set_manager_text(window, kBuildingCount, L"1");
-    refresh_inventory_list(window);
+    commit_inventory_building(window, name, count, description_for_new_building);
 }
 
 void remove_inventory_building(HWND window) {
@@ -1162,7 +1301,9 @@ void remove_inventory_building(HWND window) {
     auto& inventory = settlement_draft[static_cast<size_t>(settlement_active_index)].building_inventory;
     if (selected < 0 || selected >= static_cast<int>(inventory.size())) return;
     inventory.erase(inventory.begin() + selected);
+    inventory_active_index = -1;
     refresh_inventory_list(window);
+    refresh_inventory_description(window);
 }
 
 void preview_magic_availability(HWND window) {
@@ -1220,7 +1361,7 @@ bool apply_settlement_manager(HWND window) {
         dirty = true;
         settlement_draft = kingdom.settlements;
         const HWND owner = GetWindow(window, GW_OWNER);
-        if (owner) refresh(GetDlgItem(owner, kDisplay));
+        if (owner) refresh_open_applied_views(GetDlgItem(owner, kDisplay));
         return true;
     } catch (const std::exception& error) {
         MessageBoxW(window, widen(error.what()).c_str(), L"Invalid settlement data", MB_OK | MB_ICONWARNING);
@@ -1542,6 +1683,218 @@ LRESULT CALLBACK army_worksheet_proc(HWND window, UINT message, WPARAM wparam, L
     return DefWindowProcW(window, message, wparam, lparam);
 }
 
+LRESULT CALLBACK inventory_description_prompt_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
+    if (message == WM_GETMINMAXINFO) {
+        set_minimum_track_size(lparam, 520, 300);
+        return 0;
+    }
+    switch (message) {
+        case WM_CREATE: {
+            const std::wstring title = L"Description for " + widen(inventory_prompt_building_name);
+            manager_label(window, title.c_str(), 20, 18, 460);
+            manager_multiline_edit(window, kInventoryPromptDescription, 20, 52, 460, 150);
+            CreateWindowExW(0, L"BUTTON", L"Add Building", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+                250, 225, 110, 30, window,
+                reinterpret_cast<HMENU>(static_cast<INT_PTR>(kInventoryPromptApply)), app_instance, nullptr);
+            CreateWindowExW(0, L"BUTTON", L"Cancel", WS_CHILD | WS_VISIBLE,
+                375, 225, 105, 30, window,
+                reinterpret_cast<HMENU>(static_cast<INT_PTR>(kInventoryPromptCancel)), app_instance, nullptr);
+            return 0;
+        }
+        case WM_COMMAND: {
+            const int id = LOWORD(wparam);
+            if (id == kInventoryPromptApply) {
+                try {
+                    const HWND owner = inventory_description_prompt_owner;
+                    if (!owner || !IsWindow(owner)) throw std::runtime_error("Settlement editor is no longer available.");
+                    commit_inventory_building(owner, inventory_prompt_building_name,
+                        inventory_prompt_building_count, narrow(manager_text(window, kInventoryPromptDescription)));
+                    DestroyWindow(window);
+                } catch (const std::exception& error) {
+                    MessageBoxW(window, widen(error.what()).c_str(), L"Building description", MB_OK | MB_ICONWARNING);
+                }
+            } else if (id == kInventoryPromptCancel) {
+                DestroyWindow(window);
+            }
+            return 0;
+        }
+        case WM_CLOSE:
+            DestroyWindow(window);
+            return 0;
+        case WM_DESTROY: {
+            const HWND owner = inventory_description_prompt_owner;
+            inventory_description_prompt_window = nullptr;
+            inventory_description_prompt_owner = nullptr;
+            inventory_prompt_building_name.clear();
+            inventory_prompt_building_count = 0;
+            if (owner && IsWindow(owner)) {
+                EnableWindow(owner, TRUE);
+                SetForegroundWindow(owner);
+            }
+            return 0;
+        }
+    }
+    return DefWindowProcW(window, message, wparam, lparam);
+}
+
+void open_custom_building_popup(HWND owner, int edit_index) {
+    if (settlement_active_index < 0 || settlement_active_index >= static_cast<int>(settlement_draft.size()))
+        throw std::invalid_argument("Select a settlement first.");
+    if (custom_building_popup_window && IsWindow(custom_building_popup_window)) {
+        SetForegroundWindow(custom_building_popup_window);
+        return;
+    }
+    save_active_settlement(owner);
+    WNDCLASSW popup_class{};
+    if (!GetClassInfoW(app_instance, L"PKKMCustomBuilding", &popup_class)) {
+        popup_class.lpfnWndProc = custom_building_popup_proc;
+        popup_class.hInstance = app_instance;
+        popup_class.lpszClassName = L"PKKMCustomBuilding";
+        popup_class.hCursor = LoadCursor(nullptr, IDC_ARROW);
+        popup_class.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+        if (!RegisterClassW(&popup_class) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS)
+            throw std::runtime_error("Could not register the custom building dialog class");
+    }
+    custom_building_popup_owner = owner;
+    custom_building_popup_edit_index = edit_index;
+    custom_building_popup_window = CreateWindowExW(WS_EX_DLGMODALFRAME,
+        L"PKKMCustomBuilding", edit_index >= 0 ? L"Edit Custom Building" : L"Custom Building",
+        WS_CAPTION | WS_SYSMENU | WS_POPUP | WS_THICKFRAME,
+        kWindowOriginX + 40, kWindowOriginY + 40, 640, 520,
+        owner, nullptr, app_instance, nullptr);
+    if (!custom_building_popup_window)
+        throw std::runtime_error("Could not open the custom building dialog");
+    EnableWindow(owner, FALSE);
+    ShowWindow(custom_building_popup_window, SW_SHOW);
+    UpdateWindow(custom_building_popup_window);
+}
+
+LRESULT CALLBACK custom_building_popup_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
+    if (message == WM_GETMINMAXINFO) {
+        set_minimum_track_size(lparam, 640, 520);
+        return 0;
+    }
+    switch (message) {
+        case WM_CREATE: {
+            manager_label(window, L"Name", 20, 18, 110);
+            manager_edit(window, kCustomBuildingName, L"", 140, 18, 430);
+            manager_label(window, L"Quantity", 20, 50, 110);
+            manager_edit(window, kCustomBuildingCount, L"1", 140, 50, 70);
+            manager_label(window, L"BP cost each", 240, 50, 100);
+            manager_edit(window, kCustomBuildingBpCost, L"0", 345, 50, 75);
+            manager_label(window, L"Description", 20, 84, 110);
+            manager_multiline_edit(window, kCustomBuildingDescription, 140, 84, 430, 90);
+            manager_label(window, L"Structured effects (automatic, max 5)", 20, 184, 260);
+            static const std::vector<std::string> stats{
+                "Economy", "Loyalty", "Stability", "Defense", "Unrest", "Consumption"};
+            for (int index = 0; index < 5; ++index) {
+                const int y = 214 + index * 38;
+                CreateWindowExW(WS_EX_CLIENTEDGE, L"COMBOBOX", L"",
+                    WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
+                    140, y, 180, 150, window,
+                    reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCustomBuildingEffectStatBase + index)),
+                    app_instance, nullptr);
+                for (const auto& stat : stats) {
+                    const auto label = widen(stat);
+                    SendMessageW(GetDlgItem(window, kCustomBuildingEffectStatBase + index), CB_ADDSTRING, 0,
+                        reinterpret_cast<LPARAM>(label.c_str()));
+                }
+                manager_edit(window, kCustomBuildingEffectDeltaBase + index, L"", 340, y, 75);
+                manager_label(window, L"delta", 425, y + 2, 55);
+            }
+            CreateWindowExW(0, L"BUTTON", L"Apply", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+                355, 440, 95, 30, window,
+                reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCustomBuildingApply)), app_instance, nullptr);
+            CreateWindowExW(0, L"BUTTON", L"Cancel", WS_CHILD | WS_VISIBLE,
+                465, 440, 95, 30, window,
+                reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCustomBuildingCancel)), app_instance, nullptr);
+            if (custom_building_popup_edit_index >= 0
+                && custom_building_popup_edit_index < static_cast<int>(settlement_draft[static_cast<size_t>(settlement_active_index)].building_inventory.size())) {
+                const auto& building = settlement_draft[static_cast<size_t>(settlement_active_index)]
+                    .building_inventory[static_cast<size_t>(custom_building_popup_edit_index)];
+                set_manager_text(window, kCustomBuildingName, widen(building.name));
+                set_manager_text(window, kCustomBuildingCount, std::to_wstring(building.count));
+                set_manager_text(window, kCustomBuildingBpCost, std::to_wstring(building.bp_cost));
+                set_manager_text(window, kCustomBuildingDescription, widen(building.description));
+                for (size_t index = 0; index < building.stat_effects.size() && index < 5; ++index) {
+                    const auto& effect = building.stat_effects[index];
+                    const auto label = widen(effect.stat);
+                    SendMessageW(GetDlgItem(window, kCustomBuildingEffectStatBase + static_cast<int>(index)),
+                        CB_SELECTSTRING, static_cast<WPARAM>(-1), reinterpret_cast<LPARAM>(label.c_str()));
+                    set_manager_text(window, kCustomBuildingEffectDeltaBase + static_cast<int>(index),
+                        std::to_wstring(effect.delta));
+                }
+            }
+            return 0;
+        }
+        case WM_COMMAND:
+            if (LOWORD(wparam) == kCustomBuildingApply) {
+                try {
+                    const HWND owner = custom_building_popup_owner;
+                    if (!owner || !IsWindow(owner)) throw std::runtime_error("Settlement editor is no longer available.");
+                    pkkm::Building building;
+                    building.name = narrow(manager_text(window, kCustomBuildingName));
+                    building.count = parse_integer(manager_text(window, kCustomBuildingCount));
+                    building.bp_cost = parse_integer(manager_text(window, kCustomBuildingBpCost));
+                    building.description = narrow(manager_text(window, kCustomBuildingDescription));
+                    building.custom = true;
+                    if (building.name.empty()) throw std::invalid_argument("Custom building needs a name.");
+                    if (building.count < 1) throw std::invalid_argument("Custom building quantity must be at least 1.");
+                    if (building.bp_cost < 0) throw std::invalid_argument("Custom building BP cost cannot be negative.");
+                    for (int index = 0; index < 5; ++index) {
+                        const std::string stat = narrow(manager_text(window, kCustomBuildingEffectStatBase + index));
+                        const std::string delta = narrow(manager_text(window, kCustomBuildingEffectDeltaBase + index));
+                        if (delta.empty()) continue;
+                        pkkm::CustomStatEffect effect;
+                        if (!parse_custom_stat_effect_text(stat + " " + delta, effect))
+                            throw std::invalid_argument("Each custom building effect must use a supported stat and signed delta.");
+                        building.stat_effects.push_back(std::move(effect));
+                    }
+                    auto& inventory = settlement_draft[static_cast<size_t>(settlement_active_index)].building_inventory;
+                    const auto duplicate = std::find_if(inventory.begin(), inventory.end(),
+                        [&](const pkkm::Building& existing) {
+                            return existing.name == building.name
+                                && (&existing - inventory.data()) != custom_building_popup_edit_index;
+                        });
+                    if (duplicate != inventory.end()) throw std::invalid_argument("A building with that name already exists.");
+                    if (custom_building_popup_edit_index < 0) {
+                        inventory.push_back(std::move(building));
+                        inventory_active_index = static_cast<int>(inventory.size()) - 1;
+                    } else {
+                        if (custom_building_popup_edit_index >= static_cast<int>(inventory.size()))
+                            throw std::invalid_argument("Selected custom building no longer exists.");
+                        inventory[static_cast<size_t>(custom_building_popup_edit_index)] = std::move(building);
+                        inventory_active_index = custom_building_popup_edit_index;
+                    }
+                    refresh_inventory_list(owner);
+                    SendMessageW(GetDlgItem(owner, kInventoryList), LB_SETCURSEL, inventory_active_index, 0);
+                    refresh_inventory_description(owner);
+                    DestroyWindow(window);
+                } catch (const std::exception& error) {
+                    MessageBoxW(window, widen(error.what()).c_str(), L"Custom building", MB_OK | MB_ICONWARNING);
+                }
+            } else if (LOWORD(wparam) == kCustomBuildingCancel) {
+                DestroyWindow(window);
+            }
+            return 0;
+        case WM_CLOSE:
+            DestroyWindow(window);
+            return 0;
+        case WM_DESTROY: {
+            const HWND owner = custom_building_popup_owner;
+            custom_building_popup_window = nullptr;
+            custom_building_popup_owner = nullptr;
+            custom_building_popup_edit_index = -1;
+            if (owner && IsWindow(owner)) {
+                EnableWindow(owner, TRUE);
+                SetForegroundWindow(owner);
+            }
+            return 0;
+        }
+    }
+    return DefWindowProcW(window, message, wparam, lparam);
+}
+
 LRESULT CALLBACK settlement_manager_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
     if (message == WM_GETMINMAXINFO) {
         set_minimum_track_size(lparam, 760, 520);
@@ -1566,9 +1919,12 @@ LRESULT CALLBACK settlement_manager_proc(HWND window, UINT message, WPARAM wpara
             const int id = LOWORD(wparam);
             try {
                 if (id == kSettlementList && HIWORD(wparam) == LBN_SELCHANGE) handle_settlement_selection(window);
+                else if (id == kInventoryList && HIWORD(wparam) == LBN_SELCHANGE) handle_inventory_selection(window, false);
+                else if (id == kInventoryList && HIWORD(wparam) == LBN_DBLCLK) handle_inventory_selection(window, true);
                 else if (id == kAddSettlement) add_settlement(window);
                 else if (id == kRemoveSettlement) remove_settlement(window);
                 else if (id == kAddBuilding) add_inventory_building(window);
+                else if (id == kAddCustomBuilding) open_custom_building_popup(window);
                 else if (id == kRemoveBuilding) remove_inventory_building(window);
                 else if (id == kRemoveMagicStock) remove_magic_stock(window);
                 else if (id == kMagicAvailabilityPreview) preview_magic_availability(window);
@@ -1622,6 +1978,7 @@ LRESULT CALLBACK settlement_manager_proc(HWND window, UINT message, WPARAM wpara
             settlement_draft.clear();
             settlement_catalog.clear();
             settlement_active_index = -1;
+            inventory_active_index = -1;
             const HWND owner = GetWindow(window, GW_OWNER);
             if (owner && IsWindow(owner)) {
                 EnableWindow(owner, TRUE);
@@ -2041,6 +2398,17 @@ void refresh_turn_action_workflow_status(HWND window) {
         text += L"unknown";
     }
     SetWindowTextW(GetDlgItem(window, kActionWorkflowStatus), text.c_str());
+}
+
+void refresh_open_applied_views(HWND display) {
+    if (display && IsWindow(display)) refresh(display);
+    if (checklist_window && IsWindow(checklist_window)) {
+        refresh_turn_checklist_controls();
+        refresh_turn_checklist_guidance(checklist_window);
+        refresh_turn_checklist_phase_summary(checklist_window);
+    }
+    if (action_window && IsWindow(action_window))
+        refresh_turn_action_workflow_status(action_window);
 }
 
 void skip_optional_turn_action_step(HWND window) {
@@ -2742,7 +3110,7 @@ void create_turn_action_controls(HWND window) {
     CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"1", WS_CHILD | WS_VISIBLE | ES_NUMBER,
         150, 100, 100, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kActionCount)), app_instance, nullptr);
     CreateWindowExW(0, L"BUTTON", L"Skip Optional Step", WS_CHILD | WS_VISIBLE,
-        475, 100, 125, 30, window,
+        475, 100, 155, 30, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kActionSkipOptional)), app_instance, nullptr);
     CreateWindowExW(0, L"BUTTON", L"Apply Action", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
         120, 150, 125, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kActionApply)), app_instance, nullptr);
@@ -2798,28 +3166,50 @@ void create_turn_action_controls(HWND window) {
         WS_CHILD | WS_VISIBLE | SS_LEFT,
         20, 415, 560, 35, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kActionDetails)), app_instance, nullptr);
-    CreateWindowExW(0, L"STATIC", L"Phase 3 Income - Taxes (explicit branch; no automatic rounding)",
-        WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 465, 360, 22, window, nullptr, app_instance, nullptr);
-    CreateWindowExW(0, L"BUTTON", L"Economy check succeeded", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        20, 492, 210, 24, window,
-        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kTaxSuccess)), app_instance, nullptr);
-    CreateWindowExW(0, L"STATIC", L"Result input (profile divisor)", WS_CHILD | WS_VISIBLE | SS_LEFT,
-        215, 492, 75, 22, window, nullptr, app_instance, nullptr);
-    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"0", WS_CHILD | WS_VISIBLE | ES_NUMBER,
-        290, 490, 65, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kTaxResult)), app_instance, nullptr);
-    CreateWindowExW(0, L"STATIC", L"Other BP", WS_CHILD | WS_VISIBLE | SS_LEFT,
-        365, 492, 65, 22, window, nullptr, app_instance, nullptr);
-    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"0", WS_CHILD | WS_VISIBLE | ES_NUMBER,
-        430, 490, 60, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kTaxOther)), app_instance, nullptr);
-    CreateWindowExW(0, L"BUTTON", L"Apply Taxes", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
-        500, 488, 95, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kTaxApply)), app_instance, nullptr);
-    CreateWindowExW(0, L"STATIC", L"No tax action applied this session.", WS_CHILD | WS_VISIBLE | SS_LEFT,
-        20, 525, 575, 22, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kTaxStatus)), app_instance, nullptr);
-    CreateWindowExW(0, L"STATIC", L"Tax collection history", WS_CHILD | WS_VISIBLE | SS_LEFT,
-        20, 555, 250, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Phase 3 Income - Economy Check",
+        WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 465, 275, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"d20 roll", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 492, 80, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"", WS_CHILD | WS_VISIBLE | ES_NUMBER,
+        105, 490, 55, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kEconomyRoll)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Roll d20", WS_CHILD | WS_VISIBLE,
+        170, 490, 100, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kEconomyAutoRoll)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Extra mod", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 525, 80, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"0", WS_CHILD | WS_VISIBLE,
+        105, 523, 55, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kEconomyModifier)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Apply Income", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+        175, 520, 115, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kEconomyApply)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"No Economy Check recorded.", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 555, 275, 22, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kEconomyStatus)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Economy Check history", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        20, 580, 250, 22, window, nullptr, app_instance, nullptr);
     CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", nullptr,
         WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOINTEGRALHEIGHT,
-        20, 580, 575, 75, window,
+        20, 605, 275, 50, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kEconomyHistory)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Phase 3 Income - Tax Economy Check",
+        WS_CHILD | WS_VISIBLE | SS_LEFT, 310, 465, 285, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Econ success", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        310, 492, 140, 24, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kTaxSuccess)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Roll", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        310, 525, 45, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"0", WS_CHILD | WS_VISIBLE | ES_NUMBER,
+        360, 523, 55, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kTaxResult)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Other BP", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        420, 525, 55, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"0", WS_CHILD | WS_VISIBLE | ES_NUMBER,
+        480, 523, 50, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kTaxOther)), app_instance, nullptr);
+    CreateWindowExW(0, L"BUTTON", L"Taxes", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+        525, 520, 70, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kTaxApply)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"No tax action applied.", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        310, 555, 285, 22, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kTaxStatus)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Tax collection history", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        310, 580, 250, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", nullptr,
+        WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOINTEGRALHEIGHT,
+        310, 605, 285, 50, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kTaxHistory)), app_instance, nullptr);
     CreateWindowExW(0, L"STATIC", L"Phase 3 Income - Gold withdrawal (2,000 gp per BP; +1 unrest per BP; failed Loyalty adds BP withdrawn again)",
         WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 665, 450, 22, window, nullptr, app_instance, nullptr);
@@ -2875,15 +3265,21 @@ void create_turn_action_controls(HWND window) {
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kDepositItemStatus)), app_instance, nullptr);
     CreateWindowExW(0, L"STATIC", L"Phase 1 Upkeep - Optional Loyalty Check", WS_CHILD | WS_VISIBLE | SS_LEFT,
         380, 970, 150, 22, window, nullptr, app_instance, nullptr);
-    CreateWindowExW(0, L"BUTTON", L"Check succeeded", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+    CreateWindowExW(0, L"BUTTON", L"Loyalty Check result: success", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
         380, 995, 135, 24, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kLoyaltySuccess)), app_instance, nullptr);
-    CreateWindowExW(0, L"BUTTON", L"Apply Loyalty", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+    CreateWindowExW(0, L"BUTTON", L"Record Loyalty Check", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
         380, 1025, 125, 30, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kLoyaltyApply)), app_instance, nullptr);
-    CreateWindowExW(0, L"STATIC", L"No Loyalty Check applied.", WS_CHILD | WS_VISIBLE | SS_LEFT,
+    CreateWindowExW(0, L"STATIC", L"Loyalty Check: not recorded this turn.", WS_CHILD | WS_VISIBLE | SS_LEFT,
         380, 1060, 200, 22, window,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kLoyaltyStatus)), app_instance, nullptr);
+    CreateWindowExW(0, L"STATIC", L"Loyalty Check history", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        380, 1090, 250, 22, window, nullptr, app_instance, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", nullptr,
+        WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOINTEGRALHEIGHT,
+        380, 1115, 200, 75, window,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kLoyaltyHistory)), app_instance, nullptr);
     CreateWindowExW(0, L"STATIC", L"Phase 1 Upkeep - Stability Check (failure by 4 is not used by this rule set)",
         WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 1085, 560, 22, window, nullptr, app_instance, nullptr);
     CreateWindowExW(0, L"BUTTON", L"Check succeeded", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
@@ -3297,6 +3693,21 @@ void refresh_tax_history(HWND window) {
     }
 }
 
+void refresh_economy_history(HWND window) {
+    HWND list = GetDlgItem(window, kEconomyHistory);
+    SendMessageW(list, LB_RESETCONTENT, 0, 0);
+    for (const auto& record : kingdom.economy_checks) {
+        const std::wstring line = L"Turn " + std::to_wstring(record.turn)
+            + L" | d20 " + std::to_wstring(record.d20_roll)
+            + L" + mod " + std::to_wstring(record.check_modifier)
+            + L" = " + std::to_wstring(record.roll_total)
+            + L" / DC " + std::to_wstring(record.command_dc)
+            + L" | " + (record.success ? L"Success" : L"Failure")
+            + L" | BP " + std::to_wstring(record.treasury_delta);
+        SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(line.c_str()));
+    }
+}
+
 void refresh_gold_withdrawal_history(HWND window) {
     HWND list = GetDlgItem(window, kWithdrawalHistory);
     SendMessageW(list, LB_RESETCONTENT, 0, 0);
@@ -3331,6 +3742,18 @@ void refresh_stability_history(HWND window) {
         const std::wstring line = L"Turn " + std::to_wstring(record.turn)
             + L" | " + branch
             + L" | BP " + std::to_wstring(record.treasury_delta)
+            + L" | Unrest " + std::to_wstring(record.unrest_delta);
+        SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(line.c_str()));
+    }
+}
+
+void refresh_loyalty_history(HWND window) {
+    HWND list = GetDlgItem(window, kLoyaltyHistory);
+    SendMessageW(list, LB_RESETCONTENT, 0, 0);
+    for (const auto& record : kingdom.loyalty_checks) {
+        const std::wstring line = L"Turn " + std::to_wstring(record.turn)
+            + L" | " + (record.success ? L"Success" : L"Failure")
+            + L" | Loyalty " + std::to_wstring(record.loyalty_delta)
             + L" | Unrest " + std::to_wstring(record.unrest_delta);
         SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(line.c_str()));
     }
@@ -3554,6 +3977,40 @@ void apply_turn_action_dialog(HWND window) {
     SetWindowTextW(window, L"Turn Actions - Applied");
 }
 
+void apply_economy_check_dialog(HWND window) {
+    const int d20_roll = parse_integer(manager_text(window, kEconomyRoll));
+    const int check_specific_modifiers = parse_integer(manager_text(window, kEconomyModifier));
+    pkkm::apply_economy_check(kingdom, d20_roll, check_specific_modifiers, &building_catalog);
+    dirty = true;
+    refresh(GetDlgItem(GetParent(window), kDisplay));
+    const auto& record = kingdom.economy_checks.back();
+    const std::wstring status = L"Economy Check recorded on Turn " + std::to_wstring(record.turn)
+        + L" | Score " + std::to_wstring(record.economy_score)
+        + L" | Modifier " + std::to_wstring(record.check_modifier)
+        + L" | Total " + std::to_wstring(record.roll_total)
+        + L" / DC " + std::to_wstring(record.command_dc)
+        + (record.success ? L" | Success | BP +" : L" | Failure | BP +")
+        + std::to_wstring(record.treasury_delta);
+    SetWindowTextW(GetDlgItem(window, kEconomyStatus), status.c_str());
+    refresh_economy_history(window);
+    if (checklist_window && IsWindow(checklist_window)) {
+        refresh_turn_checklist_controls();
+        refresh_turn_checklist_guidance(checklist_window);
+        refresh_turn_checklist_phase_summary(checklist_window);
+    }
+    refresh_turn_action_workflow_status(window);
+    SetWindowTextW(window, L"Turn Actions - Economy Check Applied");
+}
+
+void roll_economy_d20(HWND window) {
+    static std::random_device device;
+    static std::mt19937 generator(device());
+    std::uniform_int_distribution<int> distribution(1, 20);
+    const int roll = distribution(generator);
+    SetWindowTextW(GetDlgItem(window, kEconomyRoll), std::to_wstring(roll).c_str());
+    SetWindowTextW(window, L"Turn Actions - d20 Rolled");
+}
+
 void apply_tax_action_dialog(HWND window) {
     const bool success = SendMessageW(GetDlgItem(window, kTaxSuccess), BM_GETCHECK, 0, 0) == BST_CHECKED;
     const int result_input = parse_integer(manager_text(window, kTaxResult));
@@ -3623,10 +4080,12 @@ void apply_loyalty_dialog(HWND window) {
     dirty = true;
     refresh(GetDlgItem(GetParent(window), kDisplay));
     const auto& record = kingdom.loyalty_checks.back();
-    const std::wstring status = L"Loyalty Check applied on Turn " + std::to_wstring(record.turn)
+    const std::wstring status = L"Loyalty Check recorded on Turn " + std::to_wstring(record.turn)
+        + L" | Result: " + (record.success ? L"success" : L"failure")
         + L" | Unrest " + std::to_wstring(record.unrest_delta)
         + L" | Permanent Loyalty " + std::to_wstring(record.loyalty_delta);
     SetWindowTextW(GetDlgItem(window, kLoyaltyStatus), status.c_str());
+    refresh_loyalty_history(window);
     SetWindowTextW(window, L"Turn Actions - Loyalty Check Applied");
 }
 
@@ -3777,21 +4236,6 @@ void apply_unrest_dialog(HWND window) {
     SetWindowTextW(window, L"Turn Actions - Unrest Modified");
 }
 
-void move_turn_action_child(HWND child, int delta_y) {
-    RECT rect{};
-    GetWindowRect(child, &rect);
-    POINT points[2] = {{rect.left, rect.top}, {rect.right, rect.bottom}};
-    MapWindowPoints(nullptr, GetParent(child), points, 2);
-    SetWindowPos(child, nullptr, points[0].x, points[0].y + delta_y,
-        points[1].x - points[0].x, points[1].y - points[0].y,
-        SWP_NOZORDER | SWP_NOACTIVATE);
-}
-
-bool turn_action_text_is(HWND child, const wchar_t* expected) {
-    wchar_t text[256]{};
-    GetWindowTextW(child, text, static_cast<int>(std::size(text)));
-    return std::wstring(text) == expected;
-}
 
 void create_turn_action_phase_frames(HWND window) {
     struct PhaseFrame {
@@ -3815,65 +4259,6 @@ void create_turn_action_phase_frames(HWND window) {
     }
 }
 
-void arrange_turn_action_phase_sections(HWND window) {
-    struct ChildRect {
-        HWND handle;
-        RECT rect;
-    };
-    std::vector<ChildRect> children;
-    for (HWND child = GetWindow(window, GW_CHILD); child != nullptr;
-         child = GetWindow(child, GW_HWNDNEXT)) {
-        RECT screen_rect{};
-        GetWindowRect(child, &screen_rect);
-        POINT points[2] = {{screen_rect.left, screen_rect.top},
-                           {screen_rect.right, screen_rect.bottom}};
-        MapWindowPoints(nullptr, window, points, 2);
-        children.push_back({child, RECT{points[0].x, points[0].y,
-                                        points[1].x, points[1].y}});
-    }
-
-    for (const auto& child : children) {
-        const int id = GetDlgCtrlID(child.handle);
-        const RECT& rect = child.rect;
-        int delta_y = 0;
-
-        if (id == kChecklistOpenConstruction || id == kChecklistOpenCity
-            || id == kChecklistOpenArmy || id == kChecklistOpenInputs) {
-            delta_y = 1650;
-        } else if (id == kChecklistOpenEventResolution) {
-            delta_y = 2400;
-        } else if (id == kActionOpenGreenbelt) {
-            delta_y = 1650;
-        } else if (id == kActionHistory || id == kActionFilter
-                   || id == kActionFilterOriginal || id == kActionFilterReversal
-                   || id == kActionDetails
-                   || turn_action_text_is(child.handle, L"Recorded actions")
-                   || turn_action_text_is(child.handle, L"Filter")
-                   || turn_action_text_is(child.handle, L"All records")
-                   || turn_action_text_is(child.handle, L"Original actions")
-                   || turn_action_text_is(child.handle, L"Reversal records")
-                   || turn_action_text_is(child.handle, L"Selected action details")
-                   || turn_action_text_is(child.handle,
-                       L"Select a recorded action to inspect its audit details.")) {
-            delta_y = 3270;
-        } else if (id == kActionChoice || id == kActionCount || id == kActionApply
-                   || id == kActionReverse || id == kActionCancel || id == kActionClose
-                   || turn_action_text_is(child.handle, L"Phase 2 Improvement action")) {
-            delta_y = 1800;
-        } else if (rect.top >= 465 && rect.top < 970) {
-            delta_y = 1635;
-        } else if (rect.top >= 970 && rect.top < 1085 && rect.left >= 350) {
-            delta_y = -725;
-        } else if (rect.top >= 1085 && rect.top < 2590) {
-            delta_y = -725;
-        }
-
-        if (delta_y != 0)
-            move_turn_action_child(child.handle, delta_y);
-    }
-
-    create_turn_action_phase_frames(window);
-}
 
 void capture_turn_actions_layout(HWND window) {
     turn_actions_layout_rects.clear();
@@ -3893,11 +4278,26 @@ void layout_turn_actions_controls(HWND window) {
     RECT client{};
     GetClientRect(window, &client);
     const int client_width = client.right - client.left;
+    const int client_height = client.bottom - client.top;
+    struct RulerGeometry {
+        int width;
+        int inner_padding;
+        int row_height;
+        int label_height;
+        int row_gap;
+        int history_title_gap;
+        int history_list_height;
+        int section_gap;
+    };
+    // Stability Check and Pay Consumption both use this standard content
+    // envelope. Future subsections must derive their width and vertical bands
+    // from this ruler instead of preserving legacy coordinate gaps.
+    constexpr RulerGeometry ruler{575, 10, 30, 22, 8, 8, 75, 24};
 
     const double top_scale = std::min(1.0,
         static_cast<double>(std::max(620, client_width)) / 620.0);
     constexpr int section_count = 5;
-    constexpr int section_gap = 24;
+    const int section_gap = ruler.section_gap;
     constexpr int content_top = 220;
     const auto text_of = [](HWND child) {
         wchar_t buffer[256]{};
@@ -3926,7 +4326,7 @@ void layout_turn_actions_controls(HWND window) {
                        kActionCancel, kActionClose, kChecklistOpenConstruction,
                        kChecklistOpenCity, kChecklistOpenArmy, kChecklistOpenInputs,
                        kChecklistOpenEventResolution, kActionOpenGreenbelt})
-            || text == L"Phase 2 Improvement action") return 1;
+            || text == L"Phase 2 Improvement action" || text == L"Count") return 1;
         if (is_id(id, {kActionHistory, kActionFilter, kActionFilterOriginal,
                        kActionFilterReversal, kActionDetails})
             || text == L"Recorded actions" || text == L"Filter"
@@ -3939,7 +4339,8 @@ void layout_turn_actions_controls(HWND window) {
                        kEventTreasuryDelta, kEventUnrestDelta, kEventSizeDelta,
                        kEventHexLoss, kEventAnarchy, kEventApplyConsequence, kEventDetails})
             || (base.top >= 2590 && base.top < 3080)) return 3;
-        if (is_id(id, {kTaxSuccess, kTaxResult, kTaxOther, kTaxApply, kTaxStatus,
+        if (is_id(id, {kEconomyRoll, kEconomyModifier, kEconomyAutoRoll, kEconomyApply, kEconomyStatus,
+                       kEconomyHistory, kTaxSuccess, kTaxResult, kTaxOther, kTaxApply, kTaxStatus,
                        kTaxHistory, kWithdrawalBp, kWithdrawalApply, kWithdrawalStatus,
                        kWithdrawalHistory, kWithdrawalLoyaltySuccess, kDepositGold,
                        kDepositApply, kDepositStatus, kDepositHistory,
@@ -3949,7 +4350,7 @@ void layout_turn_actions_controls(HWND window) {
                        kSaleHistory})
             || (base.top >= 465 && base.top < 1085 && !(base.top >= 970 && base.left >= 350))
             || base.top >= 3080) return 2;
-        if (is_id(id, {kLoyaltySuccess, kLoyaltyApply, kLoyaltyStatus,
+        if (is_id(id, {kLoyaltySuccess, kLoyaltyApply, kLoyaltyStatus, kLoyaltyHistory,
                        kStabilitySuccess, kStabilityFailureBy, kStabilityRoll,
                        kStabilityApply, kStabilityStatus, kStabilityHistory,
                        kOptionalMineRule, kRoyalAssassinEmployed, kUpkeepPreview,
@@ -3968,11 +4369,161 @@ void layout_turn_actions_controls(HWND window) {
             || (base.top >= 1085 && base.top < 2590)) return 0;
         return -1;
     };
-    const auto compacted_rect = [&section_for](const auto& item) {
+    const auto canonical_rect = [&section_for, &text_of, &ruler](const auto& item) {
         RECT rect = item.second;
-        if (section_for(item) == 2 && rect.top >= 3080) {
-            rect.top -= 2030;
-            rect.bottom -= 2030;
+        const int section = section_for(item);
+        if (section == 1) {
+            // Keep the action controls together with the auxiliary-window
+            // buttons. Their legacy creation coordinates left an unnecessary
+            // blank band between Apply/Reverse/Cancel/Close and Open...
+            const int top = rect.top;
+            if (top >= 390 && top < 460) {
+                const int target_top = 200 + (top - 390);
+                rect.bottom = target_top + (rect.bottom - top);
+                rect.top = target_top;
+            }
+        } else if (section == 0) {
+            // Preserve the checklist order inside Phase 1. The legacy control
+            // creation order placed Loyalty first and Modify Unrest before
+            // Magic Items; layout now derives the visual order explicitly.
+            const int top = rect.top;
+            int target_top = top;
+            const int id = GetDlgCtrlID(item.first);
+            if (top >= 970 && top < 1085 && rect.left >= 350) {
+                // Loyalty was created as a narrow right-hand block. Keep the
+                // checklist order, but give the section its normal left edge.
+                rect.left -= 360;
+                rect.right -= 360;
+                target_top = 1450 + (top - 970);
+                if (text_of(item.first) == L"Phase 1 Upkeep - Optional Loyalty Check") {
+                    target_top = 1450;
+                    rect.right = rect.left + 420;
+                } else if (id == kLoyaltySuccess) {
+                    target_top = 1500;
+                    rect.right = rect.left + 240;
+                } else if (id == kLoyaltyApply) {
+                    target_top = 1550;
+                    rect.right = rect.left + 200;
+                } else if (id == kLoyaltyStatus) {
+                    target_top = 1600;
+                    rect.right = rect.left + 420;
+                }
+            } else if (id == kLoyaltyHistory || text_of(item.first) == L"Loyalty Check history") {
+                rect.left -= 360;
+                rect.right = rect.left + ruler.width;
+                target_top = id == kLoyaltyHistory ? 1660 : 1630;
+            } else if (top >= 1310 && top < 1325) {
+                target_top = 445 + (top - 1310);
+            } else if (top >= 1085 && top < 1310) {
+                target_top = 220 + (top - 1085);
+            } else if (top >= 1325 && top < 1530) {
+                target_top = 480 + (top - 1325);
+            } else if (top >= 1530 && top < 1740) {
+                target_top = 700 + (top - 1530);
+            } else if (top >= 1740 && top < 1990) {
+                target_top = 930 + (top - 1740);
+            } else if (top >= 1990 && top < 2215) {
+                target_top = 1205 + (top - 1990);
+            } else if (top >= 2215 && top < 2590) {
+                target_top = 1740 + (top - 2215);
+            }
+            rect.bottom = target_top + (rect.bottom - top);
+            rect.top = target_top;
+            if (text_of(item.first) == L"Starting Consumption") {
+                // Keep the complete label visible and reserve a distinct row
+                // band for each food-preview input.
+                rect.left = 20;
+                rect.right = 180;
+            } else if (id == kFoodStartingConsumption) {
+                rect.left = 190;
+                rect.right = 260;
+            } else if (text_of(item.first) == L"Farms") {
+                rect.left = 265;
+                rect.right = 310;
+            } else if (id == kFoodFarmCount) {
+                rect.left = 315;
+                rect.right = 375;
+            } else if (text_of(item.first) == L"Extra reduction") {
+                rect.left = 385;
+                rect.right = 480;
+            } else if (id == kFoodExtraReduction) {
+                rect.left = 490;
+                rect.right = 550;
+            }
+            if (id == kLoyaltySuccess || id == kLoyaltyApply || id == kLoyaltyStatus
+                || id == kLoyaltyHistory) {
+                rect.right = rect.left + ruler.width;
+            }
+        } else if (section == 2) {
+            // Phase 3 follows the checklist sequence: withdrawal, gold
+            // deposit, item deposit, Economy Check, Taxes, then the
+            // valuable-item sale record. Each subsection gets a full row so
+            // the inputs remain legible at every responsive width.
+            const int top = rect.top;
+            int target_top = top;
+            const int id = GetDlgCtrlID(item.first);
+            const std::wstring text = text_of(item.first);
+            if (top >= 3080) {
+                // Valuable-item sale follows Taxes with the same standard gap.
+                target_top = 1450 + (top - 3080);
+            } else if (top >= 870 && top < 1085 && rect.left >= 350) {
+                // Item deposit follows the gold-deposit subsection.
+                target_top = 720 + (top - 870);
+                if (text == L"Item base value") target_top = 720;
+                else if (id == kDepositItemValue) target_top = 718;
+                else if (id == kDepositItemApply) target_top = 770;
+                else if (id == kDepositItemStatus) target_top = 820;
+            } else if (top >= 665 && top < 875) {
+                // Gold withdrawal is the first Phase 3 subsection.
+                target_top = 220 + (top - 665);
+            } else if (top >= 875 && top < 1085) {
+                // Gold deposit occupies the next standard subsection.
+                target_top = 450 + (top - 875);
+            } else if (top >= 465 && top < 665 && rect.left >= 300) {
+                // Taxes follow Economy Check with one standard gap.
+                target_top = 1120 + (top - 465);
+                if (text == L"Phase 3 Income - Tax Economy Check") target_top = 1120;
+                else if (id == kTaxSuccess) target_top = 1170;
+                else if (text == L"Roll" || text == L"Other BP") target_top = 1210;
+                else if (id == kTaxResult || id == kTaxOther) target_top = 1208;
+                else if (id == kTaxApply) target_top = 1205;
+                else if (id == kTaxStatus) target_top = 1260;
+                else if (text == L"Tax collection history") target_top = 1300;
+                else if (id == kTaxHistory) target_top = 1325;
+            } else {
+                // Economy Check follows Item Deposit with a standard gap.
+                target_top = 850 + (top - 465);
+                if (text == L"Phase 3 Income - Economy Check") target_top = 850;
+                else if (id == kEconomyRoll || id == kEconomyAutoRoll) target_top = 900;
+                else if (id == kEconomyModifier) target_top = 950;
+                else if (id == kEconomyApply) target_top = 945;
+                else if (id == kEconomyStatus) target_top = 1000;
+                else if (text == L"Economy Check history") target_top = 1040;
+                else if (id == kEconomyHistory) target_top = 1065;
+            }
+            rect.bottom = target_top + (rect.bottom - top);
+            rect.top = target_top;
+            if (top >= 870 && top < 1085 && rect.left >= 350) {
+                // Item-deposit controls follow the gold-deposit controls.
+                rect.left -= 360;
+                rect.right -= 360;
+            } else if (top >= 465 && top < 665 && rect.left >= 300) {
+                // Tax controls occupy the full-width row below Economy Check.
+                rect.left -= 290;
+                rect.right -= 290;
+                if (GetDlgCtrlID(item.first) == kTaxApply) {
+                    rect.left += 15;
+                    rect.right += 15;
+                }
+            }
+            const bool standard_surface = id == kWithdrawalStatus || id == kWithdrawalHistory
+                || id == kDepositStatus || id == kDepositHistory
+                || id == kDepositItemStatus || id == kEconomyStatus || id == kEconomyHistory
+                || id == kTaxStatus || id == kTaxHistory || id == kSaleStatus || id == kSaleHistory
+                || text == L"Gold deposit history" || text == L"Economy Check history"
+                || text == L"Tax collection history" || text.rfind(L"Phase 3 Income", 0) == 0
+                || text == L"Sell valuable item (PDF rule; one check per city district per Income phase)";
+            if (standard_surface) rect.right = rect.left + ruler.width;
         }
         return rect;
     };
@@ -3981,7 +4532,7 @@ void layout_turn_actions_controls(HWND window) {
     for (const auto& item : turn_actions_layout_rects) {
         const int section = section_for(item);
         if (section < 0) continue;
-        const RECT base = compacted_rect(item);
+        const RECT base = canonical_rect(item);
         if (text_of(item.first) == L"Phase 1 - Upkeep" || text_of(item.first) == L"Phase 2 - Improvement"
             || text_of(item.first) == L"Phase 3 - Income" || text_of(item.first) == L"Phase 4 - Event"
             || text_of(item.first) == L"Audit history and reversals") continue;
@@ -3995,11 +4546,22 @@ void layout_turn_actions_controls(HWND window) {
             group.max_bottom = std::max(group.max_bottom, static_cast<int>(base.bottom));
         }
     }
-    const bool use_columns = client_width >= 1100;
-    const int column_gap = 24;
-    const int column_width = use_columns ? std::max(1, (client_width - column_gap) / 2)
+    // Derive breakpoints from the minimum usable column width rather than
+    // unrelated fixed window sizes. This guarantees a real 1 -> 2 -> 3
+    // progression while preserving the ruler content envelope.
+    constexpr int minimum_column_width = 700;
+    const int two_column_threshold = minimum_column_width * 2 + 24 + 20;
+    const int three_column_threshold = minimum_column_width * 3 + 18 * 2 + 20;
+    const int column_count = client_width >= three_column_threshold ? 3
+        : client_width >= two_column_threshold ? 2 : 1;
+    const bool use_three_columns = column_count == 3;
+    const bool use_columns = column_count >= 2;
+    const int column_gap = use_three_columns ? 18 : 24;
+    const int column_width = use_columns ? std::max(1,
+        (client_width - column_gap * (column_count - 1)) / column_count)
         : std::max(1, client_width - 20);
-    std::vector<double> scale(static_cast<size_t>(section_count), 0.0);
+    std::vector<double> scale_x(static_cast<size_t>(section_count), 0.0);
+    std::vector<double> scale_y(static_cast<size_t>(section_count), 1.0);
     std::vector<int> target_x(static_cast<size_t>(section_count), 0);
     std::vector<int> target_y(static_cast<size_t>(section_count), 0);
     std::vector<int> target_height(static_cast<size_t>(section_count), 0);
@@ -4008,9 +4570,36 @@ void layout_turn_actions_controls(HWND window) {
         if (!group.present) continue;
         const int base_width = std::max(1, group.max_right - group.min_left);
         const int base_height = std::max(1, group.max_bottom - group.min_top);
-        scale[static_cast<size_t>(section)] = std::min(1.0,
-            static_cast<double>(std::max(1, column_width - 16)) / base_width);
-        target_height[static_cast<size_t>(section)] = static_cast<int>(std::lround(base_height * scale[static_cast<size_t>(section)])) + 28;
+        scale_x[static_cast<size_t>(section)] = std::clamp(
+            static_cast<double>(std::max(1, column_width - 16)) / base_width,
+            0.78, 1.25);
+        const double window_height_scale = std::clamp(
+            static_cast<double>(std::max(1, client_height - content_top - 24)) / 700.0,
+            0.92, 1.15);
+        // Do not compress vertical bands merely because a narrow column needs
+        // horizontal scaling. Narrow windows scroll; their labels and history
+        // panels remain readable instead of becoming visibly squashed.
+        scale_y[static_cast<size_t>(section)] = std::max(1.0, window_height_scale);
+        target_height[static_cast<size_t>(section)] = static_cast<int>(std::lround(
+            base_height * scale_y[static_cast<size_t>(section)])) + 28;
+    }
+    if (bounds[1].present) {
+        // Phase 2 contains a compact command bar plus auxiliary-window
+        // buttons. Reserve room for their responsive rows rather than
+        // shrinking captions until they become unreadable.
+        target_height[1] = std::max(target_height[1], use_three_columns ? 300 : 340);
+    }
+    if (bounds[0].present) {
+        target_height[0] = std::max(target_height[0], use_three_columns ? 1720 : 1780);
+    }
+    if (bounds[2].present) {
+        target_height[2] = std::max(target_height[2], use_three_columns ? 1650 : 1750);
+    }
+    if (bounds[3].present) {
+        target_height[3] = std::max(target_height[3], use_three_columns ? 650 : 700);
+    }
+    if (bounds[4].present) {
+        target_height[4] = std::max(target_height[4], use_three_columns ? 500 : 540);
     }
     if (!use_columns) {
         int y = content_top;
@@ -4021,6 +4610,24 @@ void layout_turn_actions_controls(HWND window) {
             y += target_height[static_cast<size_t>(section)] + section_gap;
         }
         turn_actions_content_height = y + 24;
+    } else if (use_three_columns) {
+        // The wide layout gets three balanced lanes: the long upkeep and
+        // income phases no longer leave a short, mostly empty opposite side.
+        // Preserve phase order across the wide layout: Phase 1, Phase 2,
+        // Phase 3 from left to right. Phase 4 and audit follow Phase 3 in
+        // the right-hand lane; audit remains visually outside the phases.
+        target_x[0] = 10;
+        target_x[1] = 10 + column_width + column_gap;
+        target_x[2] = 10 + 2 * (column_width + column_gap);
+        target_x[3] = target_x[2];
+        target_x[4] = target_x[2];
+        target_y[0] = target_y[1] = target_y[2] = content_top;
+        target_y[3] = target_y[2] + target_height[2] + section_gap;
+        target_y[4] = target_y[3] + target_height[3] + section_gap;
+        target_height[4] = std::max(target_height[4], 300);
+        turn_actions_content_height = std::max(
+            target_y[0] + target_height[0],
+            std::max(target_y[2] + target_height[2], target_y[4] + target_height[4])) + 24;
     } else {
         target_x[0] = 10; target_x[1] = column_width + column_gap;
         target_x[2] = 10; target_x[3] = column_width + column_gap;
@@ -4038,7 +4645,7 @@ void layout_turn_actions_controls(HWND window) {
             || text == L"Audit history and reversals";
     };
     for (const auto& item : turn_actions_layout_rects) {
-        const RECT base = compacted_rect(item);
+        const RECT base = canonical_rect(item);
         const int section = section_for(item);
         const std::wstring text = text_of(item.first);
         if (section < 0) {
@@ -4050,8 +4657,63 @@ void layout_turn_actions_controls(HWND window) {
                 SWP_NOZORDER | SWP_NOACTIVATE);
             continue;
         }
+        if (section == 1) {
+            const int lane_left = target_x[1] + 8;
+            const int lane_top = target_y[1];
+            const bool wide_lane = column_width >= 650;
+            int x = lane_left;
+            int y = lane_top + 95;
+            int width = 100;
+            int height = 30;
+            const int id = GetDlgCtrlID(item.first);
+            if (text == L"Phase 2 Improvement action") {
+                x = lane_left; y = lane_top + 20; width = 100; height = 22;
+            } else if (text == L"Count") {
+                x = lane_left; y = lane_top + 55; width = 90; height = 22;
+            } else if (id == kActionChoice) {
+                x = lane_left + 105; y = lane_top + 18;
+                width = std::min(270, std::max(180, column_width - 120)); height = 28;
+            } else if (id == kActionCount) {
+                x = lane_left + 100; y = lane_top + 53; width = 100; height = 24;
+            } else if (id == kActionApply) {
+                x = lane_left; width = 115;
+            } else if (id == kActionReverse) {
+                x = lane_left + 123; width = 140;
+            } else if (id == kActionCancel) {
+                x = lane_left + 271; width = 80;
+            } else if (id == kActionClose) {
+                x = lane_left + 359; width = 60;
+            } else if (id == kChecklistOpenConstruction) {
+                x = lane_left; y = lane_top + 135; width = 155;
+            } else if (id == kChecklistOpenCity) {
+                x = wide_lane ? lane_left + 163 : lane_left + 163;
+                y = lane_top + 135; width = 105;
+            } else if (id == kChecklistOpenArmy) {
+                x = wide_lane ? lane_left + 276 : lane_left;
+                y = wide_lane ? lane_top + 135 : lane_top + 170; width = 105;
+            } else if (id == kChecklistOpenInputs) {
+                x = wide_lane ? lane_left + 389 : lane_left + 113;
+                y = wide_lane ? lane_top + 135 : lane_top + 170; width = 130;
+            } else if (id == kChecklistOpenEventResolution) {
+                x = wide_lane ? lane_left + 527 : lane_left + 251;
+                y = wide_lane ? lane_top + 135 : lane_top + 170; width = 130;
+            } else if (id == kActionOpenGreenbelt) {
+                x = lane_left;
+                y = lane_top + (wide_lane ? 170 : 205);
+                width = 160;
+            } else {
+                // The choice, count, and other Phase 2 controls retain their
+                // proportional placement within the section.
+                goto default_turn_actions_layout;
+            }
+            SetWindowPos(item.first, nullptr, x, y - turn_actions_scroll_y, width, height,
+                SWP_NOZORDER | SWP_NOACTIVATE);
+            continue;
+        }
+default_turn_actions_layout:
         const auto& group = bounds[static_cast<size_t>(section)];
-        const double group_scale = scale[static_cast<size_t>(section)];
+        const double group_scale_x = scale_x[static_cast<size_t>(section)];
+        const double group_scale_y = scale_y[static_cast<size_t>(section)];
         if (is_frame_text(text)) {
             SetWindowPos(item.first, HWND_BOTTOM, target_x[static_cast<size_t>(section)],
                 target_y[static_cast<size_t>(section)] - turn_actions_scroll_y,
@@ -4060,12 +4722,13 @@ void layout_turn_actions_controls(HWND window) {
             continue;
         }
         const int x = target_x[static_cast<size_t>(section)] + 8
-            + static_cast<int>(std::lround((base.left - group.min_left) * group_scale));
-        const int y = target_y[static_cast<size_t>(section)] + 18
-            + static_cast<int>(std::lround((base.top - group.min_top) * group_scale))
+            + static_cast<int>(std::lround((base.left - group.min_left) * group_scale_x));
+        const int inner_top_padding = section == 2 ? 32 : 18;
+        const int y = target_y[static_cast<size_t>(section)] + inner_top_padding
+            + static_cast<int>(std::lround((base.top - group.min_top) * group_scale_y))
             - turn_actions_scroll_y;
-        const int width = static_cast<int>(std::lround((base.right - base.left) * group_scale));
-        const int height = static_cast<int>(std::lround((base.bottom - base.top) * group_scale));
+        const int width = static_cast<int>(std::lround((base.right - base.left) * group_scale_x));
+        const int height = static_cast<int>(std::lround((base.bottom - base.top) * group_scale_y));
         SetWindowPos(item.first, nullptr, x, y, std::max(1, width), std::max(1, height),
             SWP_NOZORDER | SWP_NOACTIVATE);
     }
@@ -4121,9 +4784,11 @@ LRESULT CALLBACK turn_actions_proc(HWND window, UINT message, WPARAM wparam, LPA
             layout_turn_actions_controls(window);
             refresh_turn_action_history(window);
             refresh_tax_history(window);
+            refresh_economy_history(window);
             refresh_gold_withdrawal_history(window);
             refresh_gold_deposit_history(window);
             refresh_stability_history(window);
+            refresh_loyalty_history(window);
             refresh_consumption_history(window);
             refresh_unrest_history(window);
             refresh_commission_history(window);
@@ -4179,6 +4844,8 @@ LRESULT CALLBACK turn_actions_proc(HWND window, UINT message, WPARAM wparam, LPA
                 else if (LOWORD(wparam) == kChecklistOpenEventResolution) open_event_resolution_from_checklist(window);
                 else if (LOWORD(wparam) == kActionApply) apply_turn_action_dialog(window);
                 else if (LOWORD(wparam) == kActionReverse) reverse_turn_action_dialog(window);
+                else if (LOWORD(wparam) == kEconomyAutoRoll) roll_economy_d20(window);
+                else if (LOWORD(wparam) == kEconomyApply) apply_economy_check_dialog(window);
                 else if (LOWORD(wparam) == kTaxApply) apply_tax_action_dialog(window);
                 else if (LOWORD(wparam) == kWithdrawalApply) apply_gold_withdrawal_dialog(window);
                 else if (LOWORD(wparam) == kDepositApply) apply_gold_deposit_dialog(window);
@@ -4551,11 +5218,32 @@ std::filesystem::path greenbelt_image_path() {
 void seed_greenbelt_calibration_if_empty() {
     const auto& calibration = greenbelt_draft.calibration;
     if (calibration.hex_width > 0.0 && calibration.hex_height > 0.0) return;
-    greenbelt_draft.calibration.origin_x = 132.0;
-    greenbelt_draft.calibration.origin_y = 93.0;
-    greenbelt_draft.calibration.hex_width = 279.0;
-    greenbelt_draft.calibration.hex_height = 322.0;
+    // Calibrated from the 2048x679 reference image and converted to the
+    // bundled 7865x2610 asset's pixel coordinates.
+    greenbelt_draft.calibration.origin_x = 548.783447265625;
+    greenbelt_draft.calibration.origin_y = 327.499263622975;
+    greenbelt_draft.calibration.hex_width = 279.128005126953;
+    greenbelt_draft.calibration.hex_height = 323.450496318115;
     greenbelt_draft.calibration.scale = 1.0;
+}
+
+void migrate_legacy_greenbelt_calibration_if_default() {
+    auto& calibration = greenbelt_draft.calibration;
+    constexpr double epsilon = 1e-9;
+    const auto matches = [epsilon](double actual, double expected) {
+        return std::abs(actual - expected) <= epsilon;
+    };
+    if (!matches(calibration.origin_x, 132.0)
+        || !matches(calibration.origin_y, 93.0)
+        || !matches(calibration.hex_width, 279.0)
+        || !matches(calibration.hex_height, 322.0)
+        || !matches(calibration.scale, 1.0))
+        return;
+    calibration.origin_x = 548.783447265625;
+    calibration.origin_y = 327.499263622975;
+    calibration.hex_width = 279.128005126953;
+    calibration.hex_height = 323.450496318115;
+    calibration.scale = 1.0;
 }
 
 void select_greenbelt_hex_at(HWND window, int q, int r) {
@@ -5010,6 +5698,7 @@ void paint_greenbelt_map(HWND window) {
 
 void create_greenbelt_controls(HWND window) {
     seed_greenbelt_calibration_if_empty();
+    migrate_legacy_greenbelt_calibration_if_default();
     CreateWindowExW(0, L"STATIC",
         L"Greenbelt Map. Claims and improvements are recorded as manual state; Apply never spends BP or changes kingdom totals.",
         WS_CHILD | WS_VISIBLE | SS_LEFT, 18, 10, 1100, 28, window, nullptr, app_instance, nullptr);
@@ -5287,6 +5976,7 @@ void open_greenbelt_popout(HWND owner) {
         && greenbelt_active_index < static_cast<int>(greenbelt_draft.hexes.size()))
         save_greenbelt_form(greenbelt_window);
     seed_greenbelt_calibration_if_empty();
+    migrate_legacy_greenbelt_calibration_if_default();
     greenbelt_alignment_mode = false;
     greenbelt_popout_zoom = 1.0;
     greenbelt_popout_pan_x = 0.0;
@@ -5338,6 +6028,11 @@ void open_greenbelt_from_turn_actions(HWND owner) {
 
 void update_greenbelt_alignment_status(HWND window) {
     const auto& calibration = greenbelt_draft.calibration;
+    set_manager_text(window, kGreenbeltOriginX, std::to_wstring(calibration.origin_x));
+    set_manager_text(window, kGreenbeltOriginY, std::to_wstring(calibration.origin_y));
+    set_manager_text(window, kGreenbeltHexWidth, std::to_wstring(calibration.hex_width));
+    set_manager_text(window, kGreenbeltHexHeight, std::to_wstring(calibration.hex_height));
+    set_manager_text(window, kGreenbeltScale, std::to_wstring(calibration.scale));
     const std::wstring text = L"Alignment: origin (" + std::to_wstring(calibration.origin_x)
         + L", " + std::to_wstring(calibration.origin_y) + L") | size ("
         + std::to_wstring(calibration.hex_width) + L" x "
@@ -5347,11 +6042,36 @@ void update_greenbelt_alignment_status(HWND window) {
     set_manager_text(window, kGreenbeltAlignmentStatus, text);
 }
 
+void apply_greenbelt_manual_calibration(HWND window) {
+    auto& calibration = greenbelt_draft.calibration;
+    const double origin_x = parse_decimal(manager_text(window, kGreenbeltOriginX));
+    const double origin_y = parse_decimal(manager_text(window, kGreenbeltOriginY));
+    const double hex_width = parse_decimal(manager_text(window, kGreenbeltHexWidth));
+    const double hex_height = parse_decimal(manager_text(window, kGreenbeltHexHeight));
+    const double scale = parse_decimal(manager_text(window, kGreenbeltScale));
+    if (hex_width <= 0.0 || hex_height <= 0.0 || scale <= 0.0)
+        throw std::invalid_argument("Hex width, hex height, and scale must be greater than zero.");
+    calibration.origin_x = origin_x;
+    calibration.origin_y = origin_y;
+    calibration.hex_width = hex_width;
+    calibration.hex_height = hex_height;
+    calibration.scale = scale;
+    update_greenbelt_alignment_status(window);
+    InvalidateRect(window, nullptr, FALSE);
+    if (greenbelt_window && IsWindow(greenbelt_window))
+        InvalidateRect(greenbelt_window, nullptr, FALSE);
+}
+
 void set_greenbelt_alignment_controls_visible(HWND window, bool visible) {
     const int ids[] = {
         kGreenbeltPanLeft, kGreenbeltPanRight, kGreenbeltPanUp, kGreenbeltPanDown,
         kGreenbeltGrowWidth, kGreenbeltShrinkWidth, kGreenbeltGrowHeight,
-        kGreenbeltShrinkHeight, kGreenbeltResetPan, kGreenbeltAlignmentStatus
+        kGreenbeltShrinkHeight, kGreenbeltResetPan, kGreenbeltAlignmentStatus,
+        kGreenbeltOriginX, kGreenbeltOriginY, kGreenbeltHexWidth, kGreenbeltHexHeight,
+        kGreenbeltScale, kGreenbeltApplyCalibration,
+        kGreenbeltCalibrationOriginXLabel, kGreenbeltCalibrationOriginYLabel,
+        kGreenbeltCalibrationWidthLabel, kGreenbeltCalibrationHeightLabel,
+        kGreenbeltCalibrationScaleLabel
     };
     for (const int id : ids)
         ShowWindow(GetDlgItem(window, id), visible ? SW_SHOW : SW_HIDE);
@@ -5404,6 +6124,13 @@ void populate_greenbelt_custom_popup_combo(HWND window, int control_id, bool eff
         if (!value.empty() && std::find(values.begin(), values.end(), value) == values.end())
             values.push_back(value);
     }
+    if (effects) {
+        const std::vector<std::string> signed_examples{
+            "Consumption -1", "Consumption +1", "Economy -1", "Economy +1",
+            "Loyalty -1", "Loyalty +1", "Stability -1", "Stability +1"};
+        for (const auto& value : signed_examples)
+            if (std::find(values.begin(), values.end(), value) == values.end()) values.push_back(value);
+    }
     for (const auto& value : values)
         SendMessageW(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(widen(value).c_str()));
 }
@@ -5440,10 +6167,15 @@ void load_greenbelt_custom_popup_item(HWND window, int index) {
     set_manager_text(window, kGreenbeltCustomPopupName, widen(item.name));
     SendMessageW(GetDlgItem(window, kGreenbeltCustomPopupEffectList), LB_RESETCONTENT, 0, 0);
     SendMessageW(GetDlgItem(window, kGreenbeltCustomPopupCostList), LB_RESETCONTENT, 0, 0);
-    const auto effects = item.effects.empty() && !item.effect_preview.empty()
+    auto effects = item.effects.empty() && !item.effect_preview.empty()
         ? std::vector<std::string>{item.effect_preview} : item.effects;
+    if (effects.empty()) {
+        for (const auto& effect : item.stat_effects)
+            effects.push_back(effect.stat + (effect.delta >= 0 ? " +" : " ") + std::to_string(effect.delta));
+    }
     const auto costs = item.costs.empty() && !item.cost_description.empty()
         ? std::vector<std::string>{item.cost_description} : item.costs;
+    set_manager_text(window, kGreenbeltCustomPopupBpCost, std::to_wstring(item.bp_cost));
     for (const auto& value : effects)
         SendMessageW(GetDlgItem(window, kGreenbeltCustomPopupEffectList), LB_ADDSTRING, 0,
             reinterpret_cast<LPARAM>(widen(value).c_str()));
@@ -5488,6 +6220,25 @@ void remove_greenbelt_custom_popup_value(HWND window, int list_id) {
     if (selected >= 0) SendMessageW(list, LB_DELETESTRING, selected, 0);
 }
 
+bool parse_custom_stat_effect_text(const std::string& value, pkkm::CustomStatEffect& result) {
+    const auto separator = value.rfind(' ');
+    if (separator == std::string::npos || separator == 0 || separator + 1 >= value.size()) return false;
+    const std::string stat = value.substr(0, separator);
+    const auto number = value.substr(separator + 1);
+    static const std::vector<std::string> supported_stats{
+        "Economy", "Loyalty", "Stability", "Defense", "Unrest", "Consumption"};
+    if (std::find(supported_stats.begin(), supported_stats.end(), stat) == supported_stats.end()) return false;
+    try {
+        std::size_t consumed = 0;
+        const int delta = std::stoi(number, &consumed);
+        if (consumed != number.size() || delta == 0) return false;
+        result = {stat, delta};
+        return true;
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
 void commit_greenbelt_custom_popup(HWND window, bool add_to_selected_hex) {
     const bool editing = greenbelt_custom_popup_edit_index >= 0
         && greenbelt_custom_popup_edit_index < static_cast<int>(greenbelt_draft.custom_improvements.size());
@@ -5501,7 +6252,16 @@ void commit_greenbelt_custom_popup(HWND window, bool add_to_selected_hex) {
         ? greenbelt_draft.custom_improvements[static_cast<size_t>(greenbelt_custom_popup_edit_index)].id
         : greenbelt_custom_id_for_name(item.name);
     item.effects = greenbelt_custom_popup_values(window, kGreenbeltCustomPopupEffectList);
+    for (const auto& effect : item.effects) {
+        pkkm::CustomStatEffect structured;
+        if (parse_custom_stat_effect_text(effect, structured)) item.stat_effects.push_back(structured);
+    }
     item.costs = greenbelt_custom_popup_values(window, kGreenbeltCustomPopupCostList);
+    item.bp_cost = parse_integer(manager_text(window, kGreenbeltCustomPopupBpCost));
+    if (item.effects.size() > 5)
+        throw std::invalid_argument("Custom improvements support at most five effect entries.");
+    if (item.bp_cost < 0)
+        throw std::invalid_argument("BP cost cannot be negative.");
     item.effect_preview = item.effects.empty() ? std::string{} : item.effects.front();
     item.cost_description = item.costs.empty() ? std::string{} : item.costs.front();
     item.manual_only = SendMessageW(GetDlgItem(window, kGreenbeltCustomPopupManual), BM_GETCHECK, 0, 0) == BST_CHECKED;
@@ -5593,7 +6353,7 @@ LRESULT CALLBACK greenbelt_custom_popup_proc(HWND window, UINT message, WPARAM w
             manager_edit(window, kGreenbeltCustomPopupId, L"custom.improvement", 140, 20, 430);
             SendMessageW(GetDlgItem(window, kGreenbeltCustomPopupId), EM_SETREADONLY, TRUE, 0);
             manager_label(window, L"Name", 20, 54, 110); manager_edit(window, kGreenbeltCustomPopupName, L"", 140, 54, 430);
-            manager_label(window, L"Effects", 20, 88, 110);
+            manager_label(window, L"Effects (max 5)", 20, 88, 110);
             CreateWindowExW(WS_EX_CLIENTEDGE, L"COMBOBOX", L"",
                 WS_CHILD | WS_VISIBLE | CBS_DROPDOWN | CBS_AUTOHSCROLL | WS_VSCROLL,
                 140, 88, 360, 180, window,
@@ -5632,6 +6392,8 @@ LRESULT CALLBACK greenbelt_custom_popup_proc(HWND window, UINT message, WPARAM w
             CreateWindowExW(0, L"BUTTON", L"Manual only", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
                 140, 380, 120, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltCustomPopupManual)), app_instance, nullptr);
             CheckDlgButton(window, kGreenbeltCustomPopupManual, BST_CHECKED);
+            manager_label(window, L"BP cost", 280, 380, 60);
+            manager_edit(window, kGreenbeltCustomPopupBpCost, L"0", 345, 378, 75);
             CreateWindowExW(0, L"BUTTON", L"Add/Close", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
                 390, 420, 105, 30, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltCustomPopupAdd)), app_instance, nullptr);
             CreateWindowExW(0, L"BUTTON", L"Save + Add to Hex", WS_CHILD | WS_VISIBLE,
@@ -5796,12 +6558,30 @@ LRESULT CALLBACK greenbelt_popout_proc(HWND window, UINT message, WPARAM wparam,
                 535, 44, 80, 26, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltResetPan)), app_instance, nullptr);
             CreateWindowExW(0, L"STATIC", L"Click a map hex to select or create it. Drag the map while zoomed to pan.",
                 WS_CHILD | WS_VISIBLE | SS_LEFT, 435, 14, 450, 22, window, nullptr, app_instance, nullptr);
+            CreateWindowExW(0, L"STATIC", L"X", WS_CHILD | WS_VISIBLE | SS_LEFT,
+                10, 78, 18, 20, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltCalibrationOriginXLabel)), app_instance, nullptr);
+            manager_edit(window, kGreenbeltOriginX, L"0", 30, 76, 82);
+            CreateWindowExW(0, L"STATIC", L"Y", WS_CHILD | WS_VISIBLE | SS_LEFT,
+                120, 78, 18, 20, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltCalibrationOriginYLabel)), app_instance, nullptr);
+            manager_edit(window, kGreenbeltOriginY, L"0", 140, 76, 82);
+            CreateWindowExW(0, L"STATIC", L"W", WS_CHILD | WS_VISIBLE | SS_LEFT,
+                230, 78, 18, 20, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltCalibrationWidthLabel)), app_instance, nullptr);
+            manager_edit(window, kGreenbeltHexWidth, L"0", 250, 76, 82);
+            CreateWindowExW(0, L"STATIC", L"H", WS_CHILD | WS_VISIBLE | SS_LEFT,
+                340, 78, 18, 20, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltCalibrationHeightLabel)), app_instance, nullptr);
+            manager_edit(window, kGreenbeltHexHeight, L"0", 360, 76, 82);
+            CreateWindowExW(0, L"STATIC", L"Scale", WS_CHILD | WS_VISIBLE | SS_LEFT,
+                450, 78, 42, 20, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltCalibrationScaleLabel)), app_instance, nullptr);
+            manager_edit(window, kGreenbeltScale, L"1", 495, 76, 82);
+            CreateWindowExW(0, L"BUTTON", L"Apply Calibration", WS_CHILD | WS_VISIBLE,
+                585, 76, 125, 26, window,
+                reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltApplyCalibration)), app_instance, nullptr);
             CreateWindowExW(0, L"BUTTON", L"Apply", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
                 930, 10, 90, 28, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltApply)), app_instance, nullptr);
             CreateWindowExW(0, L"BUTTON", L"Close", WS_CHILD | WS_VISIBLE,
                 1030, 10, 90, 28, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltPopoutClose)), app_instance, nullptr);
             CreateWindowExW(0, L"STATIC", L"", WS_CHILD | WS_VISIBLE | SS_LEFT,
-                10, 78, 830, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltAlignmentStatus)), app_instance, nullptr);
+                10, 110, 830, 24, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGreenbeltAlignmentStatus)), app_instance, nullptr);
             CreateWindowExW(0, L"STATIC", L"Selected hex", WS_CHILD | WS_VISIBLE | SS_LEFT,
                 860, 112, 330, 22, window, nullptr, app_instance, nullptr);
             manager_label(window, L"Q", 860, 140, 100); manager_value(window, kGreenbeltQ, L"", 970, 140, 220);
@@ -6000,6 +6780,12 @@ LRESULT CALLBACK greenbelt_popout_proc(HWND window, UINT message, WPARAM wparam,
                 greenbelt_popout_pan_x = 0.0;
                 greenbelt_popout_pan_y = 0.0;
                 InvalidateRect(window, nullptr, FALSE);
+            } else if (LOWORD(wparam) == kGreenbeltApplyCalibration) {
+                try {
+                    apply_greenbelt_manual_calibration(window);
+                } catch (const std::exception& error) {
+                    MessageBoxW(window, widen(error.what()).c_str(), L"Greenbelt Alignment", MB_OK | MB_ICONWARNING);
+                }
             } else if (LOWORD(wparam) == kGreenbeltApply) {
                 try {
                     apply_greenbelt(window);
